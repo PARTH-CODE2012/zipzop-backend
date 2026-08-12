@@ -6,7 +6,7 @@
 |---|---|
 | **Version** | 0.2 — draft, awaiting approval |
 | **Date** | 12 August 2026 |
-| **Author** | Maxime Briere · Frontend |
+| **Author** | MMaxouB · Frontend |
 | **For approval by** | Project lead |
 | **Built from** | *Next-Gen AI Video Editor — Product Feature Specifications* (PRD) · *System Architecture & Backend Design* (draft) |
 | **Status** | Not agreed. 1 position to confirm, 13 open decisions. |
