@@ -13,6 +13,11 @@ erDiagram
     users ||--o{ jobs            : "requests"
     users ||--o{ credit_ledger   : "is billed through"
     users ||--o{ refresh_tokens  : "authenticates with"
+    users ||--|| subscriptions   : "always has one, free included"
+    users ||--o{ payments        : "made"
+    plans ||--o{ subscriptions   : "defines"
+    subscriptions ||--o{ payments : "billed through"
+    payments ||--o{ credit_ledger : "grants"
 
     projects ||--o{ project_assets : "references"
     media_assets ||--o{ project_assets : "is referenced by"
@@ -27,7 +32,9 @@ erDiagram
         uuid id PK
         citext email UK
         text hashed_password
-        int credit_balance "cached projection of the ledger"
+        int plan_credits "monthly allowance — expires"
+        int topup_credits "purchased — never expires"
+        int facemap_seconds "GPU meter — expires"
         bigint storage_bytes_used
         timestamptz deleted_at
     }
@@ -72,6 +79,7 @@ erDiagram
         enum family "analysis render inference"
         enum status "queued running succeeded failed cancelled"
         smallint progress
+        smallint priority "queue band, copied from plan"
         jsonb input
         jsonb result "analysis output, small payloads"
         text result_key "large payloads go to S3"
@@ -84,10 +92,12 @@ erDiagram
     credit_ledger {
         bigserial id PK
         uuid user_id FK
+        enum bucket "plan | topup | facemap"
         int delta "signed, never zero"
-        enum reason "grant purchase reserve refund"
+        enum reason "plan_grant plan_expiry topup_purchase reserve refund"
         uuid job_id FK
-        int balance_after
+        uuid payment_id FK
+        int balance_after "running total of THIS bucket"
     }
 
     refresh_tokens {
@@ -96,6 +106,51 @@ erDiagram
         text token_hash UK "SHA-256, never the token"
         uuid replaced_by FK "rotation chain"
         timestamptz revoked_at
+    }
+
+    plans {
+        enum code PK "free pro business studio"
+        int monthly_credits "granted each period, expires"
+        int facemap_seconds "GPU allowance, expires"
+        int fair_use_credits "ceiling for unlimited tiers"
+        int max_export_height "720 1080 2160"
+        enum watermark "forced none custom"
+        smallint queue_priority
+        int price_usd_cents
+        int price_inr_paise
+    }
+
+    subscriptions {
+        uuid id PK
+        uuid user_id FK "one live per user, any provider"
+        enum plan FK
+        enum status "active past_due cancelled expired"
+        enum provider "stripe | razorpay, NULL when free"
+        text provider_subscription_id
+        char currency "USD | INR"
+        timestamptz current_period_end "drives the renewal sweep"
+        bool cancel_at_period_end
+    }
+
+    payments {
+        uuid id PK
+        uuid user_id FK
+        uuid subscription_id FK
+        enum provider
+        text provider_payment_id UK
+        enum kind "subscription | topup"
+        enum status "pending succeeded failed refunded"
+        int amount_minor "cents or paise, never floats"
+        char currency
+        int credits_granted
+    }
+
+    provider_events {
+        enum provider PK
+        text event_id PK "duplicate delivery collides here"
+        text event_type
+        jsonb payload
+        timestamptz processed_at
     }
 ```
 
@@ -107,8 +162,8 @@ When a job rewrites pixels, it writes a *new* asset pointing back at its source.
 **`project_assets` — the side table.**
 The timeline lives as JSONB, which Postgres cannot join against. This table is rebuilt from the document on every save so that "which projects use this file?" stays a plain query. `ON DELETE RESTRICT` on `asset_id` means a file in use cannot be deleted out from under a project.
 
-**`credit_ledger.job_id` with a unique index on `(job_id, reason)`.**
-One reservation and at most one refund per job, enforced by the database. A worker whose completion handler runs twice cannot refund twice.
+**`credit_ledger.bucket` with a unique index on `(job_id, reason, bucket)`.**
+Credits arrive by different routes and expire on different schedules, so every movement names which kind it moved. A job that costs more than the expiring allowance holds draws from two buckets and writes two reservation rows — which is why the bucket is part of the key. One reservation and at most one refund *per bucket* per job, enforced by the database: a worker whose completion handler runs twice cannot refund twice.
 
 ---
 
@@ -160,6 +215,8 @@ flowchart TB
     GRACE -->|"restored"| BACK(["Account reactivated"])
     GRACE -->|"elapsed"| HARD["Hard delete"]
 
+    SOFT --> CANCEL["subscription cancelled at the provider<br/>no further billing"]
+
     HARD --> P["projects — CASCADE"]
     HARD --> A["media_assets — CASCADE"]
     HARD --> F["face_profiles + consent_records — CASCADE"]
@@ -168,10 +225,46 @@ flowchart TB
     A --> S3D["S3 objects deleted:<br/>originals, proxies, derived, exports"]
     F --> S3F["S3 objects deleted:<br/>meshes, reference photographs"]
 
-    HARD --> L["credit_ledger — RETAINED, user_id nulled"]
+    HARD --> L["credit_ledger + payments<br/>RETAINED, user_id nulled"]
 
     style L fill:#92500a,color:#fff
     style S3F fill:#0e5561,color:#fff
 ```
 
-The ledger is the one thing kept, anonymised, because financial records outlive accounts. Everything else goes, including every asset derived from a face profile — which is why `derived_from_asset_id` has to be walked, not just the directly-owned rows.
+**Cancel the subscription at the provider on soft delete, not hard delete.** Waiting out the grace period means billing someone for a month after they asked to leave — the worst possible support conversation, and entirely avoidable.
+
+The ledger and payment records are the one thing kept, anonymised, because financial records outlive accounts. Everything else goes, including every asset derived from a face profile — which is why `derived_from_asset_id` has to be walked, not just the directly-owned rows.
+
+---
+
+## 4. How credits are chosen when a job runs
+
+Three balances, spent in a fixed order. The order is the whole point: it protects what the user paid for.
+
+```mermaid
+flowchart TB
+    J(["Job needs 50 credits"]) --> FM{"Is it face<br/>mapping?"}
+
+    FM -->|yes| FMB[("facemap seconds<br/>expires monthly")]
+    FMB --> FMX{"meter<br/>empty?"}
+    FMX -->|no| DONE2(["Spend the meter.<br/>General balance untouched."])
+    FMX -->|yes| PLAN
+
+    FM -->|no| PLAN[("plan credits<br/>EXPIRES at period end")]
+    PLAN --> ENOUGH{"covers the<br/>whole cost?"}
+    ENOUGH -->|yes| DONE1(["Reserve 50 from plan"])
+    ENOUGH -->|no| TOPUP[("topup credits<br/>NEVER expire")]
+    TOPUP --> SPLIT(["Reserve 20 from plan<br/>+ 30 from topup<br/>two ledger rows"])
+    TOPUP --> SHORT{"still<br/>short?"}
+    SHORT -->|yes| ERR(["402 INSUFFICIENT_CREDITS"])
+
+    style DONE1 fill:#0e5561,color:#fff
+    style DONE2 fill:#0e5561,color:#fff
+    style SPLIT fill:#0e5561,color:#fff
+    style ERR fill:#93142e,color:#fff
+    style PLAN fill:#92500a,color:#fff
+```
+
+**Always the soonest to expire, first.** Drawing from `topup` before `plan` would let a user's monthly allowance quietly expire unused every month while the credits they paid extra for drained away. It looks like sharp practice, it generates refund requests, and it costs one line of code to avoid.
+
+A refund returns credits to the buckets they came from, read back from the job's reservation rows. The one exception: if the billing period rolled over while the job was running, the refund goes to `topup` instead — refunding into a bucket that has already been swept and re-granted would credit a balance that no longer relates to the original charge.

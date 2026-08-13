@@ -4,14 +4,14 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 — position approved by the project lead |
-| **Date** | 12 August 2026 |
+| **Version** | 1.1 — commercial model settled |
+| **Date** | 13 August 2026 |
 | **Author** | MMaxouB · Frontend |
-| **Approved by** | Project lead, 12 August 2026 |
+| **Approved by** | Project lead — position 12 August 2026, commercial model 13 August 2026 |
 | **Supersedes** | `vision.md` v0.2 (draft) |
-| **Status** | Position agreed. 5 blocking decisions answered, 8 open, 3 new questions raised by the answers. |
+| **Status** | Position agreed. Commercial model agreed. **Nothing blocking remains.** |
 
-> **What changed since v0.2.** v0.2 proposed a position — that this is a real editor, not a one-shot generator — and asked five blocking questions. The project lead confirmed the position and answered all five. This version folds those answers in and marks what they now commit us to. The parts of the document that were never in question are unchanged.
+> **What changed since v0.2.** v0.2 proposed a position — that this is a real editor, not a one-shot generator — and asked five blocking questions. The project lead confirmed the position and answered all five (§4), then settled the commercial model on 13 August (§8). Everything needed to start building is now decided. The parts of the document that were never in question are unchanged.
 
 ---
 
@@ -93,11 +93,9 @@ The project lead answered all five blocking questions. Here is what each answer 
 
 *"Let's go with a phased release… ship a clean basic editor + 2-3 core AI tools first to get it live and start generating revenue, then roll out the rest incrementally."*
 
-🟢 Settled in principle — this is option 2 from v0.2 section 6.2, and it is the right call.
+🟢 Settled — this is option 2 from v0.2 section 6.2, and it is the right call.
 
-🟠 **New question raised: which 2-3 tools?** The answer does not name them, and the choice materially changes the backend: a release built around captions and trimming needs a fast analysis queue and no GPU inference at all, while a release built around face mapping needs a GPU cluster, facial data storage and a consent flow from day one.
-
-[`02-scope-v1.md`](02-scope-v1.md) proposes a selection with reasoning. **It is a proposal, not a decision** — the project lead should confirm or change it before the backend team starts.
+🟢 **The three tools are Captions, Smart Trim and Colour Grading**, confirmed 13 August. All three return decisions rather than pixels, which means phase 1 needs **no GPU cluster at all** — the expensive hardware arrives in phase 2 with the feature that justifies it. Reasoning in [`02-scope-v1.md`](02-scope-v1.md) §5.
 
 ### 4.3 Face mapping targets both own and imported footage
 
@@ -398,24 +396,53 @@ Places a face into video and keeps it stable in every frame, instead of the flic
 
 ---
 
-## 8. Accounts, credits and limits
+## 8. Accounts, credits and how we make money
 
-Each user has an account and a balance of credits. **Ordinary editing is free** — a user charged for splitting a clip will not use the product. Credits pay for the AI tools, and possibly for export.
+Settled by the project lead on 13 August 2026. **Ordinary editing is free** — a user charged for splitting a clip will not use the product. Credits pay for the AI tools and for export.
+
+### 8.1 The tiers
+
+| | Free | Pro | Business | Studio |
+|---|---|---|---|---|
+| **Price** | $0 | $19.99 / ₹999 | $49.99 / ₹1,999 | $99.99 / ₹2,999 |
+| **Shown as** | ≈3 videos/mo | ≈30 videos/mo | ≈100 videos/mo | Unlimited* |
+| **Export** | 720p, watermarked | 1080p | 4K | 4K, custom watermark |
+| **Queue** | Standard | Fast | Priority | Dedicated priority |
+| **Face mapping** | — | 5 min/mo | 20 min/mo | 60 min/mo |
+
+\* Unlimited carries a fair-use ceiling in the terms. Unlimited against usage-billed hardware has no floor without one.
+
+### 8.2 Videos are what we show; credits are what we count
+
+The tiers are advertised in videos per month because that is what a creator understands. **Internally everything is credits**, and this is not cosmetic — it prevents a specific failure.
+
+Under a literal "3 videos" limit, a free user with one 10-minute clip who generates captions, re-runs them because a name was misheard, runs smart trim, and exports has used four videos' worth of processing on **one video they have not finished**. The counter would be exhausted and the product would feel broken.
+
+Credits meter the actual work, so re-running captions costs a few credits instead of a whole video. Each tier carries 25–40% more credits than its headline figure strictly needs, precisely to absorb that. The "≈30 videos" is calibrated against a reference ten-minute video and will be re-tuned from real usage after launch.
+
+### 8.3 Two kinds of credit
+
+| | Where from | Expires |
+|---|---|---|
+| **Monthly allowance** | Granted at each renewal | **Yes**, at period end |
+| **Top-up credits** | Bought à la carte | **Never** |
+
+Jobs always spend the allowance first, so credits a user paid for are never destroyed while free monthly ones expire unused. Face mapping has its own separate meter, so GPU time cannot silently drain a general balance.
+
+### 8.4 Everything else
 
 | Area | Status |
 |---|---|
-| **Pricing** | 🟠 Open. What each tool costs in credits. Sharpening a 4K video and captioning a 30-second clip cannot cost the same. |
-| **Buying credits** | 🟠 Open. Which payment provider, in what bundles. **There is no payment system anywhere in the source architecture.** |
-| **Free tier** | 🟠 Open. Whether new users get free credits, how many, and what they can do with them. |
-| **Subscriptions** | 🟠 Open. Whether there are monthly plans as well as credits. |
-| **Failed jobs** | 🟢 Resolved by design. Credits are reserved when a job starts and only charged on success; a failure releases the reservation automatically. See [`03-backend-architecture.md`](03-backend-architecture.md) §5.4. |
-| **Export** | 🟠 Open. Whether exporting costs credits, and whether free exports carry a watermark. |
-| **Upload limits** | 🟠 Open. Maximum file size, video length, resolution, accepted formats. The architecture proposes defaults; they need confirming. |
-| **Storage** | 🟠 Open. How long we keep a user's media and projects. A direct and recurring cost — we store whole projects, not just finished videos. |
-| **Teams** | 🟠 Open. Whether an account is one person or a company sharing a balance. |
-| **Sign-in** | 🟠 Open. Whether Google/Apple sign-in is offered, or only email and password. |
+| **Failed jobs** | 🟢 Credits are reserved when a job starts and released automatically on failure. Nobody contacts support. [`03-backend-architecture.md`](03-backend-architecture.md) §5.4 |
+| **Payments** | 🟢 Stripe for global/USD, Razorpay for India/INR, both live at launch. IP suggests the currency; the user can change it. |
+| **Export** | 🟢 Costs credits. Free-tier exports carry a watermark; Pro and above do not; Studio can supply its own. |
+| **Cloud** | 🟢 AWS, on a company account. |
+| **Upload limits** | 🟠 Defaults proposed in [`02-scope-v1.md`](02-scope-v1.md) §3.2 — 2 GB, 60 minutes, up to 4K source. Confirm before launch. |
+| **Storage retention** | 🟠 Open. How long we keep media and projects. A direct recurring cost, and the largest one. |
+| **Teams** | 🟠 Open, and out of scope for the roadmap as it stands. |
+| **Sign-in** | 🟠 Open. Google/Apple sign-in, or email and password only. |
 
-🟠 **Someone needs to own the commercial model.** It is not a backend question, but the backend cannot be finished without it. Pricing and payment are the only items on this list that block phase 1 shipping — everything else can be defaulted.
+🔵 **The pricing works now and needs watching in phase 2.** On phase 1 tools a ten-minute video costs us roughly $0.10–0.15 to process, against $19.99 for thirty on Pro — comfortable. Face mapping runs on GPU and is an order of magnitude more, which is exactly why it has its own metered allowance rather than sharing the general one. These are estimates until measured; cost-per-job is instrumented from the first deploy ([`03-backend-architecture.md`](03-backend-architecture.md) §11) so the tiers can be re-priced on evidence rather than guesswork.
 
 ---
 
@@ -482,19 +509,27 @@ Where the source documents were silent, we filled the gap. Each of these could b
 | **4** | Web, iOS, Android — which, and when? | 🟢 Web first. Mobile later, reusing the same backend. |
 | **5** | Is lip sync in the product? | 🟢 Yes, alongside face mapping. Scoped as re-sync, not re-voice. |
 | **9** | How does the user preview a server-side effect? | 🟢 Resolved by design — browser preview on proxy media, nothing round-trips to see an edit. |
-| **10** | Where does export happen? | 🟢 Resolved by design — server-side, one render path. Whether it costs credits is still open. |
+| **10** | Where does export happen? | 🟢 Resolved by design — server-side, one render path. |
+| **A** | Which AI tools ship in phase 1? | 🟢 Captions, Smart Trim, Colour Grading. All three return decisions, so phase 1 needs no GPU cluster. |
+| **B** | Pricing and payments | 🟢 Four tiers (§8.1), credits internally, Stripe + Razorpay both live at launch. |
+| **G** | Does export cost credits, and do free exports carry a watermark? | 🟢 Yes and yes. Watermark removed from Pro upward, custom on Studio. |
+| **J** | Do unused credits roll over? | 🟢 Monthly allowance expires at period end; purchased top-up credits never expire. |
+| **K** | Face mapping metering | 🟢 Its own separate allowance, so GPU cost cannot drain a general balance. |
+| **L** | Cloud provider | 🟢 AWS, on a company account. |
 
 ### Open
 
+None of these block starting. They are ordered by when the answer is actually needed.
+
 | # | Decision | Why it matters | When |
 |---|---|---|---|
-| **A** | **Which 2–3 AI tools ship in phase 1?** | Raised by the phased-release answer. Determines whether the backend needs a GPU inference cluster on day one or not. A proposal is in [`02-scope-v1.md`](02-scope-v1.md) — confirm or change it. | 🔴 **Blocks the backend build** |
-| **B** | What does each tool cost in credits, and how are credits bought? | There is no payment system in the source architecture at all. Nothing can be charged for without this. | 🔴 **Blocks launch** |
-| **C** | Does Smart Trimming tighten a recording, or cut it down to its best parts? | The stated 10-minutes-to-2 result is a different, harder feature. Changes whether it can ship in phase 1. | 🟠 Before phase 1 build |
+| **C** | Does Smart Trimming tighten a recording, or cut it down to its best parts? | The stated 10-minutes-to-2 result is a different, harder feature. Changes what we promise, not what we build first. | 🟠 Before phase 1 ships |
+| **M** | Confirm the credit numbers per tier | Proposed in [`03-backend-architecture.md`](03-backend-architecture.md) §5.5 and derived from estimated costs. Should be re-tuned once cost-per-job is measured on real hardware. | 🟠 Before launch |
+| **N** | Storage retention policy | The largest recurring cost in the system, and it only grows. | 🟠 Before launch |
 | **D** | Whose face can be uploaded — only the account holder's, or anyone's? | §4.3 settled whose video can be targeted, not whose face can be supplied. | 🟠 Before face-mapping phase |
-| **E** | Who owns the consent, watermarking and misuse work, and when is legal advice obtained? | Deferred by agreement, not cancelled. Needed before the face-mapping phase, not before launch. | 🟠 Before face-mapping phase |
-| **F** | Does the Clip Finder track speakers when converting to vertical? | Without it, clips of more than one person are unusable. Substantial work, in neither document. | 🟠 Before that tool is built |
-| **G** | Does export cost credits, and do free exports carry a watermark? | Commercial lever as well as a cost question. | 🟠 Before launch |
+| **E** | Who owns the consent, watermarking and misuse work, and when is legal advice obtained? | Deferred by agreement, not cancelled. Phase 1 stores no facial data, which is what makes the deferral safe. | 🟠 Before face-mapping phase |
+| **O** | Who owns tax — Indian GST, EU VAT | Both providers offer tax products, but configuring them is not a development task. | 🟠 Before launch |
+| **F** | Does the Clip Finder track speakers when converting to vertical? | Without it, clips of more than one person are unusable. Substantial work, in neither source document. | ⚪ Before that tool is built |
 | **H** | Do templates include music, and who licenses it? | A commercial agreement with a cost attached, not a development task. | ⚪ Before that tool is built |
 | **I** | Do we publish directly to TikTok, YouTube and Instagram? | Implied by the PRD but never specified. Each platform has its own approval process. | ⚪ Before launch |
 
@@ -506,12 +541,12 @@ With the position confirmed, the technical design proceeds:
 
 | Document | For | Status |
 |---|---|---|
-| [`02-scope-v1.md`](02-scope-v1.md) | Everyone — read first | Proposes the phase 1 tool selection (open decision A) |
+| [`02-scope-v1.md`](02-scope-v1.md) | Everyone — read first | The confirmed phase 1 scope: three AI tools, the editor baseline, billing |
 | [`03-backend-architecture.md`](03-backend-architecture.md) | Backend team | Data model, job pipeline, infrastructure |
 | [`05-api-contract.md`](05-api-contract.md) | Both teams | The interface both sides build against |
 | [`04-frontend-architecture.md`](04-frontend-architecture.md) | Frontend | Timeline state, playback engine, tool integration |
 
-**The one thing needed before the backend team can start is decision A** — which tools ship in phase 1. Everything else in the architecture holds regardless of the answer.
+**Nothing blocks starting.** Every decision the architecture depends on is answered: the product shape, the phase 1 tool selection, the commercial model, the cloud provider and the payment providers. The open items in §12 are refinements with known defaults, and each is needed at a point clearly later than today.
 
 ---
 

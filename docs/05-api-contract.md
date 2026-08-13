@@ -4,11 +4,13 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 12 August 2026 |
+| **Version** | 1.1 — billing endpoints added |
+| **Date** | 13 August 2026 |
 | **Audience** | Backend and frontend engineers |
 | **Depends on** | [`03-backend-architecture.md`](03-backend-architecture.md) |
 | **Base URL** | `https://api.zipzop.app/v1` |
+
+> **What changed in 1.1.** `GET /me` returns three credit balances and a plan instead of one number. New `/plans` and `/billing/*` endpoints, two webhook routes, plan-gated export presets, and five new error codes. Nothing existing changed shape except `/me`.
 
 > **This document is a contract.** Changing anything in it after work starts breaks someone else's build. Additions are cheap; changes to existing shapes are not. If something here is wrong, say so now.
 
@@ -76,7 +78,7 @@ GET /v1/projects?limit=20&cursor=eyJpZCI6...
 
 ### Rate limits
 
-`429` with `Retry-After` in seconds. Limits in [`03-backend-architecture.md`](03-backend-architecture.md) §9.
+`429` with `Retry-After` in seconds. Limits in [`03-backend-architecture.md`](03-backend-architecture.md) §10.
 
 ---
 
@@ -92,14 +94,14 @@ GET /v1/projects?limit=20&cursor=eyJpZCI6...
 
 ```json
 {
-  "user": { "id": "usr_9b1d…", "email": "sam@example.com", "displayName": "Sam", "creditBalance": 100 },
+  "user": { "id": "usr_9b1d…", "email": "sam@example.com", "displayName": "Sam" },
   "accessToken": "eyJhbG…",
   "refreshToken": "rt_8f2c…",
   "expiresIn": 900
 }
 ```
 
-New accounts receive a signup grant. The amount is open decision B; `100` is a placeholder.
+New accounts land on the `free` plan with its monthly allowance already granted. Call `GET /me` for balances rather than reading them from here.
 
 ### `POST /auth/login`
 
@@ -124,11 +126,39 @@ Revokes the presented refresh token. `204`.
   "id": "usr_9b1d…",
   "email": "sam@example.com",
   "displayName": "Sam",
-  "creditBalance": 340,
   "storageBytesUsed": 4823410176,
-  "createdAt": "2026-08-01T09:14:22Z"
+  "createdAt": "2026-08-01T09:14:22Z",
+
+  "credits": {
+    "plan": 1840,
+    "topup": 500,
+    "total": 2340,
+    "facemapSeconds": 240,
+    "planCreditsExpireAt": "2026-09-01T00:00:00Z"
+  },
+
+  "subscription": {
+    "plan": "pro",
+    "displayName": "Pro",
+    "status": "active",
+    "currency": "USD",
+    "currentPeriodEnd": "2026-09-01T00:00:00Z",
+    "cancelAtPeriodEnd": false,
+    "provider": "stripe",
+    "limits": {
+      "maxExportHeight": 1080,
+      "watermark": "none",
+      "monthlyCredits": 2500,
+      "facemapSeconds": 300,
+      "concurrentJobs": { "analysis": 3, "render": 2, "inference": 1 }
+    }
+  }
 }
 ```
+
+**Three balances, not one.** `plan` credits expire at `planCreditsExpireAt`; `topup` credits never do; `facemapSeconds` is a separate meter that only face mapping and lip sync can spend. Jobs always draw from the soonest to expire first ([`03-backend-architecture.md`](03-backend-architecture.md) §5.4), so `total` is what the user can spend right now and is the number to show most prominently.
+
+`limits` is a copy of the plan's row, sent so the client can gate its own UI — grey out 4K on a free account rather than letting someone pick it and get an error. **The server enforces the same limits regardless**; this is for presentation only.
 
 ---
 
@@ -475,11 +505,15 @@ Idempotency-Key: 3f9c2b18-…
   "family": "analysis",
   "status": "queued",
   "progress": 0,
+  "priority": 10,
   "creditsReserved": 22,
+  "reservedFrom": { "plan": 22, "topup": 0, "facemapSeconds": 0 },
   "estimatedSeconds": 45,
   "createdAt": "2026-08-12T14:40:03Z"
 }
 ```
+
+`reservedFrom` shows which buckets were drawn. A job can span two — 22 credits from a balance of 8 `plan` and 400 `topup` reserves 8 and 14 respectively. Face mapping spends `facemapSeconds` first and only falls back to credits once that meter is empty.
 
 ### `GET /jobs/{id}`
 
@@ -502,10 +536,18 @@ POST /jobs/estimate
 Same body as `POST /jobs`, but nothing is created:
 
 ```json
-{ "credits": 22, "estimatedSeconds": 45, "sufficientBalance": true }
+{
+  "credits": 22,
+  "wouldReserveFrom": { "plan": 22, "topup": 0, "facemapSeconds": 0 },
+  "estimatedSeconds": 45,
+  "sufficientBalance": true,
+  "blockedBy": null
+}
 ```
 
-Call this to show a price before the user commits. The value is exact, not indicative — both use the same function.
+Call this to show a price before the user commits. The value is exact, not indicative — both endpoints use the same function.
+
+`blockedBy` is `null` when the job can run, otherwise the error code that `POST /jobs` would return — `INSUFFICIENT_CREDITS`, `PLAN_LIMIT_EXCEEDED`, `FAIR_USE_EXCEEDED`. This lets the client show "Upgrade to use face mapping" on the button itself instead of after a failed click.
 
 ### 6.2 Per-tool payloads
 
@@ -588,6 +630,16 @@ The client writes this into the clip's `effects` and shows it immediately. No se
 
 `timelineVersion` must match the project's current version — exporting a stale timeline is always a mistake, so it is rejected with `409 VERSION_CONFLICT` rather than silently rendering the wrong thing.
 
+**Resolution is gated by plan.** Requesting more than the plan allows returns `403 PLAN_LIMIT_EXCEEDED` rather than silently downgrading — someone who chose 4K and received 720p files a bug report:
+
+```json
+{ "error": { "code": "PLAN_LIMIT_EXCEEDED",
+             "message": "4K export is available on Business and above.",
+             "details": { "requested": 2160, "allowed": 1080, "requiredPlan": "business" } } }
+```
+
+The watermark is decided server-side from the plan and is not a parameter. Free-tier exports always carry it.
+
 Result: `outputAssetId`, plus
 
 ```json
@@ -608,7 +660,136 @@ When a result exceeds 256 KB, `result` is `null` and `resultUrl` carries a signe
 
 ---
 
-## 7. WebSocket
+## 7. Billing
+
+The client never touches card details. Every payment happens on the provider's own hosted page, reached through a redirect. That keeps card data entirely out of our system, which is the only sane position to hold.
+
+### `GET /plans`
+
+Public — no authentication. Prices in the caller's suggested currency, with everything needed to render a pricing table.
+
+```json
+{
+  "suggestedCurrency": "INR",
+  "suggestedProvider": "razorpay",
+  "plans": [
+    {
+      "code": "free",
+      "displayName": "Free",
+      "priceMinor": 0,
+      "currency": "INR",
+      "monthlyCredits": 300,
+      "approxVideosPerMonth": 3,
+      "facemapSeconds": 0,
+      "maxExportHeight": 720,
+      "watermark": "forced",
+      "queueLabel": "Standard"
+    },
+    {
+      "code": "pro",
+      "displayName": "Pro",
+      "priceMinor": 99900,
+      "currency": "INR",
+      "monthlyCredits": 2500,
+      "approxVideosPerMonth": 30,
+      "facemapSeconds": 300,
+      "maxExportHeight": 1080,
+      "watermark": "none",
+      "queueLabel": "Fast"
+    }
+  ]
+}
+```
+
+`suggestedCurrency` comes from the caller's IP. **It is a suggestion, not a decision** — the client must let the user change it, because VPNs, travellers and expatriates make IP unreliable. Pass `?currency=USD` to override.
+
+`approxVideosPerMonth` is the marketing figure, derived from `monthlyCredits` and a reference ten-minute video. **Credits are the real unit**; this exists so the pricing page can say something a person understands. `queueLabel` is deliberately a word, not a time — priority is relative, and we do not publish an SLA we have not measured.
+
+### `POST /billing/checkout`
+
+Start a subscription or change plan.
+
+```json
+{ "plan": "pro", "currency": "INR", "returnUrl": "https://app.zipzop.app/settings/billing" }
+```
+
+`200`:
+
+```json
+{ "provider": "razorpay", "checkoutUrl": "https://checkout.razorpay.com/…", "expiresAt": "2026-08-13T15:10:00Z" }
+```
+
+The client redirects. The subscription is **not** active when the user comes back — it activates when the provider's webhook arrives, usually within seconds. On return, poll `GET /me` until `subscription.plan` changes, with a short "confirming your payment" state. Never assume success from the redirect alone: the user can land on `returnUrl` by pressing back.
+
+The provider is chosen from the currency and cannot be picked directly — INR goes to Razorpay, everything else to Stripe.
+
+### `POST /billing/topup`
+
+Buy credits that never expire, independent of any subscription.
+
+```json
+{ "packCode": "credits_5000", "currency": "USD" }
+```
+
+Returns the same `checkoutUrl` shape. Top-up credits land in the `topup` bucket and survive plan changes, cancellation and period rollovers.
+
+### `POST /billing/portal`
+
+```json
+{ "returnUrl": "https://app.zipzop.app/settings/billing" }
+```
+
+`200` with a `portalUrl` to the provider's hosted management page — update card, view invoices, cancel. We do not rebuild any of that.
+
+### `POST /billing/cancel`
+
+```json
+{ "atPeriodEnd": true }
+```
+
+`200`:
+
+```json
+{ "plan": "pro", "status": "active", "cancelAtPeriodEnd": true,
+  "accessUntil": "2026-09-01T00:00:00Z",
+  "creditsLostAtPeriodEnd": { "plan": 1840, "facemapSeconds": 240 },
+  "creditsKept": { "topup": 500 } }
+```
+
+The response is written to be shown to the user before they confirm. Losing 1,840 credits is worth knowing about in advance, and saying so plainly at the moment of cancelling is both fairer and better retention than discovering it a week later.
+
+### `GET /credits/ledger?limit=50`
+
+```json
+{
+  "items": [
+    { "id": 88213, "bucket": "plan",  "delta": -22, "reason": "reserve",
+      "jobId": "job_5d0c…", "balanceAfter": 1818, "createdAt": "2026-08-12T14:40:03Z" },
+    { "id": 88190, "bucket": "plan",  "delta": 2500, "reason": "plan_grant",
+      "balanceAfter": 2500, "createdAt": "2026-08-01T00:00:04Z" },
+    { "id": 88189, "bucket": "plan",  "delta": -660, "reason": "plan_expiry",
+      "balanceAfter": 0, "createdAt": "2026-08-01T00:00:03Z" },
+    { "id": 87004, "bucket": "topup", "delta": 5000, "reason": "topup_purchase",
+      "paymentId": "pay_3c1a…", "balanceAfter": 5000, "createdAt": "2026-07-14T11:22:41Z" }
+  ],
+  "nextCursor": "eyJpZCI6…"
+}
+```
+
+Every movement, with its bucket. This is what a support conversation about "where did my credits go" is answered from, so it is a first-class endpoint rather than an admin tool.
+
+### Webhooks — server to server
+
+```
+POST /v1/webhooks/stripe
+POST /v1/webhooks/razorpay
+```
+
+Not called by the client and listed here only so nobody is surprised by two unauthenticated routes. Both verify the provider's signature before parsing, store the event, acknowledge `200` immediately, and process asynchronously. A duplicate delivery is acknowledged and dropped. Details in [`03-backend-architecture.md`](03-backend-architecture.md) §8.5.
+
+---
+
+## 8. WebSocket
 
 ```
 wss://api.zipzop.app/v1/ws?token=<access_token>
@@ -630,8 +811,13 @@ Server → client, one JSON object per message:
 
 { "type": "asset.ready",   "assetId": "ast_4c8e…", "durationMs": 623480 }
 
-{ "type": "credits.updated", "balance": 318 }
+{ "type": "credits.updated", "plan": 1818, "topup": 500, "total": 2318, "facemapSeconds": 240 }
+
+{ "type": "subscription.updated", "plan": "pro", "status": "active",
+  "currentPeriodEnd": "2026-09-01T00:00:00Z" }
 ```
+
+`subscription.updated` is what closes the loop after checkout: the user returns from the provider, the webhook lands a second later, and this event flips the interface to the new plan without the client having to poll. Poll `GET /me` as the fallback if the socket is closed.
 
 `job.succeeded` carries no result payload — the client fetches `GET /jobs/{id}`. Keeping results off the socket means one delivery path for results whether the socket was connected or not.
 
@@ -641,7 +827,7 @@ Client → server: `{"type":"ping"}` every 30 seconds. The server replies `{"typ
 
 ---
 
-## 8. Error codes
+## 9. Error codes
 
 | Code | HTTP | When | `details` |
 |---|---|---|---|
@@ -657,9 +843,13 @@ Client → server: `{"type":"ping"}` every 30 seconds. The server replies `{"typ
 | `UNSUPPORTED_MEDIA` | 422 | Codec or container we cannot read | `detectedFormat` |
 | `MEDIA_TOO_LONG` | 422 | Over the duration limit | `durationMs`, `maxDurationMs` |
 | `FILE_TOO_LARGE` | 422 | Over the size limit | `sizeBytes`, `maxSizeBytes` |
-| `INSUFFICIENT_CREDITS` | 402 | Balance below job cost | `required`, `available` |
+| `INSUFFICIENT_CREDITS` | 402 | Combined `plan` + `topup` balance below job cost | `required`, `available`, `breakdown` |
 | `STORAGE_QUOTA_EXCEEDED` | 402 | Account storage full | `usedBytes`, `limitBytes` |
-| `CONCURRENCY_LIMIT` | 429 | Too many jobs of this family running | `family`, `limit` |
+| `PLAN_LIMIT_EXCEEDED` | 403 | Asked for something the tier does not include — 4K on free, face mapping without a subscription | `requested`, `allowed`, `requiredPlan` |
+| `FAIR_USE_EXCEEDED` | 403 | Past the monthly ceiling on an unlimited tier | `usedCredits`, `ceiling`, `resetsAt` |
+| `SUBSCRIPTION_REQUIRED` | 403 | Feature needs any paid plan | `requiredPlan` |
+| `CHECKOUT_FAILED` | 502 | The payment provider rejected the session | `provider` |
+| `CONCURRENCY_LIMIT` | 429 | Too many jobs of this family running for this plan | `family`, `limit`, `plan` |
 | `RATE_LIMITED` | 429 | Too many requests | `retryAfterSeconds` |
 | `NO_SPEECH_DETECTED` | — | Job failure: nothing to transcribe or trim | — |
 | `MEDIA_UNREADABLE` | — | Job failure: file corrupt or truncated | — |
@@ -670,7 +860,7 @@ The last four appear as a job's `error`, not as an HTTP response — the request
 
 ---
 
-## 9. Endpoint summary
+## 10. Endpoint summary
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -695,19 +885,26 @@ The last four appear as a job's `error`, not as an HTTP response — the request
 | `GET` | `/jobs/{id}` | Job status and result |
 | `GET` | `/jobs` | List jobs |
 | `POST` | `/jobs/{id}/cancel` | Cancel a job |
-| `GET` | `/credits/ledger` | Credit history |
+| `GET` | `/plans` | Pricing table — public, no auth |
+| `POST` | `/billing/checkout` | Subscribe or change plan |
+| `POST` | `/billing/topup` | Buy non-expiring credits |
+| `POST` | `/billing/portal` | Provider-hosted management page |
+| `POST` | `/billing/cancel` | Cancel at period end |
+| `GET` | `/credits/ledger` | Every credit movement, with its bucket |
+| `POST` | `/webhooks/stripe` | Provider → server, signature-verified |
+| `POST` | `/webhooks/razorpay` | Provider → server, signature-verified |
 | `GET` | `/catalog/luts` | Available colour looks |
 | `GET` | `/catalog/caption-styles` | Available caption styles |
-| `WS` | `/ws` | Live job and credit events |
+| `WS` | `/ws` | Live job, credit and subscription events |
 
 ---
 
-## 10. Building against this before the backend exists
+## 11. Building against this before the backend exists
 
 The frontend does not wait. Two things make that work:
 
 1. **An OpenAPI schema generated from FastAPI** is committed to the repository from day one, even while every endpoint returns a stub. The frontend generates its client types from it, so a mismatch is a build error rather than a bug found in testing.
-2. **A mock server** — Prism or MSW against the same schema — serves realistic fixtures, including a captions result with a few thousand words and at least one deliberately misheard name, a smart-trim result with overlapping-looking ranges, and a job that fails.
+2. **A mock server** — Prism or MSW against the same schema — serves realistic fixtures, including a captions result with a few thousand words and at least one deliberately misheard name, a smart-trim result with overlapping-looking ranges, a job that fails, an account with credits split across two buckets, and one on the free plan hitting `PLAN_LIMIT_EXCEEDED` on 4K export. The paywall states need fixtures as much as the happy path does.
 
 Most of phase 1's frontend — timeline, playback, editing, undo — touches no server at all. Build it against mocks, connect it when the endpoints land.
 

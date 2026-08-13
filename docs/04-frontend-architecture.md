@@ -4,12 +4,14 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 12 August 2026 |
+| **Version** | 1.1 — billing surfaces added |
+| **Date** | 13 August 2026 |
 | **Audience** | Frontend engineers |
 | **Depends on** | [`02-scope-v1.md`](02-scope-v1.md) · [`05-api-contract.md`](05-api-contract.md) |
 | **Platform** | Web only in phase 1 ([`01-product-vision.md`](01-product-vision.md) §4.4) |
 | **Proposed stack** | React 19 · TypeScript · Vite · Zustand + Immer · TanStack Query · WebGL2 |
+
+> **What changed in 1.1.** Billing landed in phase 1 scope, which adds a pricing page, checkout redirects, three balances to display instead of one, and plan gating throughout the editor. §8 covers it. Nothing in the timeline, playback or undo design changes.
 
 > The stack is a proposal, not a constraint from anywhere else. What is **not** negotiable is the shape: an in-memory timeline document that the client owns, a compositing playback engine, and undo built on patches. Those follow from the product, not from React.
 
@@ -40,7 +42,8 @@ src/
     export/               export dialog, progress, download
   media/                  upload, media bin, ingest status
   projects/               project list, create, duplicate, delete
-  account/                sign in, register, credits
+  account/                sign in, register, settings
+  billing/                pricing page, checkout, balances, paywall, ledger
   api/                    generated client, WebSocket, TanStack Query hooks
   ui/                     buttons, dialogs, primitives
 ```
@@ -310,7 +313,56 @@ commit('Add captions', draft => {
 
 ---
 
-## 8. Performance budget
+## 8. Billing surfaces
+
+Billing is server state, so it lives in TanStack Query alongside projects and jobs — never in the editor store. `GET /me` is the single source for plan and balances, invalidated on every `credits.updated` and `subscription.updated` socket event.
+
+### 8.1 Showing three balances without confusing anyone
+
+The API returns `plan`, `topup` and `facemapSeconds` separately ([`05-api-contract.md`](05-api-contract.md) §2). Most of the interface should show **`total`** — it is what the user can spend right now, and the split is an accounting detail they did not ask about.
+
+The split matters in exactly three places:
+
+- **The billing page**, where "1,840 of your monthly credits expire on 1 September" is genuinely useful
+- **The cancellation dialog**, where losing an allowance is worth knowing before confirming
+- **The face mapping tool** (phase 2), which draws on its own meter and must show that meter, not the general balance
+
+Everywhere else, one number.
+
+### 8.2 Checkout
+
+The user leaves the app and comes back. Three rules make that survivable:
+
+1. **Never trust the return.** The user can reach `returnUrl` by pressing back without paying. Treat the return as "possibly paid" and show a confirming state.
+2. **Wait for the truth.** The subscription activates when the provider's webhook lands. Listen for `subscription.updated` on the socket, and poll `GET /me` every 2 seconds for up to 30 seconds as a fallback. Almost always it resolves in under five.
+3. **Have an answer for the slow case.** If nothing arrives in 30 seconds, say so plainly — payment confirmations sometimes take a minute, the credits will appear, here is the billing page. Never a spinner with no exit.
+
+Card details never touch our code. Checkout is a redirect to the provider's hosted page, and the management flows are a redirect to their portal.
+
+### 8.3 Plan gating, without dead ends
+
+The plan's `limits` come down in `GET /me` so the interface can gate itself. Two rules:
+
+**Gate before the click, not after.** `POST /jobs/estimate` returns `blockedBy` — use it. The export button reads *"Export 4K — Business plan"* and opens the pricing page, rather than being clickable and failing.
+
+**Never a dead end.** Every blocked state names what would unblock it and offers the way there. "Not enough credits" is a wall; "You need 40 credits and have 12 — top up, or upgrade to Pro for 2,500/month" is a decision.
+
+The server enforces all of this regardless ([`03-backend-architecture.md`](03-backend-architecture.md) §7). Client-side gating is presentation, and should never be the only thing standing between a free account and a 4K render.
+
+### 8.4 Running out mid-project
+
+The worst moment in the product: eight clips arranged, captions half-generated, and the credits run out.
+
+- Editing **never stops**. Cutting, trimming and arranging cost nothing and must keep working.
+- The already-applied AI results stay on the timeline. Nothing is taken back.
+- Only new AI jobs and export are blocked, and each blocked control says so in place.
+- The project is saved, intact, and waiting after they top up.
+
+Nothing about running out of credits should ever risk losing work.
+
+---
+
+## 9. Performance budget
 
 Numbers to hold the build against, not aspirations.
 
@@ -328,7 +380,7 @@ Where the time actually goes, in order: video decode, WebGL draw, React re-rende
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 | Layer | Approach |
 |---|---|
@@ -341,7 +393,7 @@ Where the time actually goes, in order: video decode, WebGL draw, React re-rende
 
 ---
 
-## 10. Sequencing
+## 11. Sequencing
 
 Ordered so the riskiest work is proven earliest, and so nothing waits on the backend.
 
@@ -354,13 +406,16 @@ Ordered so the riskiest work is proven earliest, and so nothing waits on the bac
 7. **Persistence** — autosave, conflicts, crash recovery.
 8. **AI tools** — panels, progress, result application.
 9. **Export** — dialog, progress, download.
-10. **Account and credits** — sign in, balance, history.
+10. **Account** — sign in, register, settings.
+11. **Billing** — pricing page, checkout, balances, paywall states, ledger.
 
-Steps 1–5 touch no server at all. Steps 6 onward run against the mock server until the endpoints land.
+Steps 1–5 touch no server at all. Steps 6 onward run against the mock server until the endpoints land — including billing, whose paywall and insufficient-credit states are fixtures rather than something to be tested by actually running out of money.
+
+**Billing last is deliberate.** It is the least uncertain work in the list and the easiest to parallelise or hand off, whereas the compositor is the one piece nobody can rescue if it turns out harder than expected. If the schedule compresses, this is the ordering that leaves the risky work already finished.
 
 ---
 
-## 11. Risks
+## 12. Risks
 
 | Risk | Why it matters | What we do |
 |---|---|---|
@@ -370,6 +425,8 @@ Steps 1–5 touch no server at all. Steps 6 onward run against the mock server u
 | **Memory on long projects** | Peaks, thumbnails and textures accumulate | Cap caches by total bytes, evict by distance from the playhead |
 | **Grade mismatch with export** | Users see one picture, get another | Shared LUT files and a shared frame-comparison fixture on both sides (§4.4) |
 | **Timeline document schema drift** | The frontend and renderer disagree about a field | Types generated from the OpenAPI schema; the contract is the single source |
+| **Checkout returns before the webhook** | User pays, comes back, and the app still says "Free" | Confirming state plus polling fallback (§8.2). Never infer success from the redirect |
+| **Paywalls that dead-end** | A blocked control with no way forward is the most expensive UX bug in a freemium product | Every blocked state names the unblock and links to it (§8.3) |
 
 ---
 
