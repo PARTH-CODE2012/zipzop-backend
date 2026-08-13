@@ -30,12 +30,24 @@ flowchart TB
         CDN["CloudFront<br/>signed URLs"]
     end
 
+    subgraph pay["Payment providers"]
+        ST["Stripe<br/>USD · global"]
+        RZ["Razorpay<br/>INR · India"]
+    end
+
     subgraph workers["Celery workers — one service per queue"]
         ING["ingest<br/>probe · proxy · peaks"]
         ANA["analysis<br/>captions · trim · colour"]
         REN["render<br/>export via FFmpeg"]
+        BIL["billing<br/>webhooks · grants"]
         INF["inference — phase 2<br/>face map · lip sync · GPU"]
+        BEAT["beat — hourly renewal sweep<br/>nightly ledger reconciliation"]
     end
+
+    UI -.->|"redirect to hosted checkout<br/>card data never reaches us"| pay
+    pay -->|"signed webhooks"| API
+    RD -->|"dispatch"| BIL
+    BEAT -->|"renew, expire, grant"| PG
 
     UI -->|"REST: projects, jobs, autosave"| API
     UI -.->|"PUT direct to storage<br/>presigned, 15 min"| S3
@@ -73,6 +85,8 @@ flowchart TB
 ```
 
 Dashed border on `inference`: phase 2 only. Nothing else in this picture changes when it arrives — that is the point of the design.
+
+Three edges leave the browser without touching FastAPI: uploads go straight to S3, playback comes straight from the CDN, and checkout redirects straight to the payment provider. Each avoids a cost or a liability — bandwidth, bandwidth, and card data respectively.
 
 ---
 

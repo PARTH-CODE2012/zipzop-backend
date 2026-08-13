@@ -4,12 +4,16 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 12 August 2026 |
+| **Version** | 1.1 — billing and subscriptions added |
+| **Date** | 13 August 2026 |
 | **Audience** | Backend engineers |
 | **Depends on** | [`01-product-vision.md`](01-product-vision.md) · [`02-scope-v1.md`](02-scope-v1.md) |
 | **Pairs with** | [`05-api-contract.md`](05-api-contract.md) — the wire format · [`04-frontend-architecture.md`](04-frontend-architecture.md) — the client |
 | **Stack** | Python 3.12 · FastAPI · PostgreSQL 16 · Redis 7 · Celery · S3 + CloudFront · FFmpeg |
+| **Cloud** | AWS, on a company account (confirmed 13 August 2026) |
+| **Payments** | Stripe (global, USD) + Razorpay (India, INR) — both from launch |
+
+> **What changed in 1.1.** The commercial model was settled on 13 August 2026: four subscription tiers, monthly credit allowances that expire, purchased top-up credits that do not, a separate metered allowance for face mapping, and two payment providers live at launch. That adds §8 (billing), three balances instead of one in §5.4, a priority field on jobs, and plan gating in the export renderer. Nothing already built changes shape.
 
 **Diagrams:** [system overview](diagrams/system-overview.md) · [data model](diagrams/data-model.md) · [job lifecycle](diagrams/job-lifecycle.md)
 
@@ -41,29 +45,35 @@ These are the rules the rest of the document follows. When something below looks
 3. **Nothing is baked until export.** Cuts, grades, captions and transitions live as data in the timeline document. Pixels change once, at the end.
 4. **Jobs return the smallest thing that works.** If a tool can express its result as data instead of a video file, it must. Data is cheaper to produce, faster to deliver, and stays editable.
 5. **The API is client-agnostic.** No HTML, no cookie-dependent state, no assumption that the caller is a browser. The web app and a future native app are the same kind of client. This is what makes "reuse the backend for mobile" true rather than aspirational.
-6. **Money is double-entry.** Credits move through an append-only ledger. A balance is a cached projection of it, never the source of truth.
+6. **Money is double-entry.** Credits move through an append-only ledger. A balance is a cached projection of it, never the source of truth. Because credits now come in kinds that expire differently (§5.4), every ledger row names the bucket it moved — a balance that cannot say *which* credits it holds cannot expire them correctly.
+7. **A plan is data, not code.** What a tier includes — credits, resolution ceiling, watermark, queue priority — lives in a table, not in `if` statements. Pricing will change more often than anything else in this system.
 
 ---
 
 ## 3. System components
 
 ```
-Browser (editor)
-   │
-   │  REST over HTTPS  ·  WebSocket for live job updates
-   ▼
+Browser (editor)                        Stripe · Razorpay
+   │                                          │
+   │  REST · WebSocket                        │  signed webhooks
+   ▼                                          ▼
 API Gateway — FastAPI, stateless, N replicas
    │
-   ├── Postgres        projects, timelines, jobs, ledger, assets
-   ├── Redis           Celery broker · cache · pub/sub for WebSocket fan-out
-   └── S3              originals, proxies, derived media, exports
-                            ▲
-Celery workers ─────────────┘
-   ├── ingest queue     probe, proxy, thumbnail, waveform peaks     (fast, CPU)
-   ├── analysis queue   captions, smart trim, colour analysis        (seconds, CPU/small GPU)
-   ├── render queue     export: timeline document → finished file    (minutes, CPU-heavy)
-   └── inference queue  face mapping, lip sync            (phase 2, GPU, scales to zero)
+   ├── Postgres   projects, timelines, jobs, ledger, assets, subscriptions, payments
+   ├── Redis      Celery broker · cache · pub/sub for WebSocket fan-out
+   └── S3         originals, proxies, derived media, exports
+                       ▲
+Celery workers ────────┘
+   ├── ingest queue     probe, proxy, thumbnail, waveform peaks    (fast, CPU)
+   ├── analysis queue   captions, smart trim, colour analysis      (seconds, CPU/small GPU)
+   ├── render queue     export: timeline document → finished file  (minutes, CPU-heavy)
+   ├── inference queue  face mapping, lip sync           (phase 2, GPU, scales to zero)
+   └── billing queue    webhook processing, plan grants            (fast, CPU)
+
+Celery beat  ── hourly renewal sweep · nightly ledger reconciliation · storage lifecycle
 ```
+
+Each of the first four queues is split into priority bands by plan (§5.3); one worker service per queue drains its bands in order.
 
 **The API gateway never does heavy work.** It validates, writes to Postgres, enqueues, and returns. Nothing that touches media happens in a request handler.
 
@@ -116,9 +126,12 @@ CREATE TABLE users (
     display_name        TEXT,
     status              user_status NOT NULL DEFAULT 'active',
 
-    -- Cached projection of credit_ledger. Never write without a matching
-    -- ledger row in the same transaction. Reconciled nightly.
-    credit_balance      INTEGER     NOT NULL DEFAULT 0 CHECK (credit_balance >= 0),
+    -- Cached projections of credit_ledger, one per bucket. Never write any of
+    -- these without a matching ledger row in the same transaction. Reconciled
+    -- nightly against the ledger. See §5.4 for what each bucket means.
+    plan_credits        INTEGER     NOT NULL DEFAULT 0 CHECK (plan_credits >= 0),
+    topup_credits       INTEGER     NOT NULL DEFAULT 0 CHECK (topup_credits >= 0),
+    facemap_seconds     INTEGER     NOT NULL DEFAULT 0 CHECK (facemap_seconds >= 0),
 
     storage_bytes_used  BIGINT      NOT NULL DEFAULT 0,
 
@@ -270,6 +283,11 @@ CREATE TABLE jobs (
     status            job_status NOT NULL DEFAULT 'queued',
     progress          SMALLINT   NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
 
+    -- Queue band, copied from the user's plan at creation time. Copied rather
+    -- than joined so that a downgrade mid-job does not demote work already
+    -- queued, and so the queue router never has to touch the users table.
+    priority          SMALLINT   NOT NULL DEFAULT 0,
+
     -- What to do. Asset ids, clip ranges, tool parameters.
     input             JSONB NOT NULL,
 
@@ -312,14 +330,22 @@ ALTER TABLE media_assets
 
 #### credit_ledger
 
-Append-only. Never updated, never deleted.
+Append-only. Never updated, never deleted. Every row names the **bucket** it moved, because the buckets expire on different schedules and a balance that cannot say which credits it holds cannot expire them correctly.
 
 ```sql
+CREATE TYPE credit_bucket AS ENUM (
+    'plan',      -- monthly subscription allowance — expires at period end
+    'topup',     -- purchased à la carte           — never expires
+    'facemap'    -- face-mapping seconds           — expires at period end
+);
+
 CREATE TYPE ledger_reason AS ENUM (
-    'signup_grant',   -- free credits on registration
-    'purchase',       -- bought
-    'reserve',        -- held when a job starts        (negative)
-    'refund',         -- released when a job fails     (positive)
+    'signup_grant',    -- free credits on registration
+    'plan_grant',      -- monthly allowance at renewal          (positive)
+    'plan_expiry',     -- unused allowance swept at period end   (negative)
+    'topup_purchase',  -- bought à la carte                     (positive)
+    'reserve',         -- held when a job starts                (negative)
+    'refund',          -- released when a job fails             (positive)
     'admin_grant',
     'admin_adjust'
 );
@@ -327,20 +353,144 @@ CREATE TYPE ledger_reason AS ENUM (
 CREATE TABLE credit_ledger (
     id             BIGSERIAL PRIMARY KEY,
     user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    bucket         credit_bucket NOT NULL,
     delta          INTEGER NOT NULL,            -- signed; never zero
     reason         ledger_reason NOT NULL,
     job_id         UUID REFERENCES jobs(id) ON DELETE SET NULL,
-    balance_after  INTEGER NOT NULL,            -- running balance, for audit
+    payment_id     UUID,                        -- FK added after payments table
+    balance_after  INTEGER NOT NULL,            -- running balance of THIS bucket
     note           TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX ON credit_ledger (user_id, created_at DESC);
-CREATE UNIQUE INDEX ON credit_ledger (job_id, reason)
-    WHERE job_id IS NOT NULL;   -- one reserve and at most one refund per job
+
+-- One reserve and at most one refund per job PER BUCKET. A single job may draw
+-- from two buckets (§5.4), so the bucket is part of the key.
+CREATE UNIQUE INDEX ON credit_ledger (job_id, reason, bucket)
+    WHERE job_id IS NOT NULL;
 ```
 
-That last index is the guard that makes double-refund impossible even if a worker retries its completion handler.
+That last index is the guard that makes a double refund impossible even if a worker retries its completion handler.
+
+#### plans
+
+A tier is a row, not a branch in code. Pricing changes more often than anything else here, and a price change should not require a deploy.
+
+```sql
+CREATE TYPE plan_code AS ENUM ('free', 'pro', 'business', 'studio');
+CREATE TYPE watermark_mode AS ENUM ('forced', 'none', 'custom');
+
+CREATE TABLE plans (
+    code                plan_code PRIMARY KEY,
+    display_name        TEXT NOT NULL,
+
+    monthly_credits     INTEGER NOT NULL,      -- granted at each renewal, expires
+    facemap_seconds     INTEGER NOT NULL,      -- GPU seconds included, expires
+    fair_use_credits    INTEGER,               -- hard ceiling for 'unlimited' tiers
+
+    max_export_height   INTEGER NOT NULL,      -- 720 / 1080 / 2160
+    watermark           watermark_mode NOT NULL,
+    queue_priority      SMALLINT NOT NULL,     -- higher runs first
+
+    price_usd_cents     INTEGER,               -- NULL for free
+    price_inr_paise     INTEGER,
+
+    is_public           BOOLEAN NOT NULL DEFAULT true,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### subscriptions
+
+```sql
+CREATE TYPE sub_status       AS ENUM ('active', 'past_due', 'cancelled', 'expired');
+CREATE TYPE payment_provider AS ENUM ('stripe', 'razorpay');
+
+CREATE TABLE subscriptions (
+    id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id                  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan                     plan_code NOT NULL REFERENCES plans(code),
+    status                   sub_status NOT NULL DEFAULT 'active',
+
+    provider                 payment_provider,   -- NULL for the free plan
+    provider_customer_id     TEXT,
+    provider_subscription_id TEXT,
+    currency                 CHAR(3),            -- 'USD' | 'INR'
+
+    current_period_start     TIMESTAMPTZ NOT NULL,
+    current_period_end       TIMESTAMPTZ NOT NULL,
+    cancel_at_period_end     BOOLEAN NOT NULL DEFAULT false,
+
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One live subscription per user, whichever provider it came through.
+-- This is what stops someone holding a Stripe and a Razorpay plan at once.
+CREATE UNIQUE INDEX one_live_subscription ON subscriptions (user_id)
+    WHERE status IN ('active', 'past_due');
+
+CREATE UNIQUE INDEX ON subscriptions (provider, provider_subscription_id)
+    WHERE provider_subscription_id IS NOT NULL;
+
+CREATE INDEX ON subscriptions (current_period_end)
+    WHERE status IN ('active', 'past_due');   -- drives the renewal sweep
+```
+
+Every user has a subscription row, including free users (`plan = 'free'`, `provider = NULL`). Uniform rows mean the renewal and grant logic has no special case for the free tier — free users get their monthly allowance through exactly the same path as paying ones.
+
+#### payments
+
+```sql
+CREATE TYPE payment_kind   AS ENUM ('subscription', 'topup');
+CREATE TYPE payment_status AS ENUM ('pending', 'succeeded', 'failed', 'refunded');
+
+CREATE TABLE payments (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subscription_id     UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+
+    provider            payment_provider NOT NULL,
+    provider_payment_id TEXT NOT NULL,
+    kind                payment_kind NOT NULL,
+    status              payment_status NOT NULL DEFAULT 'pending',
+
+    amount_minor        INTEGER NOT NULL,       -- cents or paise, never floats
+    currency            CHAR(3) NOT NULL,
+    credits_granted     INTEGER,                -- top-ups only
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    settled_at          TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX ON payments (provider, provider_payment_id);
+
+ALTER TABLE credit_ledger
+    ADD CONSTRAINT fk_ledger_payment
+    FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL;
+```
+
+Money is stored in **minor units as integers** — cents and paise. Never floats, and never a shared column for two currencies without the currency beside it.
+
+#### provider_events
+
+Both providers retry webhooks, sometimes for days, and both can deliver out of order. Without this table a retried `invoice.paid` grants the allowance twice.
+
+```sql
+CREATE TABLE provider_events (
+    provider     payment_provider NOT NULL,
+    event_id     TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    received_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processed_at TIMESTAMPTZ,
+    error        TEXT,
+    PRIMARY KEY (provider, event_id)
+);
+```
+
+The handler inserts the event first and processes second. A duplicate delivery collides on the primary key and is acknowledged without being replayed.
 
 #### Phase 2 tables
 
@@ -433,54 +583,128 @@ Steps 3–5 are the only place credits move on the way out, and they are inside 
 
 **Cancellation.** Allowed while `queued`, and while `running` for render and inference jobs where the saving is real. The worker checks a Redis cancellation flag between stages and aborts cleanly. Cancelled jobs refund in full.
 
-### 5.3 Concurrency and fairness
+### 5.3 Concurrency, priority and fairness
 
-Per-user limits, enforced at creation:
+Per-user concurrency limits, enforced at creation and scaled by plan:
 
-| Family | Concurrent jobs per user |
-|---|---|
-| analysis | 3 |
-| render (export) | 2 |
-| inference | 1 |
+| Family | free | pro | business | studio |
+|---|---|---|---|---|
+| analysis | 1 | 3 | 5 | 8 |
+| render (export) | 1 | 2 | 3 | 5 |
+| inference | 0 | 1 | 2 | 3 |
 
-Beyond the limit, jobs stay `queued` and start as slots free up — the request still succeeds, so the client never has to handle "try again later". These limits exist to stop one user monopolising a worker pool, and they matter most for the GPU pool in phase 2, where a single user could otherwise occupy every card.
+Beyond the limit, jobs stay `queued` and start as slots free up — the request still succeeds, so the client never has to handle "try again later". These limits stop one user monopolising a worker pool, and they matter most for the GPU pool, where a single account could otherwise occupy every card.
+
+**Queue priority** is the other half of what the tiers sell. Each family's queue is split into bands, and workers drain the highest band first:
+
+```
+analysis.p30   studio          ─┐
+analysis.p20   business         ├─ one worker service,
+analysis.p10   pro              │  consuming in priority order
+analysis.p0    free            ─┘
+```
+
+`jobs.priority` is copied from the plan at creation and never re-read, so a downgrade mid-flight does not demote work already queued, and the router never touches the `users` table.
+
+> **Priority is relative, not a promise.** "Fast queue" means ahead of free users, not a guaranteed completion time. Nothing in the product should show an SLA we have not measured — under light load every band is instant, and under heavy load the honest statement is the ordering, not a duration.
+
+`studio` is described to customers as a *dedicated priority queue*, which is what band 30 is. It is not a dedicated machine: a reserved GPU instance costs several times the plan price on its own, so selling one at that price would lose money on every subscriber.
 
 ### 5.4 Credits
 
-Reserve on start, settle on success, refund on failure.
+#### The three buckets
 
-| Event | Ledger row | Cached balance |
+Credits are not one pool. They arrive by different routes and expire on different schedules, and conflating them produces either a user who loses credits they paid for or a business that gives away GPU time.
+
+| Bucket | Where it comes from | Expires | Pays for |
+|---|---|---|---|
+| **`plan`** | The monthly allowance, granted at each renewal | **Yes** — swept at period end | Any tool |
+| **`topup`** | Bought à la carte | **Never** | Any tool |
+| **`facemap`** | Included GPU seconds, granted at each renewal | **Yes** — swept at period end | Face mapping and lip sync only |
+
+#### Spend order: soonest to expire, first
+
+When a job needs 50 credits and the user holds 20 `plan` and 500 `topup`, it takes **20 from `plan` and 30 from `topup`** — never 50 from `topup`.
+
+This ordering is not a detail. Drawing from `topup` first would mean a user's monthly allowance quietly expires unused every month while the credits they *paid extra for* drain away. It looks like sharp practice, it generates refund requests, and it is trivially avoidable.
+
+So a single job may produce **two** `reserve` rows, one per bucket — which is why `bucket` is part of the ledger's unique index.
+
+```python
+def allocate(user, cost: int) -> dict[str, int]:
+    """Draw from the bucket that expires soonest. Raises if short."""
+    take_plan  = min(user.plan_credits, cost)
+    take_topup = cost - take_plan
+    if take_topup > user.topup_credits:
+        raise InsufficientCredits(required=cost,
+                                  available=user.plan_credits + user.topup_credits)
+    return {"plan": take_plan, "topup": take_topup}
+```
+
+Face mapping draws from `facemap` first and falls back to general credits at an overage rate once it is exhausted (§5.5) — so the meter caps our exposure without hard-blocking a paying customer mid-project.
+
+#### Reserve, settle, refund
+
+| Event | Ledger rows | Cached balances |
 |---|---|---|
-| Job created, cost 40 | `reserve`, delta −40 | −40 |
+| Job created, cost 50 | `reserve` −20 `plan`, `reserve` −30 `topup` | −20 / −30 |
 | Job succeeds | none — the reservation *is* the charge | unchanged |
-| Job fails or is cancelled | `refund`, delta +40 | +40 |
+| Job fails or is cancelled | `refund` +20 `plan`, `refund` +30 `topup` | +20 / +30 |
 
-Two properties matter here. First, a user cannot start work they cannot pay for, because the money moves before the job is queued. Second, a failure on our side never costs the user anything, and it happens automatically rather than through support.
+A refund returns credits **to the buckets they were taken from**, read back from the job's `reserve` rows rather than recomputed — recomputing could allocate differently if balances moved in between.
 
-`users.credit_balance` is a cache. Every write to it happens in the same transaction as its ledger row. A nightly job re-sums the ledger per user and alerts on any drift — if that alarm ever fires, there is a bug in a transaction boundary.
+**One edge case worth handling explicitly.** If the billing period rolls over while a job is running and the job then fails, refunding to `plan` would credit a bucket that has already been swept and re-granted. In that case the refund goes to **`topup`** instead, which never expires. The user is made whole, and it cannot be farmed — starting a job costs the same credits either way.
+
+Two properties hold throughout. A user cannot start work they cannot pay for, because the money moves inside the same transaction that queues the job. And a failure on our side never costs the user anything, automatically, without anyone contacting support.
+
+The three balances on `users` are caches. Every write happens in the same transaction as its ledger row. A nightly job re-sums the ledger per user per bucket and alerts on any drift — if that alarm fires, there is a bug in a transaction boundary.
+
+#### Fair use
+
+`studio` is sold as unlimited. Unlimited against usage-based infrastructure has no floor, so `plans.fair_use_credits` is a hard monthly ceiling, set well above any plausible real use. Crossing it does not cut anyone off silently: the API returns `FAIR_USE_EXCEEDED`, and it is a conversation, not an outage.
 
 ### 5.5 What things cost
 
-Cost is a function of the tool and the media duration, computed at creation time from the probed `duration_ms`, so the client can show the price before the user commits.
+Cost is a function of the tool and the media duration, computed at creation from the probed `duration_ms`, so the client can show the price before the user commits.
 
 ```python
 COST_PER_MINUTE = {
     "captions":       2,
     "smart_trim":     1,
     "color_analysis": 1,
-    "export":         2,   # open decision G — may be free
+    "export":         2,
     # phase 2
     "denoise":        3,
-    "face_map":      25,
+    "dereverb":       3,
+    "face_map":      25,   # billed in facemap seconds first, then credits
     "lip_sync":      20,
 }
+
+FACEMAP_OVERAGE_CREDITS_PER_SECOND = 0.5   # once the included meter is spent
 
 def cost(tool: str, duration_ms: int) -> int:
     minutes = math.ceil(duration_ms / 60_000)
     return COST_PER_MINUTE[tool] * max(1, minutes)
 ```
 
-🟠 **These numbers are placeholders.** The ratios are meaningful — face mapping is roughly an order of magnitude above captioning, which reflects real hardware cost — but the absolute values wait on open decision B, the commercial model. Keep them in one module so pricing changes without touching job logic.
+#### The plan catalogue
+
+Proposed starting values, derived from the tiers agreed on 13 August. A ten-minute video taken through captions, smart trim, a grade and an export costs **60 credits**, which is the unit the "≈ videos per month" figure is calibrated against.
+
+| | free | pro | business | studio |
+|---|---|---|---|---|
+| Price | $0 | $19.99 / ₹999 | $49.99 / ₹1,999 | $99.99 / ₹2,999 |
+| `monthly_credits` | 300 | 2,500 | 8,000 | 30,000 |
+| Shown as | ≈3 videos | ≈30 videos | ≈100 videos | Unlimited |
+| `facemap_seconds` | 0 | 300 | 1,200 | 3,600 |
+| `fair_use_credits` | — | — | — | 30,000 |
+| `max_export_height` | 720 | 1080 | 2160 | 2160 |
+| `watermark` | forced | none | none | custom |
+| `queue_priority` | 0 | 10 | 20 | 30 |
+
+Each tier carries roughly 25–40% more credits than its headline video count needs. That headroom is deliberate: re-running captions because the first pass misheard a name must not feel like burning a whole video, which is the failure mode that made "videos per month" unusable as an internal unit in the first place.
+
+🟠 **The credit numbers are a proposal, the ratios are not.** Face mapping being an order of magnitude above captioning reflects real hardware cost and should survive any repricing. The absolute values should be recalibrated once we have measured cost-per-job on real hardware — everything lives in one module and one table, so a repricing is a data change.
 
 ---
 
@@ -548,14 +772,29 @@ Export is where everything becomes pixels. It is a job like any other — `tool 
 
 **Input:** the project id and the timeline version being exported, plus a preset (resolution, aspect ratio, quality). The renderer reads the timeline document, not the client's request — the client cannot ask for something the saved project does not contain.
 
+**The plan is enforced here, not in the client.** Two of the four things a tier sells are decided at this moment:
+
+```python
+plan = user.subscription.plan
+height = min(requested_height, plan.max_export_height)   # 720 / 1080 / 2160
+watermark = {
+    'forced': STANDARD_WATERMARK,          # free
+    'none':   None,                        # pro, business
+    'custom': user.custom_watermark_key,   # studio
+}[plan.watermark]
+```
+
+A client asking for 4K on the free plan is rejected with `PLAN_LIMIT_EXCEEDED` rather than silently downgraded — a user who chose 4K and received 720p files a bug report. Watermarking is never optional client-side, for the obvious reason.
+
 **Steps:**
 
 1. Resolve the timeline: every clip, its source asset, in/out points, transforms, effects, transitions, text.
 2. Fetch **original** media — never the proxies.
 3. Build one FFmpeg filter graph for the whole composition: trims, concat, scaling, crop and reframe, colour LUTs at their configured strength, text overlays with their per-word timings, transitions, audio mix with per-clip volume and fades.
-4. Encode to H.264/AAC at the requested preset.
-5. Upload to `exports/`, create a `media_assets` row, set `output_asset_id`.
-6. Publish completion; the client offers a download link.
+4. Apply the watermark overlay if the plan requires one.
+5. Encode to H.264/AAC at the resolved preset.
+6. Upload to `exports/`, create a `media_assets` row, set `output_asset_id`.
+7. Publish completion; the client offers a download link.
 
 **Why server-side.** Browser export via WebCodecs is uneven across browsers and unusable on Safari for our purposes; a phone would take longer to export than to record. More importantly, this is the same pipeline that phase 2's inference jobs plug into — building it now means face mapping arrives as a new filter stage rather than a new subsystem. One render path also means a video looks the same wherever it was made, which matters the first time a user reports a colour difference.
 
@@ -563,7 +802,108 @@ Export is where everything becomes pixels. It is a job like any other — `tool 
 
 ---
 
-## 8. Live updates
+## 8. Billing
+
+Two providers run side by side from launch: **Stripe** for global cards in USD, **Razorpay** for Indian cards and UPI in INR. This is a launch-strategy decision — global creators are the primary market and India is a priority second, and Stripe's India coverage plus the RBI rules on recurring mandates make one provider insufficient for both.
+
+The cost is real: two webhook flows, two subscription state machines, two reconciliation paths. The design below exists to keep that cost contained to one module.
+
+### 8.1 One internal model, two adapters
+
+Nothing outside `billing/providers/` knows which provider a user came through. Each adapter implements the same interface and translates provider events into our vocabulary:
+
+```
+billing/
+  providers/
+    base.py        create_checkout · create_portal_session · parse_webhook · verify_signature
+    stripe.py
+    razorpay.py
+  service.py       plan changes, grants, expiry — provider-agnostic
+  webhooks.py      one route per provider, both funnel into service.py
+```
+
+`subscriptions.provider` records the origin; everything else — allowances, gating, priority — reads `plans` and never branches on it. A third provider later is a new adapter, not a new code path through the application.
+
+### 8.2 Currency and provider routing
+
+The user's IP **suggests** a country; the user can override it at checkout, and the choice is stored on the subscription.
+
+| Suggested | Provider | Currency |
+|---|---|---|
+| India | Razorpay | INR |
+| Everywhere else | Stripe | USD |
+
+IP alone is unreliable — VPNs, travellers, expatriates — so it is a default, never a lock. Someone in London paying with an Indian card must be able to choose INR, and someone in Mumbai billing a foreign company must be able to choose USD.
+
+**Once chosen, the provider is fixed for the life of the subscription.** Switching means cancelling and resubscribing, because no provider can migrate another's mandate. The prices differ between currencies (regional pricing), so a switch is a genuine plan change and should be presented as one.
+
+### 8.3 Subscription lifecycle
+
+```
+                    checkout completed
+   free ────────────────────────────────► active
+     ▲                                    │  │  ▲
+     │                                    │  │  │ payment recovered
+     │              period ends,          │  │  │
+     │              not renewed           │  ▼  │
+     └──────────── expired ◄───────────── past_due
+                      ▲                      │
+                      │  period ends         │ dunning exhausted
+                      └───── cancelled ◄─────┘
+                              (cancel_at_period_end)
+```
+
+- **Cancelling** sets `cancel_at_period_end`. Access and credits continue until `current_period_end`, then the account drops to `free` and the remaining `plan` and `facemap` balances are swept. Purchased `topup` credits survive — they were paid for separately and never expire.
+- **`past_due`** is a failed renewal. The provider retries on its own schedule; we keep the plan active during that window rather than cutting service off on a first decline, which is usually an expired card rather than an unwilling customer.
+- **Upgrades** apply immediately and grant the difference in allowance pro rata. **Downgrades** apply at the next period boundary, so nobody loses credits they are mid-way through using.
+
+### 8.4 Renewal and expiry
+
+Every renewal does two things in one transaction: sweep what expired, then grant the new period.
+
+```sql
+BEGIN;
+  -- 1. sweep — plan and facemap only; topup is untouched
+  INSERT INTO credit_ledger (user_id, bucket, delta, reason, balance_after)
+       VALUES (:uid, 'plan',    -:remaining_plan,    'plan_expiry', 0),
+              (:uid, 'facemap', -:remaining_facemap, 'plan_expiry', 0);
+
+  -- 2. grant the new allowance
+  INSERT INTO credit_ledger (user_id, bucket, delta, reason, balance_after)
+       VALUES (:uid, 'plan',    :plan_credits,   'plan_grant', :plan_credits),
+              (:uid, 'facemap', :facemap_seconds,'plan_grant', :facemap_seconds);
+
+  UPDATE users SET plan_credits = :plan_credits, facemap_seconds = :facemap_seconds
+   WHERE id = :uid;
+
+  UPDATE subscriptions
+     SET current_period_start = :new_start, current_period_end = :new_end
+   WHERE id = :sub_id;
+COMMIT;
+```
+
+**Two triggers, deliberately.** The provider webhook (`invoice.paid` / `subscription.charged`) is the primary path and fires within seconds of payment. An hourly sweep over `subscriptions.current_period_end` is the safety net for webhooks that never arrive — they do get lost, and a user whose allowance silently failed to renew is a support ticket we should never receive. Both paths are idempotent through `provider_events` and a period-boundary check, so the sweep firing after the webhook is a no-op.
+
+Free-tier users have no provider and no webhook. Their allowance is granted entirely by the hourly sweep, through the same code path.
+
+### 8.5 Webhook handling
+
+Both providers retry, sometimes for days, and both can deliver out of order.
+
+1. **Verify the signature** before parsing anything. An unsigned or mis-signed request is dropped with `400` and logged — this endpoint is public.
+2. **Insert into `provider_events`.** A duplicate collides on `(provider, event_id)`; acknowledge `200` and stop. Never process twice.
+3. **Acknowledge immediately, process asynchronously.** Both providers treat a slow response as a failure and retry. The route returns `200` as soon as the event is stored; a worker does the work.
+4. **Ignore events for periods already applied.** Out-of-order delivery is normal; a grant for a period we have already granted is dropped rather than doubled.
+
+The endpoints are unauthenticated by necessity and excluded from the normal rate limiter, but rate-limited separately by source IP.
+
+### 8.6 What is not built here
+
+Named so nobody assumes otherwise: invoicing documents, tax calculation and remittance (GST in India, VAT in the EU), and accounting export. Both providers offer tax products that cover most of this, but **choosing and configuring them is not a backend task** and needs an owner outside the development team.
+
+---
+
+## 9. Live updates
 
 Jobs finish while the user is doing something else. They must find out without polling.
 
@@ -583,7 +923,7 @@ Events: `job.progress`, `job.succeeded`, `job.failed`, `credits.updated`. Shapes
 
 ---
 
-## 9. Security
+## 10. Security
 
 | | |
 |---|---|
@@ -599,14 +939,15 @@ Events: `job.progress`, `job.succeeded`, `job.failed`, `credits.updated`. Shapes
 
 ---
 
-## 10. Infrastructure
+## 11. Infrastructure
 
 | Component | Choice | Notes |
 |---|---|---|
 | **API** | FastAPI on ECS Fargate, ≥2 replicas behind an ALB | Stateless; WebSocket connections are sticky per connection but need no shared session |
 | **Database** | RDS PostgreSQL 16, Multi-AZ | pgvector enabled in phase 2 |
 | **Cache / broker** | ElastiCache Redis 7 | Celery broker, cache, pub/sub |
-| **Workers** | Celery on ECS, **one service per queue** | Independent scaling; a backlog of exports must not starve captioning |
+| **Workers** | Celery on ECS, **one service per queue** | Independent scaling; a backlog of exports must not starve captioning. Each service consumes its priority bands in order (§5.3) |
+| **Scheduler** | Celery beat, single instance with a lock | Hourly renewal sweep, nightly ledger reconciliation, storage lifecycle. Must not run twice — the lock is not optional |
 | **GPU workers** | Phase 2 — g5.xlarge or equivalent, autoscaling to zero | Idle GPUs are the most expensive mistake available to us |
 | **Storage** | S3 + CloudFront | Lifecycle rules per prefix (§6.3) |
 | **Migrations** | Alembic | Every schema change reviewed; no destructive migration without a backfill plan |
@@ -615,9 +956,11 @@ Events: `job.progress`, `job.succeeded`, `job.failed`, `credits.updated`. Shapes
 **Observability**, because a job pipeline that fails silently is worse than no pipeline:
 
 - Structured JSON logs carrying `request_id`, `user_id`, `job_id` on every line
-- Metrics: queue depth per queue, job duration by tool, failure rate by `error_code`, credits reserved vs settled, storage per user
-- Alerts: queue depth over threshold, failure rate above 5% for any tool, ledger reconciliation drift, any job `running` longer than its family's ceiling
+- Metrics: queue depth **per priority band**, job duration by tool, failure rate by `error_code`, credits reserved vs settled per bucket, storage per user, **cost per job by tool**
+- Alerts: queue depth over threshold, failure rate above 5% for any tool, ledger reconciliation drift, any job `running` longer than its family's ceiling, **unprocessed `provider_events` older than 15 minutes**, **renewals missed by the hourly sweep**
 - Tracing across API → queue → worker on the job id
+
+**Cost per job is a metric, not a spreadsheet.** The plan credit values in §5.5 are estimates until real hardware says otherwise, and the only way to know whether a tier is profitable is to measure what a job actually costs and compare it to what was charged. Instrument this from the first deploy — retrofitting it means guessing for another quarter.
 
 ### Local development
 
@@ -625,13 +968,13 @@ Events: `job.progress`, `job.succeeded`, `job.failed`, `credits.updated`. Shapes
 
 ---
 
-## 11. What phase 2 and 3 add
+## 12. What phase 2 and 3 add
 
 The point of this design is that later phases add workers, not architecture.
 
 | | Adds | Changes |
 |---|---|---|
-| **Phase 2** — face mapping, lip sync, denoise | GPU worker pool on the `inference` queue · `face_profiles` and `consent_records` · pgvector · consent flow at upload · watermarking in the export renderer | Nothing structural. New `job_tool` values, new worker services, one new filter stage in the renderer. |
+| **Phase 2** — face mapping, lip sync, denoise | GPU worker pool on the `inference` queue · `face_profiles` and `consent_records` · pgvector · consent flow at upload | Nothing structural. New `job_tool` values, new worker services, and the `facemap` bucket — already in the schema — starts being spent. |
 | **Phase 3** — clip finder, templates, upscaling | Speaker tracking in the analysis worker · template definitions · a licensed music catalogue | Timeline document gains a `templateId`; clip finder creates projects via the existing project API. |
 | **Mobile** | Nothing on the server | The API is already client-agnostic (principle 5). A native client is a new consumer of the same contract. |
 
@@ -639,7 +982,7 @@ The one thing to guard: **every new tool must be pushed into the analysis family
 
 ---
 
-## 12. Decisions recorded here
+## 13. Decisions recorded here
 
 Short list of the calls this document makes, so they can be challenged individually rather than as a whole.
 
@@ -655,6 +998,13 @@ Short list of the calls this document makes, so they can be challenged individua
 | 8 | Colour grading is an analysis job | A render job per grade | Applying a LUT is free in the browser and baked at export anyway; only the analysis needs a server |
 | 9 | Optimistic concurrency on the timeline (`version` + 409) | Last-write-wins | Two tabs on one project must not silently destroy each other's work |
 | 10 | Media is immutable; jobs derive new assets | Overwriting in place | "Revert to original" has to be free and always available (§6.4) |
+| 11 | Three credit buckets, spent soonest-to-expire first | One pool | Subscription credits expire and purchased ones do not; spending the wrong one first silently destroys value the user paid for (§5.4) |
+| 12 | Plans are rows in a table | Constants in code | Pricing changes more often than anything else here, and a price change should not need a deploy |
+| 13 | Every user has a subscription row, free included | A nullable plan on `users` | Renewal, grant and expiry then have no special case for free users |
+| 14 | Provider-agnostic core, one adapter per provider | Branching on provider throughout | Two providers at launch and probably a third later; the cost has to stay in one module (§8.1) |
+| 15 | Webhooks stored before they are processed | Processing inline | Both providers retry for days and deliver out of order; without this a retried renewal grants the allowance twice (§8.5) |
+| 16 | Job priority copied from the plan at creation | Joined from the user at dispatch | A downgrade mid-flight must not demote queued work, and the router should never touch `users` |
+| 17 | Plan limits enforced in the renderer | Enforced in the client | A client-side watermark is not a watermark |
 
 ---
 
