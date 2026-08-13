@@ -1,0 +1,791 @@
+<title>AI Video Editor — How It's Built</title>
+<style>
+  :root {
+    --paper:      #F4F6F7;
+    --surface:    #FFFFFF;
+    --surface-2:  #E9EEEF;
+    --ink:        #14181A;
+    --ink-2:      #3E484C;
+    --muted:      #6B7679;
+    --rule:       #CFD7D9;
+    --rule-soft:  #E2E8E9;
+    --accent:     #0E5561;
+    --accent-ink: #0C4A55;
+    --accent-soft:#DFEDEF;
+    --warn:       #92500A;
+    --warn-ink:   #6E3C07;
+    --warn-soft:  #FAF2E4;
+    --risk:       #93142E;
+    --risk-soft:  #FAEAED;
+
+    --f-head: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --measure: 64ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #0D1113;
+      --surface:    #151A1D;
+      --surface-2:  #1C2326;
+      --ink:        #E5EAEB;
+      --ink-2:      #B3BDBF;
+      --muted:      #8A9598;
+      --rule:       #2A3235;
+      --rule-soft:  #1E2528;
+      --accent:     #5FBACA;
+      --accent-ink: #8AD1DC;
+      --accent-soft:#14282D;
+      --warn:       #DFA349;
+      --warn-ink:   #EDBE79;
+      --warn-soft:  #271E12;
+      --risk:       #E8778A;
+      --risk-soft:  #291317;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0D1113;
+    --surface:    #151A1D;
+    --surface-2:  #1C2326;
+    --ink:        #E5EAEB;
+    --ink-2:      #B3BDBF;
+    --muted:      #8A9598;
+    --rule:       #2A3235;
+    --rule-soft:  #1E2528;
+    --accent:     #5FBACA;
+    --accent-ink: #8AD1DC;
+    --accent-soft:#14282D;
+    --warn:       #DFA349;
+    --warn-ink:   #EDBE79;
+    --warn-soft:  #271E12;
+    --risk:       #E8778A;
+    --risk-soft:  #291317;
+  }
+
+  :root[data-theme="light"] {
+    --paper:      #F4F6F7;
+    --surface:    #FFFFFF;
+    --surface-2:  #E9EEEF;
+    --ink:        #14181A;
+    --ink-2:      #3E484C;
+    --muted:      #6B7679;
+    --rule:       #CFD7D9;
+    --rule-soft:  #E2E8E9;
+    --accent:     #0E5561;
+    --accent-ink: #0C4A55;
+    --accent-soft:#DFEDEF;
+    --warn:       #92500A;
+    --warn-ink:   #6E3C07;
+    --warn-soft:  #FAF2E4;
+    --risk:       #93142E;
+    --risk-soft:  #FAEAED;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 63rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  p { margin: 0; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* ---------- hero ---------- */
+
+  .hero {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .hero h1 {
+    font-family: var(--f-head);
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    font-weight: 800;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    color: var(--accent-ink);
+    display: block;
+  }
+
+  .thesis {
+    font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 52ch;
+  }
+
+  .thesis b { color: var(--ink); font-weight: 650; }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.6rem;
+  }
+
+  .chip {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    padding: 0.36rem 0.6rem;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+    color: var(--muted);
+    background: var(--surface);
+  }
+
+  .chip.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- sections ---------- */
+
+  section { display: flex; flex-direction: column; gap: 1.5rem; }
+
+  h2 {
+    font-family: var(--f-head);
+    font-size: clamp(1.5rem, 3.4vw, 2rem);
+    letter-spacing: -0.028em;
+    line-height: 1.14;
+    font-weight: 780;
+    margin: 0;
+    max-width: 24ch;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--f-head);
+    font-size: 1.05rem;
+    letter-spacing: -0.012em;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .lede { max-width: var(--measure); color: var(--ink-2); }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  .prose { display: flex; flex-direction: column; gap: 0.9rem; max-width: var(--measure); }
+  .prose b { font-weight: 650; }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.09em 0.36em;
+    border-radius: 2px;
+  }
+
+  /* ---------- figures ---------- */
+
+  figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 1.5rem 1.25rem 1.15rem;
+  }
+
+  .figscroll { overflow-x: auto; }
+
+  figure svg {
+    display: block;
+    width: 100%;
+    min-width: 34rem;
+    height: auto;
+    color: var(--ink-2);
+  }
+
+  figcaption {
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.5;
+    border-top: 1px solid var(--rule-soft);
+    padding-top: 0.85rem;
+  }
+
+  figcaption b { color: var(--ink-2); font-weight: 650; }
+
+  /* svg text roles */
+  .s-title { font-family: var(--f-head); font-size: 13px; font-weight: 700; fill: var(--ink); }
+  .s-sub   { font-family: var(--f-head); font-size: 11px; fill: var(--muted); }
+  .s-lab   { font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.11em; fill: var(--muted); }
+  .s-edge  { font-family: var(--f-head); font-size: 11px; fill: var(--ink-2); }
+  .s-box   { fill: var(--surface-2); stroke: var(--rule); stroke-width: 1.25; }
+  .s-line  { stroke: currentColor; stroke-width: 1.4; fill: none; }
+
+  /* ---------- callouts ---------- */
+
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 1.1rem 1.25rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    max-width: var(--measure);
+  }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note .label {
+    font-family: var(--f-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .note.warn .label { color: var(--warn-ink); }
+  .note p { font-size: 0.95rem; }
+
+  /* ---------- two-up ---------- */
+
+  .duo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: 1rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent);
+    padding: 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .card.b { border-top-color: var(--warn); }
+  .card .k {
+    font-family: var(--f-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .card.b .k { color: var(--warn-ink); }
+  .card p { font-size: 0.94rem; color: var(--ink-2); }
+  .card dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.8rem; font-size: 0.88rem; }
+  .card dt { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 0.2em; }
+  .card dd { margin: 0; }
+
+  /* ---------- decisions ---------- */
+
+  .asks { display: flex; flex-direction: column; gap: 0.75rem; }
+
+  .ask {
+    display: grid;
+    grid-template-columns: 2.5rem 1fr;
+    gap: 0 1rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--warn);
+    padding: 1.1rem 1.25rem;
+    align-items: start;
+  }
+
+  .ask .id {
+    font-family: var(--f-mono);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--warn-ink);
+    line-height: 1.3;
+  }
+
+  .ask .body { display: flex; flex-direction: column; gap: 0.35rem; }
+  .ask h3 { font-size: 1rem; }
+  .ask p { font-size: 0.92rem; color: var(--ink-2); }
+  .ask .why { font-size: 0.85rem; color: var(--muted); }
+
+  /* ---------- docs list ---------- */
+
+  .docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.75rem; }
+
+  .doc {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .doc .n { font-family: var(--f-mono); font-size: 0.68rem; letter-spacing: 0.1em; color: var(--accent-ink); }
+  .doc .t { font-family: var(--f-head); font-weight: 680; font-size: 0.98rem; }
+  .doc .d { font-size: 0.85rem; color: var(--muted); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.25rem;
+    font-family: var(--f-mono);
+    font-size: 0.7rem;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <p class="eyebrow">Technical Architecture · Phase 1</p>
+    <h1>How we build it<em>AI Video Editor</em></h1>
+    <p class="thesis">A web video editor with a real timeline, where the AI tools sit in the toolbar next to the ordinary ones. This page shows <b>how the system is put together</b> and the three decisions we still need from you.</p>
+    <div class="meta">
+      <span class="chip on">Editor confirmed</span>
+      <span class="chip on">Phased release</span>
+      <span class="chip on">Web first</span>
+      <span class="chip">12 August 2026</span>
+    </div>
+  </header>
+
+  <!-- ============ PHASES ============ -->
+  <section>
+    <p class="eyebrow">The plan</p>
+    <h2>Three phases, each building on the last</h2>
+    <p class="lede">Phase 1 ships a working editor with the three AI tools that cost least and help most. The differentiator — face mapping — arrives in phase 2, onto machinery that is already running in production rather than being built alongside it.</p>
+
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 960 268" role="img" aria-label="A roadmap drawn as a video timeline: three phases as clips on three tracks showing what ships, what infrastructure is added, and which platforms are supported.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto">
+              <path d="M0,0 L10,4 L0,8 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- ruler -->
+          <line x1="118" y1="26" x2="948" y2="26" class="s-line" stroke-width="1"/>
+          <g class="s-lab">
+            <line x1="124" y1="20" x2="124" y2="32" class="s-line" stroke-width="1"/>
+            <line x1="418" y1="20" x2="418" y2="32" class="s-line" stroke-width="1"/>
+            <line x1="672" y1="20" x2="672" y2="32" class="s-line" stroke-width="1"/>
+            <text x="124" y="14">LAUNCH</text>
+            <text x="418" y="14">THEN</text>
+            <text x="672" y="14">THEN</text>
+          </g>
+
+          <!-- track 1: ships -->
+          <text x="106" y="66" class="s-lab" text-anchor="end">SHIPS</text>
+          <g>
+            <rect x="124" y="44" width="286" height="52" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <rect x="124" y="44" width="5" height="52" rx="2" fill="var(--accent)"/>
+            <text x="140" y="64" class="s-title">Phase 1 — the editor</text>
+            <text x="140" y="82" class="s-sub">Captions · Smart Trim · Colour Grading</text>
+          </g>
+          <g>
+            <rect x="420" y="44" width="242" height="52" rx="3" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <rect x="420" y="44" width="5" height="52" rx="2" fill="var(--accent)"/>
+            <text x="436" y="64" class="s-title">Phase 2 — the USP</text>
+            <text x="436" y="82" class="s-sub">Face mapping + lip sync</text>
+          </g>
+          <g>
+            <rect x="672" y="44" width="276" height="52" rx="3" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="1.5"/>
+            <rect x="672" y="44" width="5" height="52" rx="2" fill="var(--muted)"/>
+            <text x="688" y="64" class="s-title">Phase 3 — breadth</text>
+            <text x="688" y="82" class="s-sub">Clip finder · Templates · Upscaling</text>
+          </g>
+
+          <!-- track 2: infra -->
+          <text x="106" y="132" class="s-lab" text-anchor="end">WE BUILD</text>
+          <rect x="124" y="110" width="286" height="46" rx="3" class="s-box"/>
+          <text x="140" y="129" class="s-sub">Queue · credits · ingest</text>
+          <text x="140" y="145" class="s-sub">Export renderer</text>
+
+          <rect x="420" y="110" width="242" height="46" rx="3" class="s-box"/>
+          <text x="436" y="129" class="s-sub">GPU cluster</text>
+          <text x="436" y="145" class="s-sub">Face profiles · consent</text>
+
+          <rect x="672" y="110" width="276" height="46" rx="3" class="s-box"/>
+          <text x="688" y="129" class="s-sub">Speaker tracking</text>
+          <text x="688" y="145" class="s-sub">Music licensing</text>
+
+          <!-- track 3: platform -->
+          <text x="106" y="188" class="s-lab" text-anchor="end">PLATFORM</text>
+          <rect x="124" y="170" width="538" height="34" rx="3" class="s-box"/>
+          <text x="140" y="192" class="s-sub">Web</text>
+          <rect x="672" y="170" width="276" height="34" rx="3" class="s-box"/>
+          <text x="688" y="192" class="s-sub">Web + iOS + Android</text>
+
+          <!-- the claim -->
+          <path d="M266,214 L266,234 L541,234 L541,214" class="s-line" stroke-dasharray="3 3" marker-end="url(#ar)"/>
+          <text x="404" y="254" class="s-edge" text-anchor="middle">Phase 2 adds workers to a pipeline already running — not a new system</text>
+        </svg>
+      </div>
+      <figcaption><b>The roadmap read as a timeline.</b> Everything in the middle row is built once, in phase 1, and reused by every phase after it. That is the whole argument for this ordering: phase 2 is the hardest AI feature, and it should not also be the first time we run a job queue in production.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ TWO FAMILIES ============ -->
+  <section>
+    <p class="eyebrow">The key idea</p>
+    <h2>AI tools come in two kinds, and it decides almost everything</h2>
+    <p class="lede">Some tools can tell us <b>what to do</b> — where to cut, what was said, which colour profile fits. Others have to rebuild the picture itself. Those two things cost different amounts, take different hardware, and leave the user with different amounts of control. Sorting every tool into the right one is the single most consequential decision in the design.</p>
+
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 990 392" role="img" aria-label="A tool invocation splits into two paths: tools returning decisions go to a cheap fast analysis queue and land as editable edits, while tools returning pixels go to expensive GPU rendering and replace the clip's media.">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="9" markerHeight="8" orient="auto">
+              <path d="M0,0 L10,4 L0,8 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- start -->
+          <rect x="14" y="170" width="132" height="52" rx="3" class="s-box"/>
+          <text x="80" y="192" class="s-title" text-anchor="middle">User clicks</text>
+          <text x="80" y="209" class="s-sub" text-anchor="middle">an AI tool</text>
+
+          <line x1="146" y1="196" x2="188" y2="196" class="s-line" marker-end="url(#ar2)"/>
+
+          <!-- diamond -->
+          <polygon points="252,158 312,196 252,234 192,196" fill="var(--surface)" stroke="currentColor" stroke-width="1.4"/>
+          <text x="252" y="192" class="s-sub" text-anchor="middle">what does it</text>
+          <text x="252" y="205" class="s-sub" text-anchor="middle">produce?</text>
+
+          <!-- split risers -->
+          <path d="M312,196 L340,196 L340,110 L392,110" class="s-line" marker-end="url(#ar2)" stroke="var(--accent)"/>
+          <path d="M312,196 L340,196 L340,296 L392,296" class="s-line" marker-end="url(#ar2)" stroke="var(--warn)"/>
+
+          <!-- LANE 1 -->
+          <text x="396" y="66" class="s-lab" fill="var(--accent-ink)">TOOLS THAT RETURN DECISIONS</text>
+          <rect x="396" y="80" width="176" height="60" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="484" y="104" class="s-title" text-anchor="middle">Analysis queue</text>
+          <text x="484" y="122" class="s-sub" text-anchor="middle">ordinary servers · seconds</text>
+
+          <line x1="572" y1="110" x2="756" y2="110" class="s-line" marker-end="url(#ar2)" stroke="var(--accent)"/>
+          <text x="662" y="100" class="s-edge" text-anchor="middle">returns a list of instructions</text>
+          <text x="662" y="128" class="s-sub" text-anchor="middle">cut points · words · colour profile</text>
+
+          <rect x="760" y="74" width="216" height="72" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="868" y="98" class="s-title" text-anchor="middle">Lands as an edit</text>
+          <text x="868" y="116" class="s-sub" text-anchor="middle">adjustable · one undo step</text>
+          <text x="868" y="134" class="s-sub" text-anchor="middle" fill="var(--accent-ink)">costs cents</text>
+
+          <!-- LANE 2 -->
+          <text x="396" y="252" class="s-lab" fill="var(--warn-ink)">TOOLS THAT REBUILD THE PICTURE</text>
+          <rect x="396" y="266" width="176" height="60" rx="3" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+          <text x="484" y="290" class="s-title" text-anchor="middle">GPU queue</text>
+          <text x="484" y="308" class="s-sub" text-anchor="middle">graphics cards · minutes</text>
+
+          <line x1="572" y1="296" x2="756" y2="296" class="s-line" marker-end="url(#ar2)" stroke="var(--warn)"/>
+          <text x="662" y="286" class="s-edge" text-anchor="middle">returns a new video file</text>
+          <text x="662" y="314" class="s-sub" text-anchor="middle">original always kept</text>
+
+          <rect x="760" y="260" width="216" height="72" rx="3" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+          <text x="868" y="284" class="s-title" text-anchor="middle">Replaces the clip</text>
+          <text x="868" y="302" class="s-sub" text-anchor="middle">revertible, not adjustable</text>
+          <text x="868" y="320" class="s-sub" text-anchor="middle" fill="var(--warn-ink)">costs dollars</text>
+
+          <!-- phase note -->
+          <rect x="396" y="356" width="580" height="26" rx="3" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="1"/>
+          <text x="686" y="373" class="s-edge" text-anchor="middle">Phase 1 uses only the top path — which is why it needs no graphics cards at all</text>
+        </svg>
+      </div>
+      <figcaption><b>Same button to the user, completely different machine underneath.</b> Captions, smart trimming and colour grading all take the top path: they analyse and report back, cheaply, and the user can still change anything afterwards. Face mapping has no choice but the bottom path — there is no way to describe a replaced face as an instruction.</figcaption>
+    </figure>
+
+    <div class="duo">
+      <div class="card">
+        <p class="k">Top path — phase 1</p>
+        <h3>Cheap, fast, still editable</h3>
+        <p>The server sends back a list. The editor turns it into ordinary cuts and captions that the user can drag, retype or undo.</p>
+        <dl>
+          <dt>Tools</dt><dd>Captions, Smart Trim, Colour Grading</dd>
+          <dt>Takes</dt><dd>Seconds</dd>
+          <dt>Needs</dt><dd>Ordinary servers</dd>
+        </dl>
+      </div>
+      <div class="card b">
+        <p class="k">Bottom path — phase 2</p>
+        <h3>Slow, expensive, worth it</h3>
+        <p>The server rebuilds the footage frame by frame and hands back a new file. The original is kept, so it can always be undone.</p>
+        <dl>
+          <dt>Tools</dt><dd>Face mapping, lip sync, noise removal</dd>
+          <dt>Takes</dt><dd>Minutes</dd>
+          <dt>Needs</dt><dd>Graphics cards</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="note">
+      <p class="label">Why this saves real money</p>
+      <p>Graphics cards are rented by the hour whether they are working or not. By putting every phase 1 tool on the top path, we launch without renting any — and the cluster arrives in phase 2 alongside the one feature that genuinely needs it.</p>
+    </div>
+  </section>
+
+  <!-- ============ SYSTEM ============ -->
+  <section>
+    <p class="eyebrow">The system</p>
+    <h2>What talks to what</h2>
+    <p class="lede">The part worth noticing: video files never pass through our application. The browser uploads straight to storage and plays straight from the delivery network. Only small control messages — "make me a project", "run captions on this clip" — touch our servers.</p>
+
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 960 496" role="img" aria-label="System diagram: the browser exchanges small control messages with our servers, but uploads and plays video directly to and from media storage, bypassing our application entirely. Background workers do the heavy processing.">
+          <defs>
+            <marker id="ar3" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto">
+              <path d="M0,0 L10,4 L0,8 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- ── direct media paths, routed in the clear band above everything ── -->
+          <path d="M119,170 L119,86 L858,86 L858,166" fill="none" stroke="var(--accent)"
+                stroke-width="1.9" stroke-dasharray="6 4" marker-end="url(#ar3)"/>
+          <text x="490" y="76" class="s-edge" text-anchor="middle" fill="var(--accent-ink)">uploads go straight to storage — never through us</text>
+
+          <path d="M780,170 L780,126 L160,126 L160,166" fill="none" stroke="var(--accent)"
+                stroke-width="1.9" stroke-dasharray="6 4" marker-end="url(#ar3)"/>
+          <text x="470" y="118" class="s-edge" text-anchor="middle" fill="var(--accent-ink)">preview plays straight from storage</text>
+
+          <!-- ── main row ── -->
+          <rect x="24" y="170" width="190" height="110" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+          <text x="119" y="204" class="s-title" text-anchor="middle">Browser</text>
+          <text x="119" y="223" class="s-sub" text-anchor="middle">timeline · preview</text>
+          <text x="119" y="240" class="s-sub" text-anchor="middle">all the editing happens here</text>
+          <text x="119" y="264" class="s-lab" text-anchor="middle" fill="var(--accent-ink)">THE EDITOR</text>
+
+          <rect x="350" y="170" width="210" height="110" rx="4" class="s-box"/>
+          <text x="455" y="204" class="s-title" text-anchor="middle">Our servers</text>
+          <text x="455" y="223" class="s-sub" text-anchor="middle">check · record · queue</text>
+          <text x="455" y="240" class="s-sub" text-anchor="middle">projects · jobs · credits</text>
+          <text x="455" y="264" class="s-lab" text-anchor="middle">NEVER TOUCH VIDEO</text>
+
+          <rect x="700" y="170" width="240" height="110" rx="4" class="s-box"/>
+          <text x="820" y="204" class="s-title" text-anchor="middle">Media storage</text>
+          <text x="820" y="223" class="s-sub" text-anchor="middle">originals · small preview copies</text>
+          <text x="820" y="240" class="s-sub" text-anchor="middle">finished exports</text>
+          <text x="820" y="264" class="s-lab" text-anchor="middle">ALL THE VIDEO</text>
+
+          <!-- browser ↔ servers -->
+          <line x1="214" y1="200" x2="346" y2="200" class="s-line" marker-end="url(#ar3)"/>
+          <text x="280" y="192" class="s-edge" text-anchor="middle">small requests</text>
+          <line x1="346" y1="250" x2="218" y2="250" class="s-line" marker-end="url(#ar3)"/>
+          <text x="280" y="268" class="s-edge" text-anchor="middle">live progress</text>
+
+          <!-- ── workers ── -->
+          <rect x="350" y="360" width="590" height="110" rx="4" class="s-box"/>
+          <text x="366" y="386" class="s-lab">BACKGROUND WORKERS — THE HEAVY LIFTING</text>
+
+          <rect x="366" y="396" width="126" height="56" rx="3" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.2"/>
+          <text x="429" y="419" class="s-sub" text-anchor="middle">prepare</text>
+          <text x="429" y="435" class="s-sub" text-anchor="middle">uploads</text>
+
+          <rect x="510" y="396" width="126" height="56" rx="3" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+          <text x="573" y="419" class="s-sub" text-anchor="middle">run the</text>
+          <text x="573" y="435" class="s-sub" text-anchor="middle">AI tools</text>
+
+          <rect x="654" y="396" width="126" height="56" rx="3" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.2"/>
+          <text x="717" y="419" class="s-sub" text-anchor="middle">build the</text>
+          <text x="717" y="435" class="s-sub" text-anchor="middle">final export</text>
+
+          <rect x="798" y="396" width="126" height="56" rx="3" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="4 3"/>
+          <text x="861" y="419" class="s-sub" text-anchor="middle">face mapping</text>
+          <text x="861" y="435" class="s-sub" text-anchor="middle" fill="var(--warn-ink)">phase 2</text>
+
+          <!-- servers ↔ workers -->
+          <line x1="420" y1="280" x2="420" y2="356" class="s-line" marker-end="url(#ar3)"/>
+          <text x="412" y="324" class="s-edge" text-anchor="end">queue the work</text>
+          <line x1="500" y1="356" x2="500" y2="284" class="s-line" marker-end="url(#ar3)"/>
+          <text x="508" y="324" class="s-edge" text-anchor="start">results</text>
+
+          <!-- workers ↔ storage -->
+          <line x1="850" y1="356" x2="850" y2="284" class="s-line" marker-end="url(#ar3)"/>
+          <text x="838" y="324" class="s-edge" text-anchor="end">read and write media</text>
+        </svg>
+      </div>
+      <figcaption><b>Dashed teal lines are video; solid lines are messages.</b> Keeping video off our servers is what stops bandwidth costs scaling with usage — and it is why uploading a 900 MB file is as reliable as any other file transfer, rather than depending on our application staying up for ten minutes.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ PREVIEW VS EXPORT ============ -->
+  <section>
+    <p class="eyebrow">Why it feels instant</p>
+    <h2>Two copies of every video, doing two different jobs</h2>
+    <p class="lede">When someone uploads footage, we immediately make a small, light copy of it. That copy is what they scrub, cut and preview — which is why editing responds instantly and costs us nothing. The full-quality original is touched exactly once more: at export.</p>
+
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 960 340" role="img" aria-label="An uploaded original produces a small preview copy used by the browser for instant editing, while the original itself is only used again by the export renderer. Both paths share the same colour profile files.">
+          <defs>
+            <marker id="ar4" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto">
+              <path d="M0,0 L10,4 L0,8 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- original -->
+          <rect x="16" y="126" width="164" height="76" rx="4" class="s-box"/>
+          <text x="98" y="152" class="s-title" text-anchor="middle">The upload</text>
+          <text x="98" y="171" class="s-sub" text-anchor="middle">4K · 890 MB</text>
+          <text x="98" y="190" class="s-lab" text-anchor="middle">FULL QUALITY</text>
+
+          <!-- to proxy -->
+          <path d="M180,150 L180,72 L262,72" class="s-line" stroke="var(--accent)" marker-end="url(#ar4)"/>
+          <text x="258" y="62" class="s-edge" text-anchor="end" fill="var(--accent-ink)">converted once, on arrival</text>
+
+          <rect x="266" y="44" width="164" height="60" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="348" y="68" class="s-title" text-anchor="middle">Preview copy</text>
+          <text x="348" y="86" class="s-sub" text-anchor="middle">480p · 12 MB</text>
+
+          <line x1="430" y1="74" x2="510" y2="74" class="s-line" stroke="var(--accent)" marker-end="url(#ar4)"/>
+
+          <rect x="514" y="40" width="190" height="68" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="609" y="64" class="s-title" text-anchor="middle">The browser</text>
+          <text x="609" y="82" class="s-sub" text-anchor="middle">crop · colour · captions</text>
+          <text x="609" y="99" class="s-sub" text-anchor="middle">composited live</text>
+
+          <line x1="704" y1="74" x2="784" y2="74" class="s-line" stroke="var(--accent)" marker-end="url(#ar4)"/>
+          <rect x="788" y="40" width="158" height="68" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="867" y="66" class="s-title" text-anchor="middle">What they see</text>
+          <text x="867" y="86" class="s-sub" text-anchor="middle" fill="var(--accent-ink)">instant · free</text>
+
+          <!-- to export -->
+          <path d="M180,180 L180,264 L510,264" class="s-line" stroke-width="2" marker-end="url(#ar4)"/>
+          <text x="330" y="255" class="s-edge" text-anchor="middle">used again only when they press Export</text>
+
+          <rect x="514" y="234" width="190" height="60" rx="4" class="s-box"/>
+          <text x="609" y="258" class="s-title" text-anchor="middle">Export renderer</text>
+          <text x="609" y="276" class="s-sub" text-anchor="middle">assembles the real footage</text>
+
+          <line x1="704" y1="264" x2="784" y2="264" class="s-line" marker-end="url(#ar4)"/>
+          <rect x="788" y="234" width="158" height="60" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="867" y="258" class="s-title" text-anchor="middle">Final video</text>
+          <text x="867" y="277" class="s-sub" text-anchor="middle">1080p</text>
+
+          <!-- shared LUT -->
+          <rect x="514" y="150" width="190" height="52" rx="4" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+          <text x="609" y="172" class="s-title" text-anchor="middle">The colour profiles</text>
+          <text x="609" y="190" class="s-sub" text-anchor="middle">one shared set of files</text>
+
+          <path d="M609,150 L609,112" class="s-line" stroke="var(--warn)" marker-end="url(#ar4)"/>
+          <path d="M609,202 L609,230" class="s-line" stroke="var(--warn)" marker-end="url(#ar4)"/>
+          <text x="722" y="180" class="s-edge" fill="var(--warn-ink)">both sides must match exactly</text>
+
+          <text x="98" y="316" class="s-sub">The original is never modified — every AI result is saved as a separate copy, so anything can be undone.</text>
+        </svg>
+      </div>
+      <figcaption><b>The amber box is the part that has to be watched.</b> The browser and the export renderer are two different pieces of software applying the same colour treatment. If they ever drift apart, someone edits a video that looks one way and downloads one that looks another — so they share the same profile files and are tested against each other.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ ASKS ============ -->
+  <section>
+    <p class="eyebrow">What we need from you</p>
+    <h2>Three decisions, and only the first one blocks us</h2>
+    <p class="lede">Everything above can be built as described. These three are choices only you can make, and we would rather ask now than guess and rework later.</p>
+
+    <div class="asks">
+      <div class="ask">
+        <p class="id">A</p>
+        <div class="body">
+          <h3>Confirm the three phase 1 tools: captions, smart trimming, colour grading</h3>
+          <p>You said "2–3 core AI tools" — these are our proposal. All three are on the cheap path, all three answer a complaint creators actually have, and choosing them means launching without renting graphics cards.</p>
+          <p class="why">Blocks: which worker gets written first, and whether phase 1 needs GPU hardware at all. Swapping one for another changes what we build first, not how anything is built.</p>
+        </div>
+      </div>
+
+      <div class="ask">
+        <p class="id">B</p>
+        <div class="body">
+          <h3>Choose a payment provider and what each tool costs in credits</h3>
+          <p>There is no payment system anywhere in the original architecture. The credit machinery is built either way — but nobody can buy anything until this exists.</p>
+          <p class="why">Blocks: taking money. Does not block building or testing, which run on manually granted credits.</p>
+        </div>
+      </div>
+
+      <div class="ask">
+        <p class="id">C</p>
+        <div class="body">
+          <h3>Smart trimming: tighten a recording, or cut it down to its best parts?</h3>
+          <p>Removing silences and stumbles saves roughly 10–25% of a recording. The spec promises ten minutes down to two, which means choosing what is worth keeping — a substantially harder tool.</p>
+          <p class="why">Blocks: whether smart trimming is in phase 1 at all. If it is the harder version, we would swap it out and revisit it later.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <p class="label">One thing to keep in view</p>
+      <p>Phase 1 ships without face mapping, so it cannot be marketed as the face-swap product — its story is "the editor that does the boring work for you". That is the right build order, but if launch is being sold on the differentiator, it is a conversation worth having now rather than in three months.</p>
+    </div>
+  </section>
+
+  <!-- ============ DOCS ============ -->
+  <section>
+    <p class="eyebrow">The full set</p>
+    <h2>Where the detail lives</h2>
+    <p class="lede">This page is the overview. Everything below is written and in the repository, ready for the development team.</p>
+
+    <div class="docs">
+      <div class="doc">
+        <p class="n">01</p>
+        <p class="t">Product Vision</p>
+        <p class="d">What the product does, every decision made and every one still open</p>
+      </div>
+      <div class="doc">
+        <p class="n">02</p>
+        <p class="t">Phase 1 Scope</p>
+        <p class="d">The cold list of what ships now, and what explicitly does not</p>
+      </div>
+      <div class="doc">
+        <p class="n">03</p>
+        <p class="t">Backend Architecture</p>
+        <p class="d">Data model, job pipeline, media handling, rendering, infrastructure</p>
+      </div>
+      <div class="doc">
+        <p class="n">04</p>
+        <p class="t">Frontend Architecture</p>
+        <p class="d">Timeline state, the playback engine, undo, tool integration</p>
+      </div>
+      <div class="doc">
+        <p class="n">05</p>
+        <p class="t">API Contract</p>
+        <p class="d">The interface both teams build against, in full</p>
+      </div>
+      <div class="doc">
+        <p class="n">—</p>
+        <p class="t">Diagrams</p>
+        <p class="d">System overview, data model, job lifecycle</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>AI Video Editor · Technical Architecture Overview · 12 August 2026 · MMaxouB<br>
+    Built on the project lead's decisions of 12 August 2026. Phase 1 scope is firm; the AI tool selection is a proposal awaiting decision A.<br>
+    Full documentation set in <code>docs/</code>.</p>
+  </footer>
+
+</div>
