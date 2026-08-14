@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+
+/* The editor is a dark tool. Marketing pages can opt out with a wrapper. */
+@theme {
+  --color-surface: #0e1214;
+  --color-surface-2: #161b1e;
+  --color-rule: #293134;
+  --color-ink: #e4e9ea;
+  --color-ink-2: #b4bec0;
+  --color-accent: #63becd;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+/* A timeline is dragged constantly; accidental text selection makes it feel
+   broken. Re-enable it explicitly wherever text is meant to be selectable. */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
