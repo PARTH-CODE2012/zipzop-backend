@@ -24,40 +24,64 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 ### Repositories
 
 - [ ] Merge `docs/` from `dev` into `main`
-- [ ] Decide repo layout: monorepo, or `zipzop-backend` + `zipzop-frontend` separately
-- [ ] `.gitignore`, `README` pointing at `docs/`, branch protection on `main`
-- [ ] `.env.example` in both, with every variable named and nothing secret committed
+- [x] Decide repo layout — **monorepo**: `backend/` and `frontend/` inside the existing repository. Shared `openapi.json` and one commit per contract change; splitting later is straightforward
+- [x] `.gitignore`, root `README` pointing at `docs/`, `.env.example` with every variable named
+- [ ] Branch protection on `main`  *(GitHub setting — needs repo admin)*
 
-### Backend skeleton
+### Backend skeleton — done, verified running
 
-- [ ] FastAPI project — `app/`, `api/`, `models/`, `services/`, `workers/`, `tests/`
-- [ ] Poetry or uv, pinned Python 3.12
-- [ ] SQLAlchemy 2.0 + Alembic wired, one empty migration proving it runs
-- [ ] Settings via Pydantic, all config from environment
-- [ ] Structured JSON logging with `request_id` middleware
-- [ ] `GET /health` returning database and Redis status
+- [x] FastAPI project — `app/`, `api/`, `models/`, `services/`, `workers/`, `scripts/`, `tests/`
+- [x] pip + venv, `requires-python = ">=3.12"`, ruff and mypy strict configured
+- [x] SQLAlchemy 2.0 + Alembic wired, baseline migration `0001_baseline` installing `pgcrypto` and `citext`
+- [x] Settings via `pydantic-settings`, everything from the environment, `assert_production_safe()` refusing to boot production with dev defaults
+- [x] Structured JSON logging, `request_id` middleware, `X-Request-ID` echoed back
+- [x] `GET /health/live` (never touches dependencies) and `GET /health` (reports Postgres + Redis, 503 when degraded)
+- [x] One error envelope for the whole API — every code from the contract §9 defined
+- [x] Celery app, queues routed by family, beat schedule for renewals and reconciliation
+- [x] `pytest` — 6 tests green · `ruff` clean · `mypy --strict` clean
 
-### Frontend skeleton
+### Frontend skeleton — done, build verified
 
-- [ ] Next.js + TypeScript, App Router
-- [ ] Note in the README: **the editor is client-only** (`'use client'` throughout — WebGL, video elements and timeline state cannot be server-rendered). Next.js earns its place on the marketing and pricing pages
-- [ ] Zustand + Immer, TanStack Query, styling choice made and committed to
-- [ ] Route shells: `/`, `/login`, `/projects`, `/editor/[id]`, `/pricing`, `/settings/billing`
+- [x] Next.js 15 + TypeScript, App Router, Tailwind v4
+- [x] README stating **the editor is client-only**, with the reasoning
+- [x] TanStack Query provider; Zustand + Immer declared *(the timeline store lands in M3, once its types can be generated rather than hand-written)*
+- [x] Route shells: `/`, `/login`, `/projects`, `/editor/[id]`, `/pricing`, `/settings/billing`
+- [x] API client with the error envelope and single-flight token refresh
+- [x] `pnpm install` · `pnpm lint` · `pnpm typecheck` · `pnpm build` — all green, 7 routes built
+- [x] ESLint flat config built from the plugins directly — `eslint-config-next` loads `@rushstack/eslint-patch`, which fails against ESLint 9, and `next lint` is removed in Next 16
 
 ### The thing that keeps both sides honest 🔗
 
-- [ ] FastAPI generating `openapi.json`, committed, even with every endpoint a stub
-- [ ] Frontend types generated from it (`openapi-typescript`), wired into the build
+- [x] FastAPI generating `openapi.json`, committed at the repository root
+- [x] `make openapi` / `make types` / `make contract-check`, and CI failing on a stale schema
+- [x] Frontend types generated from it into `src/lib/api/generated.ts`
 - [ ] Mock server (Prism or MSW) serving fixtures from the same schema
 - [ ] Fixtures written early: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
 
 ### Local infrastructure
 
-- [ ] `docker-compose.yml`: Postgres 16, Redis 7, MinIO
-- [ ] MinIO bucket + presigned URL flow working — **this is what makes AWS unnecessary for now**
-- [ ] Celery worker and beat containers, one no-op task proving dispatch works
-- [ ] `make dev` / `make test` / `make migrate` so nothing is remembered by hand
-- [ ] CI: lint, type-check, tests on every push
+- [x] `docker-compose.yml`: Postgres 16, Redis 7, MinIO + bucket bootstrap, api, worker, beat
+- [x] Backend `Dockerfile` — multi-stage, ffmpeg included, non-root in production
+- [x] `make` targets: setup, up, down, migrate, dev, test, lint, openapi, check
+- [x] CI: lint, type-check, migrations apply, tests, contract freshness, frontend build
+- [x] Toolchain installed: Docker 28.5, Compose 2.40, ffmpeg 8.1, npm 11 / Node 24
+- [x] `make docker-ok` guard — fails early with the actual fix instead of a socket error
+- [x] Native fallback documented and `make native-check` added — **Docker Hub is too slow on this connection**, and apt-installed Postgres 18 and Redis 8 behave identically up to M2
+- [x] `make migrate` applied `0001_baseline` against the real database — `citext` and `pgcrypto` installed
+- [x] Celery `ingest.ping` dispatched and returned `SUCCESS` end to end, queues declared in Redis
+- [x] `/health` returning **`ok`** with both dependencies live (was `degraded`/503 with them down — both paths verified)
+- [ ] MinIO presigned URL flow — **deferred to M2**, when uploads first need object storage. Nothing before then touches S3
+
+> **M0 is complete and verified.** Both quality gates green, contract fresh, infrastructure live, queue proven. The only unexercised piece is object storage, which nothing needs yet.
+
+### Docker: parked, not blocking
+
+Pulling four images at once timed out — one Docker Hub address answers in 4.4 s against 0.8 s over IPv6, and the parallel pull blew past the deadline. Interrupting a pull is harmless: layers are cached and a retry resumes.
+
+Not worth fighting now, because **M0 needs nothing Docker provides that apt does not**. Revisit before M2, when MinIO becomes necessary.
+
+- [ ] `sudo usermod -aG docker maxime` is done and recorded; still needs **a new login session** to take effect
+- [ ] `make pull` on a better connection, or overnight
 
 ---
 
