@@ -24,7 +24,7 @@ Read [Phase 1 Scope](02-scope-v1.md) end to end, then [§5.2 of the vision](01-p
 
 ---
 
-## The five things that shape everything
+## The six things that shape everything
 
 Read these before disagreeing with any specific decision — most objections are answered by one of them.
 
@@ -43,21 +43,29 @@ Nothing overwrites an upload. Any tool that changes pixels produces a *new* asse
 **5 · Preview runs on proxies; export runs on originals.**
 Every upload gets a 480p proxy at ingest. The browser composites those live — grades, captions, transitions, all instant and free. Export assembles the real media server-side, once. The colour maths is shared between the two, and must stay shared.
 
+**6 · We show videos, we count credits.**
+Tiers are advertised as "≈30 videos/month" because that is what a creator understands, but every internal limit is credits. A literal video counter breaks the moment someone re-runs captions on a clip they have not finished. Credits come in three kinds — a monthly allowance that expires, purchased credits that never do, and a separate meter for face mapping — and jobs always spend the soonest to expire first.
+
 ---
 
 ## Status
 
-**Approved by the project lead on 12 August 2026:** it is an editor · phased release · face mapping works on both own and imported footage · web first · lip sync is in.
+**Nothing blocking. Building can start.**
 
-### Blocking
+Approved by the project lead **12 August**: it is an editor · phased release · face mapping works on both own and imported footage · web first · lip sync is in.
 
-| | What | Blocks | Owner |
+Approved **13 August**: phase 1 tools are captions, smart trim and colour grading · four tiers with credits underneath · monthly allowance expires, purchased credits do not · face mapping gets its own meter · Stripe **and** Razorpay both live at launch · AWS on a company account · fair-use ceiling on Unlimited · "dedicated server" reworded to dedicated priority queue.
+
+### Not blocking, but needed soon
+
+| | What | Needed by | Owner |
 |---|---|---|---|
-| **A** | Confirm the three phase 1 AI tools — captions, smart trim, colour grading | Which worker gets written first, and whether phase 1 needs GPU hardware | Project lead |
-| **B** | Payment provider and credit pricing | Charging anyone. Everything else builds and tests with granted credits. | Project lead |
-| **C** | Smart Trim: tighten a recording, or cut it to its best parts? | Whether Smart Trim is a phase 1 tool at all | Project lead |
+| **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end — external lead time, start now | Project lead |
+| **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
+| **3** | Storage retention policy | Before launch. Largest recurring cost, and it only grows. | Project lead |
+| **4** | Who owns tax — Indian GST, EU VAT | Before launch. Not a development task. | Project lead |
 
-Decision **A** is the only one that blocks starting. Full register in [the vision, §12](01-product-vision.md#12-decision-register).
+Credit values per tier are proposals derived from estimated costs. They live in one table and one module, and cost-per-job is instrumented from the first deploy, so re-pricing on real measurements is a data change. Full register in [the vision, §12](01-product-vision.md#12-decision-register).
 
 ### Deferred by agreement
 
@@ -71,7 +79,8 @@ Consent, watermarking and misuse policy for face mapping. Phase 1 stores **no fa
 |---|---|---|---|
 | **Editor** | Single-track timeline, core edits, browser preview, server export | Multiple video tracks, overlays | Speed ramps, keyframes |
 | **AI** | Captions · Smart Trim · Colour Grading | Face Mapping + Lip Sync · Noise removal | Clip Finder · Templates · Upscaling |
-| **New infra** | Job queue, credit ledger, ingest, export renderer | GPU cluster, face profiles, consent flow | Speaker tracking, music licensing |
+| **Commerce** | Four tiers, credits, Stripe + Razorpay, paywall | Face-mapping meter starts being spent | — |
+| **New infra** | Job queue, credit ledger, ingest, export renderer, billing | GPU cluster, face profiles, consent flow | Speaker tracking, music licensing |
 | **Platform** | Web | Web | Web + iOS/Android |
 
 Later phases add **workers, not architecture**. That is the design's main claim, and the reason for the shape of the `jobs` table.
@@ -86,11 +95,14 @@ These run in parallel once the [API contract](05-api-contract.md) is agreed.
 |---|---|---|
 | Backend — core | Accounts, projects, timeline persistence, credit ledger | — |
 | Backend — media | Upload, probe, proxy/thumbnail/peaks, storage lifecycle | Core |
-| Backend — jobs | Queue, workers, progress, WebSocket, the three tools | Core, Media |
-| Backend — render | Export: timeline document → finished file | Media, timeline schema |
-| Frontend | The whole editor | The contract, not the backend |
+| Backend — jobs | Queue, workers, progress, priority, WebSocket, the three tools | Core, Media |
+| Backend — render | Export: timeline document → finished file, plan gating, watermark | Media, timeline schema |
+| Backend — billing | Plans, subscriptions, both providers, webhooks, renewal | Core (ledger) |
+| Frontend | The whole editor, plus billing screens | The contract, not the backend |
 
-**The frontend does not wait for the backend.** Most of phase 1's frontend — timeline, playback, editing, undo — touches no server. It is built against a mock server generated from the OpenAPI schema and connected later. See [API contract §10](05-api-contract.md#10-building-against-this-before-the-backend-exists).
+**The frontend does not wait for the backend.** Most of phase 1's frontend — timeline, playback, editing, undo — touches no server. It is built against a mock server generated from the OpenAPI schema and connected later. See [API contract §11](05-api-contract.md#11-building-against-this-before-the-backend-exists).
+
+**Billing is the one stream with an external dependency.** Provider accounts, business verification and Indian entity documentation for Razorpay all take calendar time nobody on the team controls. Start those applications before writing the code.
 
 ---
 
@@ -105,11 +117,13 @@ These are the documents this set was built from. Kept for reference; **supersede
 ## Conventions
 
 - **Times are integer milliseconds**, everywhere, on both sides. Never seconds, never floats.
+- **Money is integer minor units** — cents, paise — with its currency beside it. Never floats.
 - **Spatial values are normalised 0–1** relative to the canvas, never pixels. This is what makes a 480p preview and a 1080p export agree.
 - API fields are `camelCase`; database columns are `snake_case`; translation happens in the serialisation layer.
-- Identifiers are prefixed UUIDs: `ast_`, `prj_`, `job_`, `clp_`, `trk_`.
+- Identifiers are prefixed UUIDs: `ast_`, `prj_`, `job_`, `clp_`, `trk_`, `pay_`.
 - Error `code` is stable and machine-readable. Branch on it, never on `message`.
+- Plan limits are enforced **server-side**. Client-side gating exists so the interface can grey a button, never as the only check.
 
 ---
 
-*Documentation set v1.0 · 12 August 2026 · maintained by MMaxouB*
+*Documentation set v1.1 · 13 August 2026 · maintained by MMaxouB*

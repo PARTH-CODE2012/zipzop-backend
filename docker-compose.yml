@@ -1,0 +1,145 @@
+# Local development infrastructure.
+#
+# The frontend is deliberately NOT here — Next.js hot reload is markedly faster
+# running natively, and it needs nothing from this network beyond the API's
+# published port. Run `make dev-frontend` alongside `make dev`.
+
+name: zipzop
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zipzop
+      POSTGRES_PASSWORD: zipzop
+      POSTGRES_DB: zipzop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zipzop -d zipzop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible storage. Speaks the same presigned-URL protocol as the real
+  # thing, so the upload flow is developed and tested without an AWS account.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: zipzop
+      MINIO_ROOT_PASSWORD: zipzop-dev-secret
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Creates the bucket and opens read access on the prefixes the browser fetches
+  # directly. Runs once and exits.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 zipzop zipzop-dev-secret &&
+      mc mb --ignore-existing local/zipzop-media &&
+      mc anonymous set download local/zipzop-media/proxies &&
+      mc anonymous set download local/zipzop-media/thumbs &&
+      mc anonymous set download local/zipzop-media/peaks &&
+      echo 'bucket ready'
+      "
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@postgres:5432/zipzop
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    # Queues are split by family so a backlog of exports cannot starve
+    # captioning — see docs/03-backend-architecture.md §3.
+    command: celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@postgres:5432/zipzop
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      S3_ENDPOINT_URL: http://minio:9000
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Scheduled work: the hourly renewal sweep, nightly ledger reconciliation,
+  # storage lifecycle. Exactly one instance — running twice would double-grant.
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    command: celery -A app.workers.celery_app beat --loglevel=INFO
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@postgres:5432/zipzop
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

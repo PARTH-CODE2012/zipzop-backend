@@ -1,0 +1,97 @@
+[project]
+name = "zipzop-backend"
+version = "0.1.0"
+description = "AI Video Editor — backend"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+
+    # Database
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2",     # Alembic runs sync; asyncpg serves the app
+
+    # Queue and cache
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+
+    # Storage
+    "boto3>=1.35",
+
+    # Auth
+    "pyjwt[crypto]>=2.10",
+    "bcrypt>=4.2",
+    "python-multipart>=0.0.20",
+
+    # Observability
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-boto3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# ----------------------------------------------------------------------- ruff
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "B008",  # FastAPI's Depends() in defaults is the documented pattern
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ----------------------------------------------------------------------- mypy
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
+# Celery ships no type information for its decorators, so every @task would
+# otherwise be reported as making its function untyped. The task bodies are
+# still checked — only the decorator is exempted.
+[[tool.mypy.overrides]]
+module = ["app.workers.*"]
+disallow_untyped_decorators = false
+
+# redis.asyncio.from_url is untyped upstream.
+[[tool.mypy.overrides]]
+module = ["app.services.redis_client"]
+disallow_untyped_calls = false
+
+# --------------------------------------------------------------------- pytest
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"

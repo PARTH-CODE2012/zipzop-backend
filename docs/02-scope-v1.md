@@ -5,18 +5,20 @@ Everything here is a commitment. Everything not here is not in phase 1, however 
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Date** | 12 August 2026 |
+| **Version** | 1.1 — billing folded in |
+| **Date** | 13 August 2026 |
 | **Depends on** | [`01-product-vision.md`](01-product-vision.md) — the *why* behind every line here |
-| **Status** | Editor scope firm. AI tool selection is a proposal awaiting the project lead (decision A). |
+| **Status** | **Confirmed.** Tool selection, commercial model, cloud and payment providers all settled. Nothing blocks starting. |
 
 ---
 
 ## 1. Phase 1 in one paragraph
 
-A **web** video editor. The user signs up, imports footage, arranges it on a timeline with one video track, one audio track and one text track, previews it in the browser, and exports a finished file. Three AI tools sit in the toolbar: **automatic captions**, **smart trimming**, and **colour grading**. Each analyses the footage on our servers and returns edit decisions that land on the timeline, where the user can adjust or undo them. Editing is free; the AI tools spend credits.
+A **web** video editor. The user signs up, imports footage, arranges it on a timeline with one video track, one audio track and one text track, previews it in the browser, and exports a finished file. Three AI tools sit in the toolbar: **automatic captions**, **smart trimming**, and **colour grading**. Each analyses the footage on our servers and returns edit decisions that land on the timeline, where the user can adjust or undo them. Editing is free; the AI tools and export spend credits. Users start on a free tier and can subscribe to one of three paid plans, paying through Stripe or Razorpay.
 
 No face mapping. No mobile app. That is phase 2 and phase 3.
+
+> **Billing is in phase 1.** It was not in v1.0 of this document. The launch strategy depends on subscription revenue arriving from day one, which means payments, plans, credit allowances and the paywall are all launch scope, not follow-up. This is the single largest addition since v1.0 and it is on the critical path — nothing can go live without it.
 
 ---
 
@@ -26,9 +28,10 @@ No face mapping. No mobile app. That is phase 2 and phase 3.
 |---|---|---|---|
 | **Editor** | Single-track timeline, core edits, browser preview, server export | Multiple video tracks, overlays | Speed ramps, keyframes |
 | **AI tools** | Captions · Smart Trim · Colour Grading | **Face Mapping + Lip Sync** · Noise & echo removal | Viral Clip Finder · Templates & Recommendations · Upscaling & stabilisation |
-| **New infrastructure** | Job queue, credit ledger, ingest pipeline, export renderer | GPU inference cluster, face profile storage, consent flow | Speaker tracking, music licensing, template authoring |
+| **Commerce** | Four tiers, credits, Stripe + Razorpay, paywall | Face-mapping meter starts being spent | — |
+| **New infrastructure** | Job queue, credit ledger, ingest pipeline, export renderer, billing | GPU inference cluster, face profile storage, consent flow | Speaker tracking, music licensing, template authoring |
 | **Platform** | Web | Web | Web + iOS/Android |
-| **Rough size** | L | L | M |
+| **Rough size** | XL | L | M |
 
 > **Sizes are relative, not a schedule.** No dates appear in this document because no team size or deadline has been given to us. When those arrive, phase 1 is the one to estimate first — the other two build on machinery it delivers.
 
@@ -36,12 +39,21 @@ No face mapping. No mobile app. That is phase 2 and phase 3.
 
 ## 3. What ships in phase 1
 
-### 3.1 Accounts
+### 3.1 Accounts and billing
 
 - Sign up and sign in with email and password
 - Session that survives a page reload
-- Credit balance visible in the interface
-- Buying credits — **blocked on decision B** (no payment provider chosen)
+- Credit balances visible in the interface — monthly allowance, purchased credits, and their combined total
+- **Four tiers**: Free, Pro, Business, Studio ([`01-product-vision.md`](01-product-vision.md) §8.1)
+- **Pricing page** driven by the plans table, in USD or INR
+- **Subscribe, upgrade, downgrade, cancel** — checkout on the provider's hosted page, never our own card form
+- **Buy top-up credits** that never expire
+- **Both payment providers live**: Stripe for USD/global, Razorpay for INR/India. IP suggests the currency, the user can change it
+- **Monthly renewal**: allowance granted, unused allowance expired, purchased credits untouched
+- **Paywall states**: hitting the credit limit, asking for 4K on a plan that does not include it, running out mid-project
+- Credit history — every movement, with which bucket it came from
+
+Not in phase 1: teams and shared balances, invoicing documents, tax configuration (needs an owner outside the dev team — [`03-backend-architecture.md`](03-backend-architecture.md) §8.6).
 
 ### 3.2 Media
 
@@ -65,7 +77,7 @@ No face mapping. No mobile app. That is phase 2 and phase 3.
 | **Transitions** | Cut, fade to black, cross dissolve | Wipes, zooms, 3D transitions |
 | **Undo/redo** | Deep history covering AI results as single undoable steps | Named history states, branching |
 | **Preview** | Real-time playback of the whole timeline with everything applied, in the browser, on proxy media | 4K preview, external monitor output |
-| **Export** | 720p/1080p · 9:16, 16:9, 1:1 · MP4/H.264 · progress and notification | 4K export, custom bitrates, ProRes, GIF |
+| **Export** | 720p/1080p/4K by plan · 9:16, 16:9, 1:1 · MP4/H.264 · watermark by plan · progress and notification | Custom bitrates, ProRes, GIF |
 
 ### 3.4 The three AI tools
 
@@ -100,11 +112,14 @@ Examines the footage's lighting and colour and returns the profile that suits it
 
 Not visible in the interface, but part of phase 1 because everything later depends on it:
 
-- **Job pipeline** — queue, workers, progress, retries, cancellation
-- **Credit ledger** — reserve on start, charge on success, release on failure, full audit trail
-- **Live updates** — WebSocket push of job progress and completion
-- **Export renderer** — the server-side pipeline that bakes the timeline into a file
+- **Job pipeline** — queue, workers, progress, retries, cancellation, priority bands by plan
+- **Credit ledger** — three buckets, reserve on start, release on failure, full audit trail
+- **Billing service** — one internal model, one adapter per provider, webhook handling with replay protection
+- **Renewal scheduler** — monthly grant and expiry, driven by webhooks with an hourly sweep as the safety net
+- **Live updates** — WebSocket push of job progress, credits and subscription changes
+- **Export renderer** — the server-side pipeline that bakes the timeline into a file, and where plan limits are enforced
 - **Storage lifecycle** — where media lives, what gets cleaned up and when
+- **Cost instrumentation** — cost per job by tool, from the first deploy, so the tiers can be re-priced on measurement rather than estimate
 
 ---
 
@@ -116,6 +131,8 @@ Named explicitly so nobody has to guess.
 |---|---|
 | Face mapping, lip sync, any facial data at all | Phase 2 |
 | GPU inference cluster | Phase 2 |
+| Teams, shared balances, seat billing | Not scoped |
+| Invoicing documents, tax configuration | Needs an owner outside the dev team |
 | Noise removal, echo removal | Phase 2 |
 | Video upscaling, stabilisation | Phase 3 |
 | Viral Clip Finder, speaker tracking | Phase 3 |
@@ -163,8 +180,11 @@ Phase 1 is finished when a person who has never seen the product can, without he
 7. Add a title, a fade at the start, and a music track
 8. Undo the last six things, then redo them
 9. Close the tab, come back an hour later, and find the project exactly as they left it
-10. Export a 1080p 9:16 MP4 and download it
+10. Export a 9:16 MP4 at the best resolution their plan allows, and download it
 11. See their credit balance go down by the right amount, and go back up when a job fails
+12. Run out of credits, understand exactly why, and see what upgrading would give them
+13. Subscribe to Pro — in USD or in INR — and have the new allowance appear within seconds
+14. Export again and find the watermark gone
 
 If any step needs an explanation, it is not done.
 
@@ -178,23 +198,29 @@ Workstreams that can run in parallel once [`05-api-contract.md`](05-api-contract
 |---|---|---|
 | **Backend — core** | Accounts, projects, timeline persistence, credit ledger | — |
 | **Backend — media** | Upload, probe, proxy/thumbnail/peaks generation, storage lifecycle | Core (accounts) |
-| **Backend — jobs** | Queue, workers, progress, WebSocket, the three tool workers | Core, Media |
-| **Backend — render** | Export pipeline: timeline document → finished file | Media, and the timeline document schema |
-| **Frontend** | The whole editor: timeline UI, playback engine, tool integration, account screens | The API contract, not the backend itself |
+| **Backend — jobs** | Queue, workers, progress, priority, WebSocket, the three tool workers | Core, Media |
+| **Backend — render** | Export pipeline: timeline document → finished file, plan gating, watermark | Media, and the timeline document schema |
+| **Backend — billing** | Plans, subscriptions, both providers, webhooks, renewal and expiry | Core (ledger) |
+| **Frontend** | The whole editor: timeline UI, playback engine, tool integration, account and billing screens | The API contract, not the backend itself |
 
 **The frontend does not wait for the backend.** With the contract agreed, the editor is built against mocked responses and connected later. Most of phase 1's frontend work — timeline, playback, editing, undo — touches no server at all.
+
+**Billing is the one stream that cannot slip.** It has an external dependency the others do not: provider accounts, business verification and, for Razorpay, Indian entity documentation, all of which take real calendar time and none of which the development team controls. Start the account applications before writing the code.
 
 ---
 
 ## 8. Blocking
 
-| | What | Blocks |
-|---|---|---|
-| **A** | **Confirm or change the three AI tools above.** | Which worker gets written first, and whether phase 1 needs GPU hardware |
-| **B** | Choose a payment provider and credit pricing. | Charging anyone. Everything else can be built and tested with manually granted credits. |
-| **C** | Smart Trim: tighten a recording, or cut it to its best parts? | Whether Smart Trim is a phase 1 tool or a phase 3 one |
+**Nothing.** Every decision phase 1 depends on is answered: the tool selection, the tiers and pricing, both payment providers, and AWS on a company account.
 
-Decision A is the only one that blocks starting. B and C block finishing.
+Two things still need to happen, but neither stops work starting today:
+
+| | What | Needed by | Owner |
+|---|---|---|---|
+| **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end | Project lead — external lead time, start now |
+| **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
+
+The credit numbers per tier are proposals derived from estimated costs ([`03-backend-architecture.md`](03-backend-architecture.md) §5.5). They live in one table and one module, so re-pricing once real cost-per-job is measured is a data change, not a rebuild. Build against them as they stand.
 
 ---
 

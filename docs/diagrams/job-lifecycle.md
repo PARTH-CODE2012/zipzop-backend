@@ -29,13 +29,15 @@ sequenceDiagram
     rect rgb(240, 246, 247)
         Note over API,PG: One transaction
         API->>PG: SELECT user FOR UPDATE
-        API->>PG: INSERT credit_ledger (reserve, −22)
-        API->>PG: UPDATE users.credit_balance
-        API->>PG: INSERT jobs (status: queued)
+        Note over API: allocate(): soonest to expire first —<br/>8 from plan, 14 from topup
+        API->>PG: INSERT credit_ledger (reserve, plan, −8)
+        API->>PG: INSERT credit_ledger (reserve, topup, −14)
+        API->>PG: UPDATE users.plan_credits, users.topup_credits
+        API->>PG: INSERT jobs (status: queued, priority from plan)
     end
 
-    API->>RD: enqueue on analysis queue
-    API-->>B: 202 {id, status: queued, creditsReserved: 22}
+    API->>RD: enqueue on analysis.p10 (Pro band)
+    API-->>B: 202 {id, queued, reservedFrom: {plan: 8, topup: 14}}
     Note over B: Badge on the clip.<br/>User keeps editing.
 
     RD->>W: dispatch
@@ -94,18 +96,22 @@ sequenceDiagram
         rect rgb(250, 236, 238)
             Note over W,PG: One transaction
             W->>PG: UPDATE status=failed, error_code=NO_SPEECH_DETECTED
-            W->>PG: INSERT credit_ledger (refund, +22)
-            W->>PG: UPDATE users.credit_balance
+            Note over W: read back the reservation rows —<br/>refund each bucket it took from
+            W->>PG: INSERT credit_ledger (refund, plan, +8)
+            W->>PG: INSERT credit_ledger (refund, topup, +14)
+            W->>PG: UPDATE users balances
         end
         W->>RD: PUBLISH job.failed + credits.updated
         RD->>WS: relay
         WS-->>B: {errorCode: NO_SPEECH_DETECTED}
-        WS-->>B: {type: credits.updated, balance: 340}
+        WS-->>B: {credits.updated, plan: 1848, topup: 500}
         Note over B: "We could not find any speech<br/>in this clip. Your 22 credits<br/>have been returned."
     end
 ```
 
-The unique index on `credit_ledger (job_id, reason)` means a completion handler that runs twice cannot refund twice — the second insert fails on the constraint rather than on a code path someone remembered to write.
+Refunds are read back from the reservation rows rather than recomputed — recomputing could allocate differently if balances moved in between. If the billing period rolled over while the job was running, the refund goes to `topup` instead, which never expires, so the user is made whole without crediting a bucket that has since been swept.
+
+The unique index on `credit_ledger (job_id, reason, bucket)` means a completion handler that runs twice cannot refund twice — the second insert fails on the constraint rather than on a code path someone remembered to write.
 
 ---
 
@@ -224,3 +230,80 @@ sequenceDiagram
 ```
 
 The renderer reads the **saved** timeline, not the client's request body. A client cannot ask for something the stored project does not contain — which is why a stale `timelineVersion` is rejected rather than rendered.
+
+---
+
+## 6. Subscription and renewal
+
+The other lifecycle in the system. Note that the user's plan does not change when they return from checkout — it changes when the provider's webhook lands.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant API as FastAPI
+    participant P as Stripe / Razorpay
+    participant PG as PostgreSQL
+    participant W as Billing worker
+    participant WS as WebSocket
+
+    B->>API: POST /billing/checkout {plan: pro, currency: INR}
+    API->>P: create hosted checkout session
+    API-->>B: {checkoutUrl}
+    B->>P: redirect — card details never touch us
+    Note over B,P: User pays on the provider's page
+
+    P-->>B: redirect back to returnUrl
+    Note over B: NOT yet active.<br/>Show "confirming payment".<br/>The back button reaches<br/>this URL too.
+
+    P->>API: POST /webhooks/razorpay (signed)
+    API->>API: verify signature
+    API->>PG: INSERT provider_events
+    Note over API,PG: duplicate collides on PK →<br/>acknowledged, not replayed
+    API-->>P: 200 immediately
+
+    API->>W: process asynchronously
+    rect rgb(240, 246, 247)
+        Note over W,PG: One transaction
+        W->>PG: INSERT payments (succeeded)
+        W->>PG: UPSERT subscriptions (pro, active, period dates)
+        W->>PG: INSERT credit_ledger (plan_grant, plan, +2500)
+        W->>PG: INSERT credit_ledger (plan_grant, facemap, +300)
+        W->>PG: UPDATE users balances
+    end
+    W-->>WS: subscription.updated + credits.updated
+    WS-->>B: plan is now Pro
+    Note over B: Interface flips.<br/>Poll GET /me as fallback<br/>if the socket is closed.
+```
+
+### Monthly renewal
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Provider
+    participant API as FastAPI
+    participant Beat as Celery beat
+    participant W as Billing worker
+    participant PG as PostgreSQL
+
+    Note over P,API: Primary path — fires within seconds of payment
+    P->>API: invoice.paid / subscription.charged
+    API->>W: renew(subscription)
+
+    Note over Beat: Safety net — hourly
+    Beat->>PG: SELECT WHERE current_period_end <= now()<br/>AND status IN (active, past_due)
+    Beat->>W: renew(subscription)
+    Note over Beat,W: Also the ONLY path for free users —<br/>no provider, no webhook
+
+    rect rgb(240, 246, 247)
+        Note over W,PG: One transaction, idempotent per period
+        W->>PG: INSERT plan_expiry — sweep unused plan + facemap
+        W->>PG: INSERT plan_grant — new allowance
+        W->>PG: UPDATE users balances
+        W->>PG: UPDATE subscriptions period dates
+    end
+    Note over W: topup credits are never touched
+```
+
+**Two triggers, deliberately.** Webhooks get lost, and a user whose allowance silently failed to renew is a support ticket we should never receive. Both paths check the period boundary before granting, so the sweep firing after the webhook is a no-op rather than a double grant.

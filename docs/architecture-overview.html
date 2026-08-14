@@ -363,12 +363,14 @@
   <header class="hero">
     <p class="eyebrow">Technical Architecture · Phase 1</p>
     <h1>How we build it<em>AI Video Editor</em></h1>
-    <p class="thesis">A web video editor with a real timeline, where the AI tools sit in the toolbar next to the ordinary ones. This page shows <b>how the system is put together</b> and the three decisions we still need from you.</p>
+    <p class="thesis">A web video editor with a real timeline, where the AI tools sit in the toolbar next to the ordinary ones. This page shows <b>how the system is put together</b> and how it pays for itself.</p>
     <div class="meta">
       <span class="chip on">Editor confirmed</span>
       <span class="chip on">Phased release</span>
       <span class="chip on">Web first</span>
-      <span class="chip">12 August 2026</span>
+      <span class="chip on">Pricing agreed</span>
+      <span class="chip on">Nothing blocking</span>
+      <span class="chip">13 August 2026</span>
     </div>
   </header>
 
@@ -701,37 +703,133 @@
     </figure>
   </section>
 
-  <!-- ============ ASKS ============ -->
+  <!-- ============ MONEY ============ -->
   <section>
-    <p class="eyebrow">What we need from you</p>
-    <h2>Three decisions, and only the first one blocks us</h2>
-    <p class="lede">Everything above can be built as described. These three are choices only you can make, and we would rather ask now than guess and rework later.</p>
+    <p class="eyebrow">How it pays for itself</p>
+    <h2>We show videos, we count credits</h2>
+    <p class="lede">Tiers are advertised as "≈30 videos a month" because that is what a creator understands. Underneath, everything is metered in credits — because a literal video counter breaks the first time someone re-runs captions on a clip they have not finished.</p>
+
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 960 300" role="img" aria-label="Diagram showing why a video counter fails: one ten-minute clip taken through four AI operations consumes four video slots, exhausting a three-video free tier before the video is finished.">
+          <defs>
+            <marker id="ar5" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto">
+              <path d="M0,0 L10,4 L0,8 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <text x="16" y="20" class="s-lab">ONE 10-MINUTE CLIP, COUNTED AS &quot;VIDEOS&quot;</text>
+
+          <rect x="16" y="34" width="150" height="52" rx="4" class="s-box"/>
+          <text x="91" y="55" class="s-title" text-anchor="middle">The clip</text>
+          <text x="91" y="72" class="s-sub" text-anchor="middle">10 minutes</text>
+
+          <rect x="196" y="34" width="164" height="52" rx="4" class="s-box"/>
+          <text x="278" y="55" class="s-title" text-anchor="middle">Captions</text>
+          <text x="278" y="72" class="s-sub" text-anchor="middle">1 video used</text>
+
+          <rect x="386" y="34" width="164" height="52" rx="4" class="s-box" stroke="var(--warn)"/>
+          <text x="468" y="55" class="s-title" text-anchor="middle" fill="var(--warn-ink)">Re-run, wrong name</text>
+          <text x="468" y="72" class="s-sub" text-anchor="middle">2 videos used</text>
+
+          <rect x="576" y="34" width="164" height="52" rx="4" class="s-box"/>
+          <text x="658" y="55" class="s-title" text-anchor="middle">Smart trim</text>
+          <text x="658" y="72" class="s-sub" text-anchor="middle">3 videos used</text>
+
+          <rect x="766" y="34" width="178" height="52" rx="4" class="s-box" stroke="var(--risk)"/>
+          <text x="855" y="55" class="s-title" text-anchor="middle" fill="var(--risk)">Export</text>
+          <text x="855" y="72" class="s-sub" text-anchor="middle">4 — over the limit</text>
+
+          <line x1="166" y1="60" x2="192" y2="60" class="s-line" marker-end="url(#ar5)"/>
+          <line x1="360" y1="60" x2="382" y2="60" class="s-line" marker-end="url(#ar5)"/>
+          <line x1="550" y1="60" x2="572" y2="60" class="s-line" marker-end="url(#ar5)"/>
+          <line x1="740" y1="60" x2="762" y2="60" class="s-line" marker-end="url(#ar5)"/>
+
+          <text x="480" y="112" class="s-edge" text-anchor="middle" fill="var(--risk)">A free tier of &quot;3 videos&quot; is exhausted by one video the user never finished.</text>
+
+          <line x1="16" y1="136" x2="944" y2="136" class="s-line" stroke-width="1" opacity="0.45"/>
+
+          <text x="16" y="164" class="s-lab">AND SO WE COUNT CREDITS</text>
+
+          <rect x="16" y="178" width="180" height="64" rx="4" class="s-box"/>
+          <text x="106" y="200" class="s-title" text-anchor="middle">A job runs</text>
+          <text x="106" y="217" class="s-sub" text-anchor="middle">needs 50 credits</text>
+          <text x="106" y="232" class="s-sub" text-anchor="middle">price shown beforehand</text>
+
+          <rect x="286" y="160" width="230" height="58" rx="4" class="s-box" stroke="var(--warn)" stroke-width="2"/>
+          <text x="401" y="182" class="s-title" text-anchor="middle">Monthly allowance</text>
+          <text x="401" y="199" class="s-sub" text-anchor="middle">expires at the end of the month</text>
+
+          <rect x="286" y="234" width="230" height="58" rx="4" class="s-box" stroke="var(--accent)" stroke-width="2"/>
+          <text x="401" y="256" class="s-title" text-anchor="middle">Credits they bought</text>
+          <text x="401" y="273" class="s-sub" text-anchor="middle">never expire</text>
+
+          <path d="M196,200 L240,200 L240,189 L282,189" class="s-line" stroke="var(--warn)" marker-end="url(#ar5)"/>
+          <path d="M196,220 L240,220 L240,263 L282,263" class="s-line" stroke="var(--accent)" marker-end="url(#ar5)"/>
+          <text x="238" y="180" class="s-lab" text-anchor="end" fill="var(--warn-ink)">FIRST</text>
+          <text x="238" y="288" class="s-lab" text-anchor="end" fill="var(--accent-ink)">ONLY IF SHORT</text>
+
+          <rect x="596" y="160" width="230" height="58" rx="4" class="s-box"/>
+          <text x="711" y="182" class="s-title" text-anchor="middle">Face mapping meter</text>
+          <text x="711" y="199" class="s-sub" text-anchor="middle">its own allowance · phase 2</text>
+          <text x="944" y="186" class="s-edge" text-anchor="end" fill="var(--muted)">GPU time cannot</text>
+          <text x="944" y="201" class="s-edge" text-anchor="end" fill="var(--muted)">drain the main balance</text>
+
+          <text x="596" y="256" class="s-edge">Whatever expires soonest is always spent first, so</text>
+          <text x="596" y="273" class="s-edge">credits someone paid for are never destroyed unused.</text>
+        </svg>
+      </div>
+      <figcaption><b>The top row is the failure we designed around; the bottom row is the fix.</b> Credits meter the actual work, so re-running captions costs a few credits rather than a whole video, and each tier carries 25–40% more credits than its headline figure needs to absorb exactly that. The "≈30 videos" stays on the pricing page, where it belongs.</figcaption>
+    </figure>
+
+    <div class="duo">
+      <div class="card">
+        <p class="k">Where the margin is comfortable</p>
+        <p>On phase 1 tools — captions, trimming, grading, export — a ten-minute video costs us roughly <b>$0.10–0.15</b> to process. Pro at $19.99 for thirty videos leaves plenty of room.</p>
+      </div>
+      <div class="card b">
+        <p class="k">Where it needs watching</p>
+        <p>Face mapping runs on graphics cards and is an order of magnitude more expensive. That is precisely why it has its own metered allowance instead of sharing the main balance.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <p class="label">These are estimates until we measure them</p>
+      <p>The cost figures above are calculated, not observed. Cost-per-job is instrumented from the first deployment, so the tiers get re-priced on evidence rather than arithmetic — and because plans live in a database table, changing a price is a data change, not a release.</p>
+    </div>
+  </section>
+
+  <!-- ============ SETTLED ============ -->
+  <section>
+    <p class="eyebrow">Where we stand</p>
+    <h2>Nothing is blocking. Building can start.</h2>
+    <p class="lede">Every decision the architecture depends on has an answer. What remains has a known default and is needed later, not now.</p>
 
     <div class="asks">
       <div class="ask">
-        <p class="id">A</p>
+        <p class="id">1</p>
         <div class="body">
-          <h3>Confirm the three phase 1 tools: captions, smart trimming, colour grading</h3>
-          <p>You said "2–3 core AI tools" — these are our proposal. All three are on the cheap path, all three answer a complaint creators actually have, and choosing them means launching without renting graphics cards.</p>
-          <p class="why">Blocks: which worker gets written first, and whether phase 1 needs GPU hardware at all. Swapping one for another changes what we build first, not how anything is built.</p>
+          <h3>Open the Stripe and Razorpay accounts</h3>
+          <p>Both providers go live at launch, and both need business verification before they will process a real payment. Razorpay additionally needs Indian entity documentation.</p>
+          <p class="why">Not blocking today — billing is built and tested against test keys. But the lead time is external and nobody on the team controls it, so the applications should start now rather than when the code is ready.</p>
         </div>
       </div>
 
       <div class="ask">
-        <p class="id">B</p>
-        <div class="body">
-          <h3>Choose a payment provider and what each tool costs in credits</h3>
-          <p>There is no payment system anywhere in the original architecture. The credit machinery is built either way — but nobody can buy anything until this exists.</p>
-          <p class="why">Blocks: taking money. Does not block building or testing, which run on manually granted credits.</p>
-        </div>
-      </div>
-
-      <div class="ask">
-        <p class="id">C</p>
+        <p class="id">2</p>
         <div class="body">
           <h3>Smart trimming: tighten a recording, or cut it down to its best parts?</h3>
-          <p>Removing silences and stumbles saves roughly 10–25% of a recording. The spec promises ten minutes down to two, which means choosing what is worth keeping — a substantially harder tool.</p>
-          <p class="why">Blocks: whether smart trimming is in phase 1 at all. If it is the harder version, we would swap it out and revisit it later.</p>
+          <p>Removing silences and stumbles saves roughly 10–25% of a recording. The original spec promises ten minutes down to two, which means choosing what is worth keeping — a substantially harder tool.</p>
+          <p class="why">Affects what we promise publicly, not what gets built first. Needed before the feature is described to customers.</p>
+        </div>
+      </div>
+
+      <div class="ask">
+        <p class="id">3</p>
+        <div class="body">
+          <h3>Storage retention, and who owns tax</h3>
+          <p>How long we keep uploads is the largest recurring cost in the system and the only one that grows on its own. Indian GST and EU VAT both need configuring — the providers offer tools, but choosing and setting them up is not a development task.</p>
+          <p class="why">Both needed before launch, neither blocks building.</p>
         </div>
       </div>
     </div>
@@ -762,7 +860,7 @@
       <div class="doc">
         <p class="n">03</p>
         <p class="t">Backend Architecture</p>
-        <p class="d">Data model, job pipeline, media handling, rendering, infrastructure</p>
+        <p class="d">Data model, job pipeline, media, rendering, billing, infrastructure</p>
       </div>
       <div class="doc">
         <p class="n">04</p>
@@ -777,7 +875,7 @@
       <div class="doc">
         <p class="n">—</p>
         <p class="t">Diagrams</p>
-        <p class="d">System overview, data model, job lifecycle</p>
+        <p class="d">System overview, data model, job and subscription lifecycles</p>
       </div>
     </div>
   </section>
