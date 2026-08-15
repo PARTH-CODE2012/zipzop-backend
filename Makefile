@@ -142,6 +142,12 @@ dev-worker: ## Run a Celery worker natively
 dev-frontend: ## Run the Next.js dev server
 	cd $(FRONTEND) && pnpm dev
 
+# ------------------------------------------------------------------- spike ---
+
+.PHONY: spike-media
+spike-media: ## Generate the M1 compositor spike's test clips and LUT (needs ffmpeg)
+	./scripts/make-spike-media.sh
+
 # ---------------------------------------------------------------- contract ---
 
 .PHONY: openapi
@@ -171,7 +177,7 @@ test-backend: ## Run backend tests
 
 .PHONY: test-frontend
 test-frontend: ## Run frontend tests
-	cd $(FRONTEND) && pnpm test --run
+	cd $(FRONTEND) && pnpm test
 
 .PHONY: lint
 lint: ## Lint and type-check both sides

@@ -91,16 +91,26 @@ Not worth fighting now, because **M0 needs nothing Docker provides that apt does
 
 **Throwaway code. No state management, no UI, no cleanliness.** The only question is whether the browser can do this. Do it before anything else in the frontend.
 
-- [ ] Two hidden `<video>` elements on hardcoded proxy files
-- [ ] WebGL2 canvas drawing the current frame
-- [ ] Clock driven by the playing element's `currentTime`, **not** `performance.now()`
-- [ ] `requestVideoFrameCallback` loop, with a `requestAnimationFrame` fallback
-- [ ] Cut from clip A to clip B with no black flash — preload B, seek it, `play()` then immediately `pause()`
-- [ ] LUT applied as a `TEXTURE_3D` in the fragment shader, with a strength uniform
-- [ ] Text overlay on a 2D canvas layered above
-- [ ] Crossfade between the two clips
-- [ ] **Test on Safari** — different codec support, autoplay rules, WebGL quirks
-- [ ] Measure: does it hold 60 fps at 1080p preview?
+Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and the two bugs it caught are written up in [`frontend/src/spike/compositor/README.md`](frontend/src/spike/compositor/README.md).
+
+- [x] Two hidden `<video>` elements on hardcoded proxy files
+- [x] WebGL2 canvas drawing the current frame
+- [x] Clock driven by the playing element's `currentTime`, **not** `performance.now()`
+- [x] `requestVideoFrameCallback` loop, with a `requestAnimationFrame` fallback — both paths exercised, with a stall watchdog so a callback that never fires cannot kill the loop
+- [x] Cut from clip A to clip B with no black flash — **zero black frames** across full playbacks in both modes, sampled after every draw. Needed two fixes: skip the draw rather than paint black when a clip has no frame yet, and hold the playhead instead of sliding on the wall clock while media catches up
+- [x] LUT applied as a `TEXTURE_3D` in the fragment shader, with a strength uniform — returns the `.cube` table **exactly** at every grid point (worst delta 0/255)
+- [x] Text overlay on a 2D canvas layered above, redrawn only when the visible words change
+- [x] Crossfade between the two clips — both on screen at the midpoint, equal-power audio, no discontinuity
+- [ ] **Test on Safari** — different codec support, autoplay rules, WebGL quirks. *Not testable from Linux. The code is written for it — H.264 only, `playsinline`, muted priming, rAF fallback — but that is not the same as tested. **Open the page on a Mac and an iPhone before M2 starts.*** ⚠️
+- [x] Measure: does it hold 60 fps at 1080p preview? — **yes, 85 fps**, ~40 % headroom on integrated graphics. 1 dropped frame in 454 at source rate. The cost is the video→texture upload, not the shader: 720p, 1080p and 4K are within a millisecond of each other
+
+### Also landed with it
+
+- [x] `make spike-media` — ffmpeg generates two 480p H.264 faststart proxies and a 33³ `.cube` LUT, gitignored and reproducible
+- [x] 45 unit tests on the pure parts: asset-time ↔ timeline-time on trimmed and sped-up clips, the `.cube` parser, letterboxing, and the §4.3 invariants over the spike's own document
+- [x] `pnpm test` fixed — it was `vitest` in watch mode, so `make test-frontend` could never have passed in CI
+
+> **Not proven, deliberately:** Safari, the wall-clock fallback (this timeline has no gaps), the three-element decoder pool (two clips, two elements), real ingest proxies, and Web Audio. Each is listed in the spike's README with when it gets covered.
 
 > **If this takes more than a week, stop and say so.** It is the one item on this list that can change the shape of the project.
 
