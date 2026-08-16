@@ -151,12 +151,15 @@ the crossfade and the letterbox maths are all effectively free.
 
 Listed so nobody reads the section above as more than it is.
 
-- **Safari.** Not testable from Linux, and it is the single biggest remaining risk in this
-  milestone: different autoplay rules, a shorter `requestVideoFrameCallback` history, and — on iOS —
-  a limit on simultaneous video playback that a crossfade needs two of. The code is written for it
-  (H.264 only, `playsinline`, muted priming, an rAF fallback, no extensions beyond
-  `WEBGL_lose_context`), but written-for is not tested-on. **Open the page on a Mac and an iPhone
-  before M2 starts.**
+- ~~**Safari.**~~ **iPhone verified 2026-08-16** from a tester's screen recordings, which closes the
+  biggest open risk in this milestone. On device: `driver rvfc`, `clock video`, **29.5 fps**, frame
+  cost **8.18 ms** against 8.42 ms on desktop, **0 / 89 dropped**, `primed A✓ B✓`, `play errors
+  none`, GPU `Apple GPU`, canvas 1920×1080. No black frame at the cut across 841 recorded frames
+  (minimum luminance 106.6/255), and **no black frame across the crossfade** either, over a further
+  519 frames. So all four iOS unknowns are answered: `requestVideoFrameCallback` exists, muted
+  priming is not refused, autoplay does not block, and **the cap on simultaneous video playback does
+  not stop a crossfade** — the one that could have forced crossfades off mobile entirely.
+  *Still unopened: Safari on macOS. Low risk now that the harder case passes.*
 - **The wall-clock fallback.** Implemented for gaps and text-only stretches, but this timeline is
   two contiguous clips, so it never runs. It gets exercised when the timeline can have gaps (M3).
 - **The decoder budget.** Two clips, two elements. The three-element recycling pool exists to stop a

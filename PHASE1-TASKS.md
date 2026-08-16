@@ -101,7 +101,13 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 - [x] LUT applied as a `TEXTURE_3D` in the fragment shader, with a strength uniform — returns the `.cube` table **exactly** at every grid point (worst delta 0/255)
 - [x] Text overlay on a 2D canvas layered above, redrawn only when the visible words change
 - [x] Crossfade between the two clips — both on screen at the midpoint, equal-power audio, no discontinuity
-- [ ] **Test on Safari** — different codec support, autoplay rules, WebGL quirks. *Not testable from Linux. The code is written for it — H.264 only, `playsinline`, muted priming, rAF fallback — but that is not the same as tested. **Open the page on a Mac and an iPhone before M2 starts.*** ⚠️
+- [~] **Test on Safari** — **iPhone verified 2026-08-16**, from a screen recording and a HUD capture:
+  - `driver rvfc` · `clock video` · **29.5 fps** · frame cost **8.18 ms** (against 8.42 ms on desktop AMD) · **0 / 89 dropped** · **0 draws skipped** · `primed A✓ B✓` · `play errors none` · GPU `Apple GPU` · canvas 1920×1080
+  - **No black frame at the cut**, confirmed across 841 recorded frames of the canvas: minimum luminance **106.6/255**, nothing below 30. The only two picture changes are the cut (117.0 → 107.7) and the loop wrap (106.8 → 117.6), each a single clean step
+  - In-point arithmetic exact on device — after the loop wrap the playhead reads 766 ms and the burnt-in timecode reads 1267 ms, against 500 + 766 = **1266 ms**
+  - So the three iOS unknowns are answered: `requestVideoFrameCallback` exists, muted priming is not refused, and autoplay does not block
+- [x] **Crossfade on iOS** — **verified 2026-08-16.** The engine really is in crossfade mode, not just the button: total duration reads `0:11.100`, which is 12 000 − 900 ms of overlap. Playhead 10 000 ms against a burnt-in `00:00:05.233` on clip B, where 300 + (10 000 − 5 100) = 5 200 ms — one frame. **No black frame across 519 recorded frames**, minimum luminance 63.3/255 and that is the first frame replacing the loading state; steady playback stays above 100. **iOS's cap on simultaneous video playback did not bite** — the risk that could have forced crossfades off mobile entirely
+- [ ] **Safari on macOS** 💤 — desktop Safari still unopened. Low risk now that iOS, the harder case, passes
 - [x] Measure: does it hold 60 fps at 1080p preview? — **yes, 85 fps**, ~40 % headroom on integrated graphics. 1 dropped frame in 454 at source rate. The cost is the video→texture upload, not the shader: 720p, 1080p and 4K are within a millisecond of each other
 
 ### Also landed with it
