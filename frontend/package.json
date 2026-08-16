@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "generate:types": "openapi-typescript ../openapi.json -o src/lib/api/generated.ts",
     "lint:fix": "eslint . --fix"
   },

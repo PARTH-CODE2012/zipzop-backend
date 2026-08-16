@@ -33,6 +33,12 @@ out/
 # against, and a diff on it should show up in review.
 frontend/src/lib/api/generated.ts
 
+# M1 spike fixtures: two encoded proxies and a 33^3 LUT, ~2.5 MB of binary and
+# machine-written text that no review reads. `make spike-media` rebuilds them
+# byte-identically from scripts/.
+frontend/public/spike/media/
+frontend/public/spike/luts/
+
 # ---- local infrastructure ----
 .docker-data/
 minio-data/
