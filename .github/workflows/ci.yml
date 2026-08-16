@@ -73,7 +73,12 @@ jobs:
       - name: openapi.json is current
         run: |
           python -m app.scripts.dump_openapi /tmp/openapi.check.json
-          diff -q openapi.json /tmp/openapi.check.json \
+          # openapi.json lives at the repository root, and this step runs in
+          # backend/ — so the path has to climb out. Without the `..` the diff
+          # fails on a missing file, which the `||` then reports as a stale
+          # contract: a message that sends you to regenerate a file that was
+          # never the problem.
+          diff -q ../openapi.json /tmp/openapi.check.json \
             || (echo "::error::openapi.json is stale — run 'make openapi' and commit it" && exit 1)
         working-directory: backend
 
@@ -105,7 +110,9 @@ jobs:
 
       - name: Test
         working-directory: frontend
-        run: pnpm test --run
+        # `pnpm test --run` makes pnpm itself reject `--run` as an unknown
+        # option. The script is `vitest run`, so it never watches anyway.
+        run: pnpm test
 
       - name: Build
         working-directory: frontend

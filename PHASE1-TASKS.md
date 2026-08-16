@@ -106,7 +106,7 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 
 ### Also landed with it
 
-- [x] `make spike-media` — ffmpeg generates two 480p H.264 faststart proxies and a 33³ `.cube` LUT, gitignored and reproducible
+- [x] `make spike-media` — ffmpeg generates two 480p H.264 faststart proxies and a 17³ `.cube` LUT, gitignored and reproducible
 - [x] 45 unit tests on the pure parts: asset-time ↔ timeline-time on trimmed and sped-up clips, the `.cube` parser, letterboxing, and the §4.3 invariants over the spike's own document
 - [x] `pnpm test` fixed — it was `vitest` in watch mode, so `make test-frontend` could never have passed in CI
 

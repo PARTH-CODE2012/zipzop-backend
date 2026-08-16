@@ -11,7 +11,7 @@ is built first ([`PHASE1-TASKS.md`](../../../../PHASE1-TASKS.md) · M1).
 ## Running it
 
 ```bash
-make spike-media      # ffmpeg generates two 480p proxies and a 33³ LUT (gitignored)
+make spike-media      # ffmpeg generates two 480p proxies and a 17³ LUT (gitignored)
 make dev-frontend
 ```
 
@@ -173,6 +173,7 @@ Listed so nobody reads the section above as more than it is.
   (`--use-angle=swiftshader`) is stable and was used for every correctness check; the performance
   numbers above come from a headful run against the real GPU. This is an environment quirk, not a
   finding about the compositor.
+- **The LUT here is 17³, where [`docs/04-frontend-architecture.md`](../../../../docs/04-frontend-architecture.md) §4.4 describes 33³.** Not an oversight: nothing in the lookup depends on the size, which is read from the file, and 33³ is 970 kB of text against 133 kB — enough to put a minute of black canvas in front of anyone opening this over a slow link. The production catalogue can ship either.
 - The two test clips and the LUT are **generated, not committed** — `make spike-media` rebuilds them
   byte for byte. The page says so if they are missing.
 - The same `.cube` file loads in FFmpeg's `lut3d`. Their outputs move the same way on every channel,

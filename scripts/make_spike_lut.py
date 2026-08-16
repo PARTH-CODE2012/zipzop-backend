@@ -7,7 +7,7 @@ and that the same file can later be handed to FFmpeg's `lut3d` filter so the
 browser and the export renderer can be compared frame by frame
 (docs/04-frontend-architecture.md 4.4).
 
-Generated rather than committed: it is 33^3 lines of text that nothing reviews.
+Generated rather than committed: it is thousands of lines of text nothing reviews.
 Regenerate with `make spike-media`.
 
 Format follows the Adobe Cube specification: the RED component varies fastest,
@@ -20,7 +20,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-SIZE = 33
+# 17 rather than 33. A 33³ table is 970 kB of text, and the spike has to be
+# openable over a slow link — where a minute of black canvas looks exactly like
+# the failure this page exists to detect. 17³ is 133 kB and a standard shipping
+# size; the difference is invisible on a grade this smooth, and nothing about
+# the lookup depends on the size, which is read from the file.
+SIZE = 17
 TITLE = "ZipZop cinematic_warm (M1 spike)"
 
 # Rec. 709 luma weights — the same ones the fragment shader uses.

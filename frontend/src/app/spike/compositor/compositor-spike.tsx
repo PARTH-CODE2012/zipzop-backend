@@ -38,6 +38,11 @@ export function CompositorSpike() {
   const [forceRaf, setForceRaf] = useState(false)
   const [showVideos, setShowVideos] = useState(false)
   const [scrubMs, setScrubMs] = useState<number | null>(null)
+  // A 1 MB LUT and two proxies have to arrive before the first frame can be
+  // drawn. On a fast connection that is invisible; over a tunnel it is most of
+  // a minute of black canvas, which looks exactly like the failure this page
+  // exists to detect. Say what is happening instead.
+  const [loading, setLoading] = useState<string | null>('Loading the colour table…')
 
   useEffect(() => {
     const glCanvas = glRef.current
@@ -61,6 +66,7 @@ export function CompositorSpike() {
         }
         const lut = parseCubeLut(await response.text())
         if (cancelled) return
+        setLoading('Loading the test clips…')
 
         engine = new CompositorEngine({
           glCanvas,
@@ -68,12 +74,19 @@ export function CompositorSpike() {
           videoHost,
           lut,
           onStats: (next) => {
-            if (!cancelled) setStats(next)
+            if (cancelled) return
+            setStats(next)
+            // The first frame on screen is the only honest "ready" signal:
+            // it means the LUT parsed, a clip decoded and the shader ran.
+            if (next.primed.some((clip) => clip.primed)) setLoading(null)
           },
         })
         engineRef.current = engine
       } catch (error) {
-        if (!cancelled) setBootError(error instanceof Error ? error.message : String(error))
+        if (!cancelled) {
+          setLoading(null)
+          setBootError(error instanceof Error ? error.message : String(error))
+        }
       }
     })()
 
@@ -131,7 +144,7 @@ export function CompositorSpike() {
         <h1 className="mt-1 text-2xl font-semibold">Two clips, a cut, a grade and a caption</h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--color-ink-2)]">
           Throwaway code answering one question: can the browser do this at all. Video frames go
-          into a WebGL2 texture, a 33³ LUT grades them in the fragment shader, captions land on a
+          into a WebGL2 texture, a 3D LUT grades them in the fragment shader, captions land on a
           2D canvas above, and the clock comes from the playing element&rsquo;s own{' '}
           <code className="font-mono">currentTime</code> — never{' '}
           <code className="font-mono">performance.now()</code>.
@@ -157,6 +170,15 @@ export function CompositorSpike() {
             ref={textRef}
             className="pointer-events-none absolute inset-0 block h-full w-full"
           />
+          {loading !== null && bootError === null && (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
+              <p className="text-sm text-[var(--color-ink)]">{loading}</p>
+              <p className="max-w-xs text-xs text-[var(--color-ink-2)]">
+                About 1 MB of test media. Over a slow link this takes a few seconds — a black
+                canvas here is the download, not a bug.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 

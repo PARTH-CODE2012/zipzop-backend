@@ -61,7 +61,7 @@ encode() { # $1 = lavfi video source, $2 = extra video filters, $3 = sine freq, 
     -filter_complex "[0:v]$2[v]" \
     -map "[v]" -map 1:a \
     -c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p \
-    -preset veryfast -crf 22 -g "$FPS" -keyint_min "$FPS" -sc_threshold 0 \
+    -preset slow -crf 30 -g "$FPS" -keyint_min "$FPS" -sc_threshold 0 \
     -c:a aac -b:a 96k -ac 2 \
     -movflags +faststart -shortest \
     "$4"
