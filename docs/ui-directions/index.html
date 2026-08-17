@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ZipZop · directions UI — série 1</title>
+<title>ZipZop · UI directions — series 1</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;padding:44px 20px 70px;background:#131315;color:#E8E8EC;font:14px/1.65 system-ui,sans-serif;display:flex;justify-content:center}
 .wrap{width:100%;max-width:720px}
 h1{font-size:21px;font-weight:600;margin:0 0 6px}
-.lede{color:#8B8B94;font-size:13px;margin:0 0 28px;max-width:60ch}
+.lede{color:#8B8B94;font-size:13px;margin:0 0 28px;max-width:62ch}
 a.card{display:block;text-decoration:none;color:inherit;border:1px solid #2A2A30;border-radius:12px;padding:14px 16px;margin-bottom:10px;transition:border-color .18s,background .18s,transform .18s}
 a.card:hover{border-color:#4A4A54;background:#18181B;transform:translateY(-1px)}
 .hd{display:flex;align-items:center;gap:10px;margin-bottom:5px}
@@ -19,47 +19,55 @@ p.d{margin:0;color:#8B8B94;font-size:13px}
 p.t{margin:7px 0 0;color:#61616B;font-size:12px}
 .note{margin:26px 0 0;padding:14px 16px;border:1px solid #2A2A30;border-radius:12px;color:#8B8B94;font-size:13px}
 .note b{color:#E8E8EC;font-weight:600}
+.next{display:block;margin:10px 0 0;padding:14px 16px;border:1px solid #4A4526;background:#16160E;border-radius:12px;text-decoration:none;color:inherit;transition:border-color .18s}
+.next:hover{border-color:#7A7238}
+.next b{color:#FFE81F;font-weight:600}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>Directions UI — série 1</h1>
-<p class="lede">Cinq directions pour la charte visuelle de ZipZop, toutes sur la même contrainte : fond noir, accents jaune néon, vibe gaming, un bouton dédié par fonction. Le même écran (l'éditeur, M3) est décliné à chaque fois, pour que la comparaison porte sur le style et non sur le contenu. La série 2, plus moderne, est dans <code>../ui-directions-modern/</code>.</p>
+<h1>UI directions — series 1</h1>
+<p class="lede">Five directions for the ZipZop visual charter, all working under the same constraint: black background, neon yellow accents, a gaming feel, and one dedicated button per feature. The same screen — the editor, milestone M3 — is restyled every time, so the comparison is about the style and not the content. Series 2, the modern set, sits in <code>ui-directions-modern/</code>.</p>
 
 <a class="card" href="01-arcade.html">
   <div class="hd"><span class="sw" style="background:#E3FF04"></span><h2>1 · Arcade</h2></div>
-  <p class="d">Borne d'arcade, CRT, scanlines. Rack de tuiles carrées, zéro arrondi, clip sélectionné en jaune plein.</p>
-  <p class="t">Chakra Petch + Share Tech Mono · mouvement 0 ms</p>
+  <p class="d">Arcade cabinet, CRT, scanlines. A rack of square tiles, no rounded corners, selected clip in solid yellow.</p>
+  <p class="t">Chakra Petch + Share Tech Mono · 0 ms motion</p>
 </a>
 
 <a class="card" href="02-cockpit.html">
   <div class="hd"><span class="sw" style="background:#F5E60A"></span><h2>2 · Cockpit</h2></div>
-  <p class="d">HUD tactique. Le jaune ne sert qu'à la donnée active. Équerres d'angle, grille de fond, bandeau de télémétrie.</p>
-  <p class="t">Rajdhani + JetBrains Mono · balayages 120 ms</p>
+  <p class="d">Tactical HUD. Yellow carries data only. Corner brackets, background grid, telemetry strip.</p>
+  <p class="t">Rajdhani + JetBrains Mono · 120 ms sweeps</p>
 </a>
 
 <a class="card" href="03-dock.html">
   <div class="hd"><span class="sw" style="background:#FFE800"></span><h2>3 · Dock</h2></div>
-  <p class="d">Console de salon. Les outils sont un hotbar centré en bas avec les touches 1 à 9. Pastilles jaunes à texte noir.</p>
-  <p class="t">Space Grotesk + DM Mono · appui à ressort</p>
+  <p class="d">Living-room console. The tools are a centred hotbar with keys 1 to 9. Solid yellow pills, black text.</p>
+  <p class="t">Space Grotesk + DM Mono · spring on press</p>
 </a>
 
 <a class="card" href="04-terminal.html">
   <div class="hd"><span class="sw" style="background:#EAFF00"></span><h2>4 · Terminal</h2></div>
-  <p class="d">Brutaliste, clavier d'abord. Monospace intégral, jaune en surligneur, raccourcis affichés, ligne d'état façon vim.</p>
-  <p class="t">JetBrains Mono seul · aucune animation</p>
+  <p class="d">Brutalist, keyboard first. Monospace throughout, yellow as a highlighter, shortcuts on screen, vim-style status line.</p>
+  <p class="t">JetBrains Mono alone · no animation</p>
 </a>
 
 <a class="card" href="05-velocity.html">
   <div class="hd"><span class="sw" style="background:#FFD400"></span><h2>5 · Velocity</h2></div>
-  <p class="d">Motorsport. Géométrie biseautée, italiques, rail d'outils à droite, jauges d'instrument de bord, bandes de danger.</p>
-  <p class="t">Archivo + Barlow Semi Condensed · entrées 220 ms avec dépassement</p>
+  <p class="d">Motorsport. Bevelled geometry, italics, tool rail on the right, dashboard gauges, hazard stripes.</p>
+  <p class="t">Archivo + Barlow Semi Condensed · 220 ms with overshoot</p>
 </a>
 
 <div class="note">
-  <p style="margin:0 0 8px"><b>Ce que chaque maquette doit prouver</b></p>
-  <p style="margin:0">Les quatre états que <code>frontend/src/styles/globals.css</code> attend sont visibles dans chacune : clip au repos, clip sélectionné, clip en cours de déplacement, piste muette. Aucun de ces états ne repose sur la teinte seule.</p>
+  <p style="margin:0 0 8px"><b>What every mockup has to prove</b></p>
+  <p style="margin:0">The four states that <code>frontend/src/styles/globals.css</code> expects are visible in each one: clip at rest, clip selected, clip being dragged, muted track. None of them relies on hue alone.</p>
 </div>
+
+<a class="next" href="ui-directions-modern/index.html">
+  <p style="margin:0"><b>Series 2 — modern &rarr;</b></p>
+  <p class="d" style="margin:5px 0 0">Same brief taken further: rounded corners, translucency and animation in the Canva spirit, with the timeline kept deliberately technical.</p>
+</a>
 </div>
 </body>
 </html>
