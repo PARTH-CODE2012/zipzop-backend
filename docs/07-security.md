@@ -170,7 +170,7 @@ Reading, not attacking. Done first: it is what tells §6 where to aim.
 - [ ] IMDSv2 required, hop limit 1 — this is half of the SSRF defence in §6.4
 - [ ] Secrets in Secrets Manager; **no long-lived AWS keys in CI** — OIDC
 - [ ] TLS everywhere, HSTS on, no plaintext listener
-- [ ] **Branch protection on `main`** — still unticked in M0, and it is a supply-chain control, not an administrative nicety
+- [ ] **Branch protection on `main`** — moved out of M0 on 17 August and owned here. `dev` is the working branch and nothing deploys from `main` yet, so it bought nothing there; it is still a supply-chain control and not an administrative nicety
 - [ ] Worker egress restricted: the ingest worker needs S3 and nothing else. Verify it, then try to prove otherwise from inside (§6.4)
 
 ### 5.4 Dependencies and supply chain

@@ -16,6 +16,7 @@ Everything needed to build this product. Start here.
 | **4** | [Backend Architecture](03-backend-architecture.md) | Backend | Data model, job pipeline, media, rendering, infrastructure |
 | **5** | [Frontend Architecture](04-frontend-architecture.md) | Frontend | Timeline state, playback engine, undo, tool integration |
 | **6** | [Security & Penetration Testing](07-security.md) | Everyone, before launch | What M7 reviews, what it attacks, and what blocks the release |
+| **7** | [UI Charter](08-ui-charter.md) | Frontend, before writing any component | The palette, typeface, spacing, component states and motion — and the five rules that settle arguments |
 
 **Diagrams:** [system overview](diagrams/system-overview.md) · [data model](diagrams/data-model.md) · [job lifecycle](diagrams/job-lifecycle.md)
 
@@ -25,6 +26,7 @@ Everything needed to build this product. Start here.
 |---|---|---|
 | **M1** | [Compositor spike](../frontend/src/editor/playback/README.md) | touching the renderer or the playback clock |
 | **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
+| **M3** | [UI Charter](08-ui-charter.md) | writing any component or stylesheet. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
 
 ### If you have fifteen minutes
 
@@ -58,11 +60,15 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. Building can start.**
+**Nothing blocking. M3 can start — begin at *Backend — projects*.**
+
+Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work. The order inside M3 is forced and it is backend first: `openapi.json` carries no project or timeline schema yet, so the frontend cannot generate the timeline document type until those routes exist. [`PHASE1-TASKS.md`](../PHASE1-TASKS.md) · M3 says the same thing where you will actually be reading it.
 
 Approved by the project lead **12 August**: it is an editor · phased release · face mapping works on both own and imported footage · web first · lip sync is in.
 
 Approved **13 August**: phase 1 tools are captions, smart trim and colour grading · four tiers with credits underneath · monthly allowance expires, purchased credits do not · face mapping gets its own meter · Stripe **and** Razorpay both live at launch · AWS on a company account · fair-use ceiling on Unlimited · "dedicated server" reworded to dedicated priority queue.
+
+Approved **17 August**: **A2 Studio** is the visual baseline for the design charter ([the mockups](ui-directions/ui-directions-modern/index.html)) · **per-file upload size is set per plan** — 100 MB Free, 1 GB Pro, 5 GB on the unlimited tier ([scope §3.2](02-scope-v1.md)) · the httpOnly refresh cookie introduced in [contract v1.2](05-api-contract.md) is ratified, so it stops being an implementation decision made under M2 and becomes the agreed position.
 
 ### Not blocking, but needed soon
 
@@ -71,8 +77,9 @@ Approved **13 August**: phase 1 tools are captions, smart trim and colour gradin
 | **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end — external lead time, start now | Project lead |
 | **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
 | **3** | Storage retention policy | Before launch. Largest recurring cost, and it only grows. | Project lead |
-| **3b** | **Storage quota per tier** 🟠 | **Now** — M2 built and tested the enforcement path, but no document says how many GB a tier gets. The values in `backend/app/services/plans.py` are marked `PLACEHOLDER` and must not ship. | Project lead |
-| **3c** | **A palette, a typeface, and the visual states** (clip selected, clip dragging, track muted) | **Now** — M3 is the editor, and it is blocked on this. M2's timeline was built structurally with every colour behind a token in `frontend/src/styles/globals.css`, so the charter is a one-file change; without it there is nothing to apply. | Project lead |
+| **3b** | **Storage quota per tier** 🟠 | **Still now.** The 17 August answer set the size of a *single upload*; this is the *total* a tier may hold, which is a different number and still unstated. The values in `backend/app/services/plans.py` are marked `PLACEHOLDER` and must not ship. | Project lead |
+| **3c** | **A palette, a typeface, and the visual states** (clip selected, clip dragging, track muted) | 🟢 **Closed 17 August** — A2 Studio approved, and [`08-ui-charter.md`](08-ui-charter.md) written from it. All four timeline states answered in §9. Applying the tokens to `frontend/src/styles/globals.css` is an M3 task, not a question for the lead. | Done |
+| **3d** | Per-file upload limit for Business ⚪ | **Not urgent, not being chased.** The 17 August limits name three plans against four tiers, so we set Business to 2 GB ourselves and carried on. Decision **P** — mention it next time it comes up. | Project lead, eventually |
 | **4** | Who owns tax — Indian GST, EU VAT | Before launch. Not a development task. | Project lead |
 
 Credit values per tier are proposals derived from estimated costs. They live in one table and one module, and cost-per-job is instrumented from the first deploy, so re-pricing on real measurements is a data change. Full register in [the vision, §12](01-product-vision.md#12-decision-register).

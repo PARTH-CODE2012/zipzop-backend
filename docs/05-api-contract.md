@@ -276,7 +276,7 @@ Values are 0–1 amplitudes, **one per bucket** — the peak in that hundredth o
 
 A track with no audio still gets a document, filled with zeros. An asset cannot become `ready` without one, and plenty of footage is silent.
 
-> **Note against [`03-backend-architecture.md`](03-backend-architecture.md) §6.2**, which describes "min/max amplitude pairs". That would be two numbers per bucket and contradicts the 60 000 figure above. This contract is what both sides build against, so one value per bucket is what ships; the architecture document's wording is the one to correct.
+> **Settled.** [`03-backend-architecture.md`](03-backend-architecture.md) §6.2 used to describe "min/max amplitude pairs" — two numbers per bucket, which contradicts the 60 000 figure above. That wording was corrected on 17 August; one value per bucket is what ships, on both sides.
 
 ### `GET /media?kind=video&limit=50`
 

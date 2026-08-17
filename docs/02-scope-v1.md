@@ -62,7 +62,21 @@ Not in phase 1: teams and shared balances, invoicing documents, tax configuratio
 - Every upload is probed on arrival, and gets a low-resolution **proxy** for preview, a **thumbnail**, and **waveform peaks** for the timeline
 - Delete an imported file
 
-**Accepted on arrival (proposed defaults, need confirming):** MP4/MOV/WebM video, MP3/WAV/M4A audio, JPEG/PNG images · max 2 GB per file · max 60 minutes per video · up to 4K source.
+**Accepted on arrival:** MP4/MOV/WebM video, MP3/WAV/M4A audio, JPEG/PNG images.
+
+**Maximum file size — confirmed by the project lead on 17 August 2026. It is per plan, not global.**
+
+| | Free | Pro | Business | Studio |
+|---|---|---|---|---|
+| **Per file** | 100 MB | 1 GB | 2 GB \* | 5 GB |
+
+\* **Business is ours, not the lead's.** He named three plans — Free, Pro and "Enterprise Unlimited" — against the four in §8.1. Studio is the tier advertised as unlimited, so 5 GB is recorded there on that reading, which leaves Business uncovered. 2 GB sits between its neighbours and matches the global default this table replaces, so it is a defensible interim rather than a guess. It is one constant in `backend/app/services/plans.py` and one cell here — decision **P**, to be corrected whenever the answer arrives rather than chased.
+
+"Unlimited" describes the **monthly video allowance**, not the file: a 5 GB per-file ceiling still applies on that tier, and the fair-use clause in §8.1 is what bounds the volume.
+
+The 2 GB global default proposed in v1.0 is superseded. The ceiling rising to 5 GB is an ingest concern rather than a scope one — multipart upload, probe timeouts and proxy transcode time are all sized against the largest accepted file, not the average.
+
+**Still proposed, still need confirming:** max 60 minutes per video · up to 4K source.
 
 ### 3.3 The editor
 

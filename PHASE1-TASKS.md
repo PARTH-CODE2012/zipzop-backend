@@ -23,10 +23,9 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 
 ### Repositories
 
-- [ ] Merge `docs/` from `dev` into `main`
 - [x] Decide repo layout — **monorepo**: `backend/` and `frontend/` inside the existing repository. Shared `openapi.json` and one commit per contract change; splitting later is straightforward
 - [x] `.gitignore`, root `README` pointing at `docs/`, `.env.example` with every variable named
-- [ ] Branch protection on `main`  *(GitHub setting — needs repo admin)*
+- [x] **`dev` is the working branch and stays it.** Merging `docs/` into `main` is dropped outright — nobody builds against `main`, so keeping it in sync is ceremony. **Branch protection on `main` is not dropped, it moves to M7**, which already claims it and is right to: it is a supply-chain control ([`docs/07-security.md`](docs/07-security.md) §5.3). It buys nothing while one person pushes to `dev`, and it matters before anything deploys from `main`
 
 ### Backend skeleton — done, verified running
 
@@ -55,8 +54,8 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 - [x] FastAPI generating `openapi.json`, committed at the repository root
 - [x] `make openapi` / `make types` / `make contract-check`, and CI failing on a stale schema
 - [x] Frontend types generated from it into `src/lib/api/generated.ts`
-- [ ] Mock server (Prism or MSW) serving fixtures from the same schema
-- [ ] Fixtures written early: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
+
+> **The mock server and its fixtures moved to M4**, where they are first used. They were listed here on the principle of writing fixtures early, and the principle is right, but the schema they would be written against still has no jobs, no timeline and no projects in it. Writing them now means writing them twice.
 
 ### Local infrastructure
 
@@ -107,7 +106,7 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
   - In-point arithmetic exact on device — after the loop wrap the playhead reads 766 ms and the burnt-in timecode reads 1267 ms, against 500 + 766 = **1266 ms**
   - So the three iOS unknowns are answered: `requestVideoFrameCallback` exists, muted priming is not refused, and autoplay does not block
 - [x] **Crossfade on iOS** — **verified 2026-08-16.** The engine really is in crossfade mode, not just the button: total duration reads `0:11.100`, which is 12 000 − 900 ms of overlap. Playhead 10 000 ms against a burnt-in `00:00:05.233` on clip B, where 300 + (10 000 − 5 100) = 5 200 ms — one frame. **No black frame across 519 recorded frames**, minimum luminance 63.3/255 and that is the first frame replacing the loading state; steady playback stays above 100. **iOS's cap on simultaneous video playback did not bite** — the risk that could have forced crossfades off mobile entirely
-- [ ] **Safari on macOS** 💤 — desktop Safari still unopened. Low risk now that iOS, the harder case, passes
+- [ ] **Safari on macOS** 💤 — **blocked on hardware, not on time.** Nobody on the project has a Mac; this waits on borrowing one. Low risk now that iOS, the harder case, passes — but "low risk" is a prediction, and iOS passing is evidence about a different build of the engine, so it stays open rather than being closed on inference
 - [x] Measure: does it hold 60 fps at 1080p preview? — **yes, 85 fps**, ~40 % headroom on integrated graphics. 1 dropped frame in 454 at source rate. The cost is the video→texture upload, not the shader: 720p, 1080p and 4K are within a millisecond of each other
 
 ### Also landed with it
@@ -190,6 +189,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 - **No project persistence.** `POST/GET/PATCH /projects` stay in M3, which is titled *"Editing that survives a reload"*. M2's timeline lives in the browser and is gone on reload — the end-to-end run asserts that, so the boundary is checked rather than assumed.
 - **Multi-part upload in the browser.** The server issues the per-part URLs; the client refuses over 100 MB with a clear message rather than failing silently at 101 MB.
+  ⚠️ **The 17 August plan limits invalidated the assumption this rested on.** When it was written no tier had a stated per-file size, so a 100 MB client ceiling was a safe placeholder. Pro is now 1 GB and Studio 5 GB ([`docs/02-scope-v1.md`](docs/02-scope-v1.md) §3.2), which means **a paying user cannot upload a file their own plan permits.** The server side is already done — this is the browser half of the same feature, and it now has a deadline it did not have before. It is not M3 work by title, but it must not reach launch unlogged.
 - **Storage quota values.** 🟠 The enforcement path is built and tested, but no document states the limit for any tier. The numbers in `app/services/plans.py` are marked `PLACEHOLDER` and must not ship. Same commercial question as the retention policy, and the same owner.
 - **The peaks disagreement.** [`docs/03`](docs/03-backend-architecture.md) §6.2 says "min/max amplitude pairs"; the contract §3 says one value per bucket, and its own arithmetic only works that way. The contract is what both sides build against, so one value per bucket ships. §6.2's wording is the one to correct.
 
@@ -198,6 +198,17 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 ## M3 · Editing that survives a reload
 
 *Ends when: you can cut, arrange, undo, close the tab, and come back to exactly what you left.*
+
+> **Visual baseline settled 17 August 2026: A2 Studio** — [`docs/ui-directions/ui-directions-modern/`](docs/ui-directions/ui-directions-modern/index.html), written up as [`docs/08-ui-charter.md`](docs/08-ui-charter.md). Dark surfaces, neon yellow accents, rounded translucent chrome, and a deliberately technical grid timeline. The blocker recorded against M3 in `docs/README.md` is cleared.
+
+> ⚠️ **The order inside M3 is forced, and it is backend first.** `openapi.json` today has twelve paths — auth, `/me`, media — and **no project or timeline schema at all**. The first frontend task below generates the timeline document type from that schema, so it cannot run until *Backend — projects* has shipped and `make openapi && make types` has been run again. The design is not the blocker: [`docs/05-api-contract.md`](docs/05-api-contract.md) §4 and §5 already specify the document, the eight invariants and all five project routes. Start at *Backend — projects*.
+
+### Frontend — visual charter 🟢
+
+- [x] [`docs/08-ui-charter.md`](docs/08-ui-charter.md) written from A2 — palette, type scale, spacing, radii, the six component states, motion durations and curves. §13 is the block that replaces `@theme`
+- [ ] `frontend/src/styles/globals.css` `@theme` block replaced with the charter tokens — **no component file touched**, which is the property M2 was built to preserve
+- [ ] The four states the timeline needs proven against the charter: clip at rest, selected, dragging, muted track — none of them distinguished by hue alone
+- [ ] Blur and translucency confined to the chrome ⚠️ — a `backdrop-filter` on a clip does not survive the 500-clip budget in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §9
 
 ### Frontend — the document
 
@@ -269,6 +280,8 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Frontend — tools
 
+- [ ] Mock server (Prism or MSW) serving fixtures from the same schema *(moved from M0 — this is the first milestone that consumes a fixture)*
+- [ ] Fixtures: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
 - [ ] Estimate on panel open, price on the button
 - [ ] Invoke with idempotency key, badge on the clip, editing continues
 - [ ] WebSocket progress, polling fallback every 3 s
@@ -349,7 +362,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [ ] Frontend: httpOnly + `Secure` + `SameSite` on the refresh cookie, a decided CSRF story, no `dangerouslySetInnerHTML` near user or model text
 - [ ] Frontend: CSP, `frame-ancestors`, `Referrer-Policy`; bucket CORS an origin list and **not** `*`; user media not served from the app origin
 - [ ] Infra: Redis authenticated and private, containers non-root with no Docker socket, **IMDSv2 required with hop limit 1**, OIDC instead of long-lived AWS keys in CI
-- [ ] **Branch protection on `main`** — carried over unticked from M0, and it is a supply-chain control
+- [ ] **Branch protection on `main`** — moved here from M0 on 17 August, where it protected a branch nobody pushes to. Owned here because it is a supply-chain control
 - [ ] Dependencies: lockfiles installed from in CI, `pip-audit` / `pnpm audit` clean or every exception dated, **FFmpeg pinned and current**, Actions pinned by SHA
 
 ### Part B — penetration test
