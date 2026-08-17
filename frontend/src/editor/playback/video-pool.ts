@@ -44,6 +44,13 @@ const PRIME_TIMEOUT_MS = 8_000
 export class PooledVideo {
   readonly el: HTMLVideoElement
   readonly clipId: string
+  /**
+   * The URL as it was given, kept because `el.src` comes back resolved to an
+   * absolute URL. `setTimeline` compares these to decide which elements can be
+   * kept, and a comparison against the resolved form would never match a
+   * relative path.
+   */
+  readonly src: string
 
   private readonly abort = new AbortController()
   private disposed = false
@@ -68,8 +75,29 @@ export class PooledVideo {
 
   constructor(clipId: string, src: string, host: HTMLElement) {
     this.clipId = clipId
+    this.src = src
 
     const el = document.createElement('video')
+
+    // **Set this before `src`.** Assigning `crossOrigin` after the source has
+    // been set does nothing: the fetch has already been started without CORS,
+    // and the browser will not restart it.
+    //
+    // Without it the element loads and plays perfectly — and then
+    // `texImage2D` throws `SecurityError: the video element contains
+    // cross-origin data`, because a frame from an opaque response taints the
+    // canvas. The proxy comes from object storage on another origin (MinIO on
+    // :9000 in development, a CDN in production) while the app is on :3000, so
+    // this is the normal case, not an edge one. The picture is simply never
+    // drawn.
+    //
+    // `anonymous` sends no credentials, which is right: the presigned
+    // signature is in the query string and the bucket is private, so there is
+    // nothing for a cookie to add. The storage side must answer with
+    // `Access-Control-Allow-Origin` — MinIO does by default; CloudFront needs
+    // a response-headers policy that says so.
+    el.crossOrigin = 'anonymous'
+
     el.src = src
     el.preload = 'auto'
     el.playsInline = true

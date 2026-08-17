@@ -13,12 +13,18 @@ help: ## Show this help
 # ------------------------------------------------------------------ setup ---
 
 .PHONY: setup
-setup: ## First run: copy .env, install both sides
+setup: ## First run: copy .env, install both sides, generate the API types
 	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")
 	$(MAKE) install-backend
 	$(MAKE) install-frontend
+	# generated.ts is gitignored — it is derived from the committed openapi.json,
+	# and committing it would let the two drift. A fresh clone therefore has no
+	# API types at all, and `pnpm typecheck`, `pnpm build` and `pnpm dev` all
+	# fail on a missing module until this runs. It belongs in setup, not in a
+	# note somebody reads after losing twenty minutes.
+	$(MAKE) types
 	@echo ""
-	@echo "Next: make up && make migrate"
+	@echo "Next: make infra && make migrate && make dev-all"
 
 .PHONY: install-backend
 install-backend: ## Install Python dependencies into backend/.venv
@@ -142,11 +148,86 @@ dev-worker: ## Run a Celery worker natively
 dev-frontend: ## Run the Next.js dev server
 	cd $(FRONTEND) && pnpm dev
 
+.PHONY: infra
+infra: ## Start whatever infrastructure is not already up (Postgres, Redis, MinIO)
+	@./scripts/infra.sh
+
+.PHONY: dev-all
+dev-all: ## Everything you need to click around: API + ingest worker + frontend
+	@echo "starting the API, the ingest worker and the dev server…"
+	@cd $(BACKEND) && (./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 \
+		--reload > /tmp/zipzop-api.log 2>&1 &)
+	@cd $(BACKEND) && (./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &)
+	@cd $(FRONTEND) && (pnpm dev --port 3000 > /tmp/zipzop-web.log 2>&1 &)
+	@sleep 4
+	@echo ""
+	@echo "  editor    http://localhost:3000/editor/scratch"
+	@echo "  API docs  http://localhost:8000/docs"
+	@echo "  logs      /tmp/zipzop-{api,worker,web}.log"
+	@echo ""
+	@echo "  stop with: make dev-stop"
+
+# The bracket around the first character below is not a typo. `pkill -f` matches
+# against full command lines, including the shell running the recipe — which
+# contains the pattern, so a plain `pkill -f "…celery_app worker"` kills make
+# itself before reaching the next line. `[c]elery` matches the running process
+# and not the literal text of the rule. (Comments live here, outside the recipe:
+# an indented `#` line is handed to the shell and echoed.)
+.PHONY: dev-stop
+dev-stop: ## Stop what dev-all started
+	@pkill -f "[u]vicorn app.main:app" 2>/dev/null || true
+	@pkill -f "[c]elery -A app.workers.celery_app" 2>/dev/null || true
+	@pkill -f "[n]ext dev" 2>/dev/null || true
+	@pkill -f "[n]ext-server" 2>/dev/null || true
+	@echo "stopped"
+
+.PHONY: doctor
+doctor: ## Check a fresh clone has everything it needs, and say what is missing
+	@./scripts/doctor.sh
+
 # ------------------------------------------------------------------- spike ---
 
 .PHONY: spike-media
 spike-media: ## Generate the M1 compositor spike's test clips and LUT (needs ffmpeg)
 	./scripts/make-spike-media.sh
+
+# --------------------------------------------------------------------- e2e ---
+# M2's closing condition, checked in a real browser. See frontend/e2e/README.md
+# for what the 29 checks cover and for the three bugs this found that the unit
+# suites could not.
+
+.PHONY: e2e-media
+e2e-media: ## Generate the end-to-end fixture clip (needs ffmpeg)
+	@ffmpeg -y -hide_banner -loglevel error \
+		-f lavfi -i "testsrc2=size=1280x720:rate=30:duration=6" \
+		-f lavfi -i "sine=frequency=440:duration=6,volume=0.8" \
+		-c:v libx264 -preset veryfast -pix_fmt yuv420p \
+		-c:a aac -b:a 128k -movflags +faststart \
+		$(FRONTEND)/e2e/fixture.mp4
+	@echo "wrote $(FRONTEND)/e2e/fixture.mp4"
+
+.PHONY: e2e-up
+e2e-up: ## Start everything the end-to-end run needs, in the background
+	@$(MAKE) --no-print-directory native-check
+	@echo "starting the API, a worker and the dev server…"
+	@cd $(BACKEND) && (./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 \
+		--log-level warning > /tmp/zipzop-api.log 2>&1 &)
+	@cd $(BACKEND) && (./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &)
+	@cd $(FRONTEND) && (pnpm dev --port 3000 > /tmp/zipzop-web.log 2>&1 &)
+	@echo "logs: /tmp/zipzop-{api,worker,web}.log"
+
+.PHONY: e2e-down
+e2e-down: dev-stop ## Stop what e2e-up started
+
+.PHONY: e2e
+e2e: e2e-media ## Prove M2 end to end in a real browser
+	cd $(FRONTEND) && node e2e/m2.mjs
+
+.PHONY: e2e-headful
+e2e-headful: e2e-media ## The same, with a window you can watch
+	cd $(FRONTEND) && node e2e/m2.mjs --headful
 
 # ---------------------------------------------------------------- contract ---
 

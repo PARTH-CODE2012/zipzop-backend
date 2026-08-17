@@ -727,11 +727,17 @@ Runs on the `ingest` queue, typically under 30 seconds for a 10-minute video, an
 | **Probe** | duration, dimensions, fps, codecs, channels — via `ffprobe` | Needed to price jobs, lay out the timeline, and reject bad input |
 | **Proxy** | 480p, H.264, faststart MP4 | The browser cannot scrub a 4K file. Preview plays proxies; export uses originals. |
 | **Thumbnail** | JPEG from ~10% in | Media bin and project listings |
-| **Peaks** | Min/max amplitude pairs at ~100 buckets/second, JSON | The timeline waveform. Computing this in the browser means downloading and decoding the whole audio track. |
+| **Peaks** | One amplitude per bucket at 100 buckets/second, JSON | The timeline waveform. Computing this in the browser means downloading and decoding the whole audio track. |
 
 The asset becomes `ready` only when all four exist. Anything unreadable becomes `failed` with a reason the interface can show.
 
 **Proxies are not an optimisation, they are the reason browser preview is possible at all.** A 4K H.265 file will not scrub in a browser; a 480p H.264 proxy will. This is what makes the vision document's "nothing round-trips to see an edit" true.
+
+> **Corrected 17 August, during M2.** This table previously read "min/max amplitude pairs", which would be two numbers per bucket and contradicts [`05-api-contract.md`](05-api-contract.md) §3 — whose own arithmetic ("a 10-minute file is ~60 000 numbers") only works at one value per bucket. The contract is what both sides build against, so one value per bucket is what ships: the **peak** in that hundredth of a second, not an RMS. RMS would flatten exactly the transients a waveform is read for.
+
+> **The proxy never upscales.** `scale=-2:'min(480,ih)'`, not a flat 480 — spending encode time to make a 240p upload into a blurrier, larger 480p file helps nobody. `-2` keeps the computed width even, which `yuv420p` requires.
+
+> **`crossOrigin` on the playback element is not optional.** The browser composites proxies through WebGL, and a frame fetched without CORS taints the canvas: `texImage2D` throws and the picture is never drawn, while the element itself loads and plays perfectly. Storage must answer with `Access-Control-Allow-Origin` — MinIO does by default; CloudFront needs a response-headers policy that says so. This cost M2 a real bug (see [`frontend/e2e/README.md`](../frontend/e2e/README.md)).
 
 ### 6.3 Storage layout
 

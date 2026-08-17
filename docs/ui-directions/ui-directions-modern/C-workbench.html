@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · C · Workbench</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{--text-secondary:#8B8B94;--border:#33333A}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px 60px;background:#131315;color:#E8E8EC;font:14px/1.6 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+.meta{margin:0 0 20px}
+.meta h1{font:600 17px/1.3 system-ui;margin:0 0 6px}
+.meta p{margin:0;color:#8B8B94;font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.m3{--y:#FFE600;--yt:rgba(255,230,0,.13);--tx:#94949E;--br:#EFEFF2;background:#0B0B0D;border:1px solid rgba(255,255,255,.07);border-radius:18px;overflow:hidden;color:var(--tx);font:12px/1.4 'Manrope',system-ui}
+.m3 .r{display:flex}
+.m3 .mo{font-family:'Space Mono',ui-monospace,monospace;font-size:11px}
+.m3 .hd{align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.m3 .mk{font-weight:800;font-size:14px;color:var(--br);letter-spacing:-.04em}
+.m3 .mk em{font-style:normal;color:var(--y)}
+.m3 .seg{display:flex;background:rgba(255,255,255,.05);border-radius:11px;padding:3px;gap:2px;margin:0 auto}
+.m3 .sg{padding:5px 14px;border-radius:8px;font-size:12px;font-weight:600;color:#74747F;transition:background .18s cubic-bezier(.34,1.56,.64,1),color .18s}
+.m3 .sg:hover{color:var(--br)}
+.m3 .sg.on{background:var(--yt);color:var(--y)}
+.m3 .pill{background:var(--y);color:#0B0B0D;border-radius:10px;padding:6px 14px;font-weight:700;font-size:12px;transition:transform .18s,filter .18s}
+.m3 .pill:hover{transform:translateY(-1px);filter:brightness(1.07)}
+.m3 .rib{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02)}
+.m3 .b{display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:10px;background:rgba(255,255,255,.05);color:#A6A6B0;font-size:12px;font-weight:500;transition:background .18s,transform .18s,color .18s}
+.m3 .b:hover{background:rgba(255,255,255,.1);color:var(--br);transform:translateY(-1px)}
+.m3 .b i{font-size:15px}
+.m3 .b.on{background:var(--yt);color:var(--y)}
+.m3 .b.mut{color:#5C5C66;background:rgba(255,255,255,.03)}
+.m3 .bd{padding:10px 12px;gap:10px}
+.m3 .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:10px}
+.m3 .h{font-size:11px;font-weight:700;color:#63636D;margin:0 0 9px;letter-spacing:.03em}
+.m3 .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.m3 .th{aspect-ratio:16/10;border-radius:8px;background:rgba(255,255,255,.07);display:flex;align-items:flex-end;padding:4px;font-size:11px;color:#7E7E88;transition:transform .2s,box-shadow .2s}
+.m3 .th:hover{transform:translateY(-2px)}
+.m3 .th.on{box-shadow:0 0 0 2px var(--y);color:var(--br)}
+.m3 .cv{flex:1;min-width:0;border-radius:14px;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;min-height:176px;border:1px solid rgba(255,255,255,.06)}
+.m3 .fr{width:92px;height:116px;border-radius:9px;background:#111114}
+.m3 .tr{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border-radius:999px;padding:4px 11px 4px 4px;backdrop-filter:blur(10px)}
+.m3 .rnd{width:24px;height:24px;border-radius:50%;background:var(--y);color:#0B0B0D;display:flex;align-items:center;justify-content:center;font-size:13px}
+.m3 .grp{background:rgba(255,255,255,.04);border-radius:10px;padding:8px 9px;margin-bottom:7px}
+.m3 .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.m3 .rl{height:3px;background:rgba(255,255,255,.12);border-radius:3px}
+.m3 .rl i{display:block;height:100%;background:var(--y);border-radius:3px}
+.m3 .tl{margin:0 12px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:9px 10px 10px}
+.m3 .tlh{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:11px;color:#63636D}
+.m3 .rule{display:flex;padding-left:54px;color:#54545E;margin-bottom:4px}
+.m3 .rule span{width:60px;border-left:1px solid rgba(255,255,255,.09);padding-left:4px}
+.m3 .gz{background-color:rgba(0,0,0,.35);background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.11) 0 1px,transparent 1px 60px),repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 12px);border:1px solid rgba(255,255,255,.09);border-radius:5px}
+.m3 .lane{display:flex;align-items:center;height:26px;border-bottom:1px solid rgba(255,255,255,.06)}
+.m3 .lh{width:54px;display:flex;align-items:center;gap:5px;color:#54545E;font-size:11px;font-weight:600;padding-left:6px}
+.m3 .cl{flex:1;display:flex;gap:2px;position:relative;height:100%;align-items:center;padding-right:3px}
+.m3 .c{height:20px;border-radius:3px;background:rgba(255,255,255,.13);display:flex;align-items:center;padding:0 7px;color:#B2B2BC;font-size:11px;white-space:nowrap;overflow:hidden;transition:background .16s,transform .16s}
+.m3 .c:hover{background:rgba(255,255,255,.2)}
+.m3 .c.sel{background:var(--y);color:#0B0B0D;font-weight:700}
+.m3 .c.drag{background:rgba(255,230,0,.15);color:var(--y);box-shadow:0 0 0 1px var(--y);transform:translateY(-2px)}
+.m3 .muted{opacity:.3}
+.m3 .ph{position:absolute;left:40%;top:-14px;bottom:0;width:2px;background:var(--y);z-index:3}
+.m3 .ph b{position:absolute;top:-3px;left:-4px;width:10px;height:7px;border-radius:2px;background:var(--y)}
+.m3 .map{margin-top:7px;height:16px;border-radius:5px;background:rgba(255,255,255,.05);position:relative;overflow:hidden;display:flex;gap:1px;padding:3px}
+.m3 .map i{height:100%;border-radius:2px;background:rgba(255,255,255,.16)}
+.m3 .win{position:absolute;left:26%;top:0;bottom:0;width:34%;border:1px solid var(--y);border-radius:5px;background:rgba(255,230,0,.09)}
+.spc{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)}
+.swc{width:15px;height:15px;border-radius:4px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="meta">
+  <h1>C · Workbench — onglets segmentés + ruban de boutons nommés</h1>
+  <p>Le seul des trois qui garde des boutons dédiés avec leur nom écrit, rangés sous un contrôle segmenté Montage / IA / Export : le ruban change de contenu au lieu de tout empiler. En bas, la grille la plus technique, avec une mini-carte du projet entier.</p>
+</div>
+<h2 class="sr-only">Maquette moderne de l'éditeur ZipZop avec un contrôle segmenté, un ruban de boutons nommés, et une timeline en grille avec mini-carte.</h2>
+<div class="m3">
+  <div class="r hd">
+    <span class="mk">zip<em>zop</em></span>
+    <span style="color:#63636D">beach_day_v3</span>
+    <span class="seg">
+      <span class="sg on">Montage</span><span class="sg">IA</span><span class="sg">Export</span>
+    </span>
+    <span class="mo" style="color:var(--y)">1 240</span>
+    <span class="pill">Exporter</span>
+  </div>
+  <div class="rib">
+    <span class="b on"><i class="ti ti-pointer" aria-hidden="true"></i>Sélection</span>
+    <span class="b"><i class="ti ti-scissors" aria-hidden="true"></i>Couper</span>
+    <span class="b"><i class="ti ti-arrows-horizontal" aria-hidden="true"></i>Rogner</span>
+    <span class="b"><i class="ti ti-typography" aria-hidden="true"></i>Texte</span>
+    <span class="b"><i class="ti ti-volume" aria-hidden="true"></i>Volume</span>
+    <span class="b"><i class="ti ti-transition-right" aria-hidden="true"></i>Fondu</span>
+    <span class="b mut"><i class="ti ti-arrow-back-up" aria-hidden="true"></i>Annuler</span>
+  </div>
+  <div class="r bd">
+    <div class="card" style="width:126px">
+      <p class="h">MÉDIAS · 4</p>
+      <div class="g2">
+        <div class="th on">01</div><div class="th">02</div><div class="th">03</div>
+        <div class="th" style="align-items:center;justify-content:center;color:#5C5C66;font-size:15px"><i class="ti ti-plus" aria-hidden="true"></i></div>
+      </div>
+      <p class="h" style="margin:11px 0 6px">STOCKAGE</p>
+      <div class="rl"><i style="width:48%"></i></div>
+      <p class="mo" style="color:#54545E;margin:6px 0 0">2.4 / 5 GB</p>
+    </div>
+    <div class="cv">
+      <div class="fr"></div>
+      <div class="tr">
+        <span class="rnd"><i class="ti ti-player-play" aria-hidden="true"></i></span>
+        <span class="mo" style="color:var(--br)">00:04.120</span>
+        <span class="mo" style="color:#54545E">00:41.900</span>
+        <span style="color:#54545E;font-size:11px">9:16</span>
+      </div>
+    </div>
+    <div class="card" style="width:150px">
+      <p class="h">CLIP · GOPRO_02</p>
+      <div class="grp">
+        <div class="row"><span style="font-size:11px">Volume</span><span class="mo" style="color:var(--br)">-3 dB</span></div>
+        <div class="rl"><i style="width:64%"></i></div>
+      </div>
+      <div class="grp">
+        <div class="row"><span style="font-size:11px">Vitesse</span><span class="mo" style="color:var(--br)">1.00x</span></div>
+        <div class="rl"><i style="width:38%"></i></div>
+      </div>
+      <div class="grp" style="background:var(--yt);margin:0">
+        <div class="row" style="margin:0 0 6px"><span style="font-size:11px;color:var(--y);font-weight:600">Sous-titres</span><span class="mo" style="color:var(--y)">62 %</span></div>
+        <div class="rl" style="background:rgba(255,230,0,.2)"><i style="width:62%"></i></div>
+        <p class="mo" style="color:#8A8434;margin:6px 0 0">40 CR réservés</p>
+      </div>
+    </div>
+  </div>
+  <div class="tl">
+    <div class="tlh">
+      <span style="font-weight:700;color:#94949E">Timeline</span>
+      <span class="mo">12 clips</span>
+      <span style="flex:1"></span>
+      <span><i class="ti ti-magnet" aria-hidden="true"></i> aimant</span>
+      <span class="mo">image 30 fps</span>
+      <span class="mo" style="color:var(--br)">zoom 1.5x</span>
+    </div>
+    <div class="rule mo"><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span></div>
+    <div class="gz">
+      <div class="lane">
+        <div class="lh"><i class="ti ti-movie" aria-hidden="true"></i>V1</div>
+        <div class="cl">
+          <div class="c" style="flex:2">gopro_01</div>
+          <div class="c sel" style="flex:3">gopro_02</div>
+          <div class="c drag" style="flex:2">déplacé</div>
+          <div class="c" style="flex:2">gopro_04</div>
+          <div class="ph"><b></b></div>
+        </div>
+      </div>
+      <div class="lane muted">
+        <div class="lh"><i class="ti ti-volume-off" aria-hidden="true"></i>A1</div>
+        <div class="cl"><div class="c" style="flex:1">track.wav — piste muette</div></div>
+      </div>
+      <div class="lane" style="border:0">
+        <div class="lh"><i class="ti ti-typography" aria-hidden="true"></i>T1</div>
+        <div class="cl" style="gap:1px">
+          <div class="c" style="flex:1">on</div><div class="c" style="flex:1">est</div><div class="c" style="flex:2">arrivés</div><div class="c" style="flex:1">au</div><div class="c" style="flex:2">camping</div><div class="c" style="flex:3;opacity:.28">…</div>
+        </div>
+      </div>
+    </div>
+    <div class="map">
+      <i style="flex:2"></i><i style="flex:3;background:rgba(255,230,0,.55)"></i><i style="flex:2"></i><i style="flex:2"></i><i style="flex:4"></i><i style="flex:3"></i>
+      <span class="win"></span>
+    </div>
+  </div>
+</div>
+<div class="spc">
+  <span><span class="swc" style="background:#0B0B0D;border:0.5px solid var(--border)"></span> <span class="swc" style="background:#16161A"></span> <span class="swc" style="background:#2E2E36"></span> <span class="swc" style="background:#FFE600"></span> <code style="font-size:12px">#FFE600</code></span>
+  <span>Manrope + Space Mono</span>
+  <span>Mouvement : 180 ms, indicateur d'onglet à ressort</span>
+</div>
+</div>
+</body>
+</html>

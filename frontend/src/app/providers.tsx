@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 
+import { SessionProvider } from '@/account/session'
 import { ApiError } from '@/lib/api/client'
 
 /**
@@ -32,5 +33,12 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   )
 
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  // The session sits inside the query client, not outside it: restoring a
+  // session is an API call, and anything that later refetches on sign-in needs
+  // the client already in scope.
+  return (
+    <QueryClientProvider client={client}>
+      <SessionProvider>{children}</SessionProvider>
+    </QueryClientProvider>
+  )
 }

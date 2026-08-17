@@ -55,8 +55,17 @@ services:
       timeout: 3s
       retries: 10
 
-  # Creates the bucket and opens read access on the prefixes the browser fetches
-  # directly. Runs once and exits.
+  # Creates the bucket. Runs once and exits.
+  #
+  # It used to also run `mc anonymous set download` on proxies/, thumbs/ and
+  # peaks/, which contradicted docs/03-backend-architecture.md §6.3:
+  # "Everything is private. Delivery is through CloudFront with signed URLs,
+  # one hour for playback, so a leaked URL expires on its own."
+  #
+  # Public prefixes meant any proxy was readable by anyone who could guess a
+  # UUID, and — worse — that development never exercised the signed-URL path
+  # the browser actually has to use in production. The API hands out presigned
+  # GETs (app/services/storage.py), so nothing needs anonymous access.
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -66,10 +75,11 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 zipzop zipzop-dev-secret &&
       mc mb --ignore-existing local/zipzop-media &&
-      mc anonymous set download local/zipzop-media/proxies &&
-      mc anonymous set download local/zipzop-media/thumbs &&
-      mc anonymous set download local/zipzop-media/peaks &&
-      echo 'bucket ready'
+      mc anonymous set none local/zipzop-media/proxies &&
+      mc anonymous set none local/zipzop-media/thumbs &&
+      mc anonymous set none local/zipzop-media/peaks &&
+      mc anonymous set none local/zipzop-media &&
+      echo 'bucket ready (private)'
       "
 
   api:

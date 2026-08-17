@@ -88,6 +88,12 @@ export interface CompositorEngineOptions {
   readonly videoHost: HTMLElement
   readonly lut: CubeLut
   readonly onStats: (stats: CompositorStats) => void
+  /**
+   * The timeline to start with. Omitted, the engine builds the M1 spike's
+   * two-clip arrangement, which is what `/spike/compositor` still relies on.
+   * The editor passes a real one built by `timeline-adapter.ts`.
+   */
+  readonly timeline?: SpikeTimeline
 }
 
 export class CompositorEngine {
@@ -95,6 +101,8 @@ export class CompositorEngine {
   private readonly overlay: TextOverlay
   private readonly videos = new Map<string, PooledVideo>()
   private readonly onStats: (stats: CompositorStats) => void
+  /** Held so `setTimeline` can attach elements for clips that arrive later. */
+  private readonly videoHost: HTMLElement
 
   private timeline: SpikeTimeline
   private positionMs = 0
@@ -131,7 +139,8 @@ export class CompositorEngine {
 
   constructor(options: CompositorEngineOptions) {
     this.onStats = options.onStats
-    this.timeline = buildSpikeTimeline('cut')
+    this.videoHost = options.videoHost
+    this.timeline = options.timeline ?? buildSpikeTimeline('cut')
 
     this.renderer = new CompositorRenderer(options.glCanvas)
     this.renderer.setLut(options.lut)
@@ -205,6 +214,42 @@ export class CompositorEngine {
     this.timeline = buildSpikeTimeline(mode)
     this.applySeek(Math.min(this.positionMs, this.timeline.durationMs))
     if (wasPlaying) this.play()
+  }
+
+  /**
+   * Replace the whole timeline — a real project's, not the spike's.
+   *
+   * `setMode` above can keep its video elements because both of its modes use
+   * the same two sources. This cannot: the clips are different assets at
+   * different URLs, so the pool is rebuilt. Elements whose clip id **and**
+   * source both survive are kept, which is what stops a re-render that changes
+   * one clip from tearing down and re-decoding every other one.
+   *
+   * The `videoHost` is held from construction because a new `PooledVideo`
+   * needs somewhere to attach.
+   */
+  setTimeline(next: SpikeTimeline): void {
+    if (this.disposed) return
+    const wasPlaying = this.playing
+    this.pause()
+
+    const wanted = new Map(next.video.map((clip) => [clip.id, clip.src]))
+    for (const [id, video] of [...this.videos]) {
+      if (wanted.get(id) !== video.src) {
+        video.dispose()
+        this.videos.delete(id)
+      }
+    }
+    for (const clip of next.video) {
+      if (!this.videos.has(clip.id)) {
+        this.videos.set(clip.id, new PooledVideo(clip.id, clip.src, this.videoHost))
+      }
+    }
+    this.setMuted(this.muted)
+
+    this.timeline = next
+    this.applySeek(Math.min(this.positionMs, this.timeline.durationMs))
+    if (wasPlaying && next.video.length > 0) this.play()
   }
 
   setResolution(width: number, height: number): void {

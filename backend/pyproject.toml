@@ -27,6 +27,10 @@ dependencies = [
     "pyjwt[crypto]>=2.10",
     "bcrypt>=4.2",
     "python-multipart>=0.0.20",
+    # Backs pydantic's EmailStr. Without it the auth schemas raise at import,
+    # not at request time, so a missing install fails the process rather than
+    # one endpoint.
+    "email-validator>=2.2",
 
     # Observability
     "structlog>=24.4",
@@ -93,5 +97,16 @@ disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Both of these, and both "session". The engine is built once for the run, so
+# it is bound to the session loop; a test running in its own function-scoped
+# loop then hands asyncpg a future from the wrong loop and every test in the
+# file fails with "attached to a different loop". Setting only the fixture
+# scope is not enough — the test scope has to match it.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "storage: needs MinIO on S3_ENDPOINT_URL",
+    "ffmpeg: needs ffmpeg and ffprobe on PATH",
+]

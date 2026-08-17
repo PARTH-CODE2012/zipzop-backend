@@ -1,13 +1,56 @@
 @import 'tailwindcss';
 
-/* The editor is a dark tool. Marketing pages can opt out with a wrapper. */
+/* ==========================================================================
+   Design tokens.
+
+   THE TIMELINE HAS NO VISUAL IDENTITY YET, ON PURPOSE.
+
+   No palette, typography or visual states have been delivered by the project
+   lead, so nothing below expresses a brand decision. Every value is a neutral
+   grey or a system font, and — this is the point — every colour the editor
+   paints goes through a token declared here. Applying the real charter, when
+   it arrives, means editing this block: no component holds a literal colour,
+   so nothing in the timeline's behaviour has to be touched to reskin it.
+
+   The three `--clip-*` states below are the ones a charter has to answer:
+   selected, dragging, and a muted track. They are distinguishable today by
+   lightness alone, which is deliberate — it is the minimum that makes the
+   interface usable and the maximum that can be justified without a designer.
+   ========================================================================== */
+
 @theme {
+  /* Surfaces and text — set in M0, kept. */
   --color-surface: #0e1214;
   --color-surface-2: #161b1e;
   --color-rule: #293134;
   --color-ink: #e4e9ea;
   --color-ink-2: #b4bec0;
   --color-accent: #63becd;
+
+  /* --- Timeline, provisional ------------------------------------------- */
+  /* Track lanes */
+  --color-track: #14191c;
+  --color-track-header: #171d20;
+
+  /* A clip at rest, selected, and mid-drag. Lightness only. */
+  --color-clip: #33403f;
+  --color-clip-border: #47585a;
+  --color-clip-selected: #4a5f60;
+  --color-clip-selected-border: #7d9a9c;
+  --color-clip-dragging: #3d4c4c;
+
+  /* A muted track dims rather than recolours, so the state survives being
+     read by someone who cannot distinguish the hues. */
+  --color-track-muted-opacity: 0.45;
+
+  /* Ruler and playhead */
+  --color-ruler: #101517;
+  --color-ruler-tick: #3a4448;
+  --color-ruler-label: #879496;
+  --color-playhead: #d8e2e4;
+
+  /* Waveform, drawn into a canvas — read by JS, not by CSS. */
+  --color-waveform: #7f9a9c;
 }
 
 html,
@@ -15,6 +58,14 @@ body {
   height: 100%;
   background: var(--color-surface);
   color: var(--color-ink);
+  /* System stack until a typeface is chosen. Naming a webfont here would be
+     a design decision, and swapping one out later changes every metric. */
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
 }
 
 /* A timeline is dragged constantly; accidental text selection makes it feel

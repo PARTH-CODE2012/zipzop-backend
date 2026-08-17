@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · directions UI — série 2, moderne</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:44px 20px 70px;background:#131315;color:#E8E8EC;font:14px/1.65 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+h1{font-size:21px;font-weight:600;margin:0 0 6px}
+.lede{color:#8B8B94;font-size:13px;margin:0 0 28px;max-width:62ch}
+a.card{display:block;text-decoration:none;color:inherit;border:1px solid #2A2A30;border-radius:12px;padding:14px 16px;margin-bottom:10px;transition:border-color .18s,background .18s,transform .18s}
+a.card:hover{border-color:#4A4A54;background:#18181B;transform:translateY(-1px)}
+a.card.hi{border-color:#4A4526;background:#16160E}
+a.card.hi:hover{border-color:#7A7238}
+.hd{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.hd h2{font-size:15px;font-weight:600;margin:0}
+.tag{margin-left:auto;font-size:11px;color:#0A0A0C;background:#FFE81F;border-radius:999px;padding:2px 9px;font-weight:600}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block;flex-shrink:0}
+p.d{margin:0;color:#8B8B94;font-size:13px}
+p.t{margin:7px 0 0;color:#61616B;font-size:12px}
+.note{margin:26px 0 0;padding:14px 16px;border:1px solid #2A2A30;border-radius:12px;color:#8B8B94;font-size:13px}
+.note b{color:#E8E8EC;font-weight:600}
+.note ul{margin:8px 0 0;padding-left:18px}
+.note li{margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Directions UI — série 2, moderne</h1>
+<p class="lede">Reprise des consignes : plus moderne, plus vendeur, dans l'esprit Canva — arrondis, transparences, animations — tout en restant un outil pour monteurs. La timeline reste le seul élément volontairement technique : grille, ticks, timecodes en monospace. Fond noir et jaune néon inchangés. La série 1 est dans <code>../ui-directions/</code>.</p>
+
+<a class="card hi" href="A2-studio-large-preview.html">
+  <div class="hd"><span class="sw" style="background:#FFE81F"></span><h2>A2 · Studio — preview agrandi</h2><span class="tag">retenue</span></div>
+  <p class="d">Variante de A rééquilibrée en faveur de l'image : outils rétrécis, barre contextuelle et transport flottant par-dessus le canvas au lieu d'être empilés. Le preview occupe environ 2,3 fois plus de surface.</p>
+  <p class="t">Plus Jakarta Sans + IBM Plex Mono · 200 ms, sortie douce</p>
+</a>
+
+<a class="card" href="A-studio.html">
+  <div class="hd"><span class="sw" style="background:#FFE81F"></span><h2>A · Studio</h2></div>
+  <p class="d">Le patron Canva assumé : rail d'icônes, panneau qui s'ouvre, canvas. Barre contextuelle flottante au lieu d'une toolbar fixe, outils IA regroupés sous un bouton Magic.</p>
+  <p class="t">Plus Jakarta Sans + IBM Plex Mono · 200 ms, sortie douce</p>
+</a>
+
+<a class="card" href="B-aurora.html">
+  <div class="hd"><span class="sw" style="background:#F5E534"></span><h2>B · Aurora</h2></div>
+  <p class="d">Tout flotte : barre de projet, outils et propriétés sont des îlots translucides sur un canvas plein écran, traversés par une ambiance jaune diluée.</p>
+  <p class="t">Sora + Roboto Mono · lévitation 500 ms, survol magnétique</p>
+</a>
+
+<a class="card" href="C-workbench.html">
+  <div class="hd"><span class="sw" style="background:#FFE600"></span><h2>C · Workbench</h2></div>
+  <p class="d">Onglets segmentés Montage / IA / Export et ruban de boutons nommés — le seul des trois qui garde un libellé écrit sur chaque fonction. Timeline la plus technique, avec mini-carte.</p>
+  <p class="t">Manrope + Space Mono · 180 ms, onglet à ressort</p>
+</a>
+
+<div class="note">
+  <p style="margin:0 0 4px"><b>Trois règles qui survivront au choix de direction</b></p>
+  <ul>
+    <li>Le flou et la transparence s'arrêtent au chrome. Aucun clip de timeline n'a de <code>backdrop-filter</code> ni de halo permanent : la timeline doit rester fluide à 500 clips.</li>
+    <li>Le jaune néon n'est jamais du texte courant. Il porte l'état actif, une valeur de donnée, ou un remplissage — jamais un paragraphe.</li>
+    <li>Aucun état ne repose sur la teinte seule : la piste muette s'assombrit et change d'icône, le clip déplacé change de bordure et de position.</li>
+  </ul>
+</div>
+</div>
+</body>
+</html>

@@ -1,15 +1,54 @@
 """Ingest queue.
 
-Real work arrives in M2: probe with ffprobe, generate a 480p proxy, a
-thumbnail and waveform peaks. Until then, `ping` proves the chain end to end.
+Probe with ffprobe, generate a 480p proxy, a thumbnail and waveform peaks. The
+work itself is in `app.services.ingest_pipeline` — this module owns only the
+queue's concerns: an event loop, its own database session, and retries.
 """
 
+import asyncio
+import uuid
 from typing import Any
 
 from app.logging import get_logger
 from app.workers.celery_app import celery_app
 
 log = get_logger(__name__)
+
+
+@celery_app.task(
+    name="app.workers.tasks.ingest.process_asset",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=30,
+)
+def process_asset(self: Any, asset_id: str) -> dict[str, Any]:
+    """Turn an uploaded object into a usable asset.
+
+    Bad media is **not** retried: `run_ingest` catches it, writes a reason the
+    user can read, and returns `failed`. Only an infrastructure failure — S3
+    unreachable, database down — gets here as an exception, and those are worth
+    trying again.
+    """
+    status = asyncio.run(_run(uuid.UUID(asset_id)))
+    return {"assetId": asset_id, "status": status}
+
+
+async def _run(asset_id: uuid.UUID) -> str:
+    # A worker process is not a request: it opens and commits its own session
+    # rather than borrowing the API's dependency — and on its own engine, which
+    # `worker_session` disposes with the loop this `asyncio.run` created. See
+    # the note there for what happens otherwise.
+    from app.db import worker_session
+    from app.services.ingest_pipeline import run_ingest
+
+    async with worker_session() as session:
+        try:
+            status = await run_ingest(session, asset_id)
+            await session.commit()
+            return status
+        except Exception:
+            await session.rollback()
+            raise
 
 
 @celery_app.task(name="app.workers.tasks.ingest.ping")

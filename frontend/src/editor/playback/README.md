@@ -1,3 +1,29 @@
+# The playback engine
+
+> **Moved here in M2, from `src/spike/compositor/`.** The modules always were
+> written to be lifted; the throwaway part was the page, which still runs at
+> `/spike/compositor` and now imports from this directory. All 45 tests came
+> across unchanged.
+>
+> **What M2 added:**
+> - `setTimeline()` — the engine takes a real project's timeline, not only the
+>   spike's hardcoded pair. Video elements whose clip id *and* source both
+>   survive are kept, so changing one clip does not re-decode the others.
+> - [`timeline-adapter.ts`](timeline-adapter.ts) — converts the contract §4
+>   document into what the engine wants, resolving signed proxy URLs at playback
+>   time rather than storing them beside the clip.
+> - `identityLut()` — the renderer always samples a 3D texture, and there is no
+>   LUT catalogue until M4.
+> - **`crossOrigin = 'anonymous'` on every playback element, set before `src`.**
+>   Real proxies come from another origin; without this `texImage2D` throws and
+>   the picture is never drawn. This was a live bug — see
+>   [`../../../e2e/README.md`](../../../e2e/README.md).
+>
+> Everything below is the M1 write-up, unchanged. It is the record of what was
+> measured and, more usefully, of two bugs that must not come back.
+
+---
+
 # M1 — Compositor spike
 
 **The question:** can a browser play a timeline back — two clips, a cut, a colour grade, a text

@@ -34,16 +34,22 @@ class APIError(Exception):
         self,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.message
         self.details = details or {}
+        self.headers = headers or {}
         super().__init__(self.message)
 
     def to_response(self) -> JSONResponse:
         body: dict[str, Any] = {"code": self.code, "message": self.message}
         if self.details:
             body["details"] = self.details
-        return JSONResponse(status_code=self.status_code, content={"error": body})
+        return JSONResponse(
+            status_code=self.status_code,
+            content={"error": body},
+            headers=self.headers or None,
+        )
 
 
 # --------------------------------------------------------------------------

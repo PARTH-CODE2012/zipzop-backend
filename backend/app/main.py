@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
-from app.api.routes import health
+from app.api.routes import auth, health, media
 from app.config import assert_production_safe, settings
 from app.db import engine
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
@@ -61,11 +61,12 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
 
     # Product routes are versioned. Everything from M2 onward lands here.
-    # app.include_router(auth.router, prefix="/v1")
-    # app.include_router(media.router, prefix="/v1")
-    # app.include_router(projects.router, prefix="/v1")
-    # app.include_router(jobs.router, prefix="/v1")
-    # app.include_router(billing.router, prefix="/v1")
+    app.include_router(auth.router, prefix="/v1")
+    app.include_router(auth.me_router, prefix="/v1")
+    app.include_router(media.router, prefix="/v1")
+    # app.include_router(projects.router, prefix="/v1")   # M3
+    # app.include_router(jobs.router, prefix="/v1")       # M4
+    # app.include_router(billing.router, prefix="/v1")    # M6
 
     return app
 

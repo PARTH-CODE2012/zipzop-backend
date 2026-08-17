@@ -4,11 +4,13 @@
 
 | | |
 |---|---|
-| **Version** | 1.1 — billing endpoints added |
-| **Date** | 13 August 2026 |
+| **Version** | 1.2 — refresh token moved to an httpOnly cookie |
+| **Date** | 17 August 2026 |
 | **Audience** | Backend and frontend engineers |
 | **Depends on** | [`03-backend-architecture.md`](03-backend-architecture.md) |
 | **Base URL** | `https://api.zipzop.app/v1` |
+
+> **What changed in 1.2.** The refresh token is delivered as an httpOnly cookie instead of a `refreshToken` field in the body — §2. That is the only breaking change; it was made during M2, when the endpoints were first implemented, because the frontend client written against 1.1 already assumed a cookie and the two could not both be right. §3's peaks payload also gains `durationMs`, which is additive.
 
 > **What changed in 1.1.** `GET /me` returns three credit balances and a plan instead of one number. New `/plans` and `/billing/*` endpoints, two webhook routes, plan-gated export presets, and five new error codes. Nothing existing changed shape except `/me`.
 
@@ -96,28 +98,46 @@ GET /v1/projects?limit=20&cursor=eyJpZCI6...
 {
   "user": { "id": "usr_9b1d…", "email": "sam@example.com", "displayName": "Sam" },
   "accessToken": "eyJhbG…",
-  "refreshToken": "rt_8f2c…",
   "expiresIn": 900
 }
 ```
 
+plus
+
+```http
+Set-Cookie: zipzop_refresh=rt_8f2c…; Path=/v1/auth; HttpOnly; SameSite=Lax; Secure
+```
+
 New accounts land on the `free` plan with its monthly allowance already granted. Call `GET /me` for balances rather than reading them from here.
+
+> **Changed in 1.2 — the refresh token is a cookie, not a field.** Version 1.1 returned `refreshToken` in the body and took it back in the body on refresh. It is now set as an **httpOnly cookie** and never appears in a response body, so no script can read it: an XSS that can call the API as the user still cannot walk away with a 30-day credential. The access token stays in the body and in memory, where its 15-minute life keeps the exposure small.
+>
+> Two consequences to know about. The client must send `credentials: 'include'` on `/auth/refresh` and `/auth/logout` — the existing `src/lib/api/client.ts` already did. And a non-browser client cannot hold a session; phase 1 is web only, and the mobile app in phase 3 needs a second grant type rather than a change to this one.
 
 ### `POST /auth/login`
 
-Same request minus `displayName`, same response. `401 INVALID_CREDENTIALS` on failure — identical for a wrong password and an unknown email, so the endpoint cannot be used to discover which addresses are registered.
+Same request minus `displayName`, same response and the same `Set-Cookie`. `401 INVALID_CREDENTIALS` on failure — identical status, code **and message** for a wrong password and an unknown email, so the endpoint cannot be used to discover which addresses are registered. The server also verifies against a fixed hash when the address is unknown, so the two paths take the same time.
 
 ### `POST /auth/refresh`
 
-```json
-{ "refreshToken": "rt_8f2c…" }
+No request body. The refresh cookie is the credential:
+
+```http
+POST /v1/auth/refresh
+Cookie: zipzop_refresh=rt_8f2c…
 ```
 
-Returns a new pair. **The old refresh token is invalidated** — store the new one before using it. Presenting an already-rotated token revokes the whole chain and forces a fresh sign-in; that pattern means a token leaked.
+`200`:
+
+```json
+{ "accessToken": "eyJhbG…", "expiresIn": 900 }
+```
+
+with a **new** refresh cookie in `Set-Cookie`. **The old refresh token is invalidated.** Presenting an already-rotated token revokes the whole chain and forces a fresh sign-in; that pattern means a token leaked.
 
 ### `POST /auth/logout`
 
-Revokes the presented refresh token. `204`.
+Revokes the presented refresh cookie and clears it. `204`, whatever was presented — reporting that there was no session to end would be an oracle.
 
 ### `GET /me`
 
@@ -243,13 +263,20 @@ Playback and scrubbing use `proxyUrl` — 480p H.264. The original is only ever 
 
 ### `GET /media/{assetId}/peaks`
 
-Convenience redirect to `peaksUrl`. The payload:
+The payload:
 
 ```json
-{ "version": 1, "bucketsPerSecond": 100, "channels": 1, "peaks": [0.02, 0.31, 0.28, …] }
+{ "version": 1, "bucketsPerSecond": 100, "channels": 1, "durationMs": 623480,
+  "peaks": [0.02, 0.31, 0.28, …] }
 ```
 
-Values are 0–1 amplitudes, one per bucket. A 10-minute file is ~60 000 numbers, about 400 KB — fetch once, cache in the client.
+Values are 0–1 amplitudes, **one per bucket** — the peak in that hundredth of a second, not an RMS and not a min/max pair. A 10-minute file is ~60 000 numbers, about 400 KB — fetch once, cache in the client.
+
+`peaks.length` is always `ceil(durationMs / 1000 × 100)`, padded if the decode came up short, so a bucket index maps to a timestamp by arithmetic alone: `index × 10` milliseconds.
+
+A track with no audio still gets a document, filled with zeros. An asset cannot become `ready` without one, and plenty of footage is silent.
+
+> **Note against [`03-backend-architecture.md`](03-backend-architecture.md) §6.2**, which describes "min/max amplitude pairs". That would be two numbers per bucket and contradicts the 60 000 figure above. This contract is what both sides build against, so one value per bucket is what ships; the architecture document's wording is the one to correct.
 
 ### `GET /media?kind=video&limit=50`
 

@@ -40,6 +40,37 @@ function toByte(v: number): number {
   return Math.round(clamped * 255)
 }
 
+/**
+ * A LUT that changes nothing.
+ *
+ * The renderer always samples a 3D texture, so it needs one bound even when no
+ * grade is applied. M2 ships no LUT catalogue — that is M4, which adds five of
+ * them as shared assets — so the editor starts with this and every pixel comes
+ * out exactly as it went in.
+ *
+ * Size 2 is the smallest the format allows and is exactly right here: an
+ * identity mapping is linear, and trilinear interpolation across the eight
+ * corners of a unit cube reproduces it perfectly. A larger table would be more
+ * bytes for the same answer.
+ */
+export function identityLut(): CubeLut {
+  const size = 2
+  const rgba = new Uint8Array(size * size * size * 4)
+  let at = 0
+  // Red-fastest, matching the .cube ordering the parser produces.
+  for (let b = 0; b < size; b += 1) {
+    for (let g = 0; g < size; g += 1) {
+      for (let r = 0; r < size; r += 1) {
+        rgba[at++] = toByte(r / (size - 1))
+        rgba[at++] = toByte(g / (size - 1))
+        rgba[at++] = toByte(b / (size - 1))
+        rgba[at++] = 255
+      }
+    }
+  }
+  return { title: 'identity', size, rgba }
+}
+
 export function parseCubeLut(text: string): CubeLut {
   let title = ''
   let size = 0

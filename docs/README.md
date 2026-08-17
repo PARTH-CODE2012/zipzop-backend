@@ -15,8 +15,16 @@ Everything needed to build this product. Start here.
 | **3** | [API Contract](05-api-contract.md) | Both teams | The interface both sides build against |
 | **4** | [Backend Architecture](03-backend-architecture.md) | Backend | Data model, job pipeline, media, rendering, infrastructure |
 | **5** | [Frontend Architecture](04-frontend-architecture.md) | Frontend | Timeline state, playback engine, undo, tool integration |
+| **6** | [Security & Penetration Testing](07-security.md) | Everyone, before launch | What M7 reviews, what it attacks, and what blocks the release |
 
 **Diagrams:** [system overview](diagrams/system-overview.md) · [data model](diagrams/data-model.md) · [job lifecycle](diagrams/job-lifecycle.md)
+
+**Build notes**, written as milestones land — decisions made, documents changed, and traps the next milestone would otherwise rediscover:
+
+| | Milestone | Read it before |
+|---|---|---|
+| **M1** | [Compositor spike](../frontend/src/editor/playback/README.md) | touching the renderer or the playback clock |
+| **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
 
 ### If you have fifteen minutes
 
@@ -63,6 +71,8 @@ Approved **13 August**: phase 1 tools are captions, smart trim and colour gradin
 | **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end — external lead time, start now | Project lead |
 | **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
 | **3** | Storage retention policy | Before launch. Largest recurring cost, and it only grows. | Project lead |
+| **3b** | **Storage quota per tier** 🟠 | **Now** — M2 built and tested the enforcement path, but no document says how many GB a tier gets. The values in `backend/app/services/plans.py` are marked `PLACEHOLDER` and must not ship. | Project lead |
+| **3c** | **A palette, a typeface, and the visual states** (clip selected, clip dragging, track muted) | **Now** — M3 is the editor, and it is blocked on this. M2's timeline was built structurally with every colour behind a token in `frontend/src/styles/globals.css`, so the charter is a one-file change; without it there is nothing to apply. | Project lead |
 | **4** | Who owns tax — Indian GST, EU VAT | Before launch. Not a development task. | Project lead |
 
 Credit values per tier are proposals derived from estimated costs. They live in one table and one module, and cost-per-job is instrumented from the first deploy, so re-pricing on real measurements is a data change. Full register in [the vision, §12](01-product-vision.md#12-decision-register).
@@ -81,6 +91,7 @@ Consent, watermarking and misuse policy for face mapping. Phase 1 stores **no fa
 | **AI** | Captions · Smart Trim · Colour Grading | Face Mapping + Lip Sync · Noise removal | Clip Finder · Templates · Upscaling |
 | **Commerce** | Four tiers, credits, Stripe + Razorpay, paywall | Face-mapping meter starts being spent | — |
 | **New infra** | Job queue, credit ledger, ingest, export renderer, billing | GPU cluster, face profiles, consent flow | Speaker tracking, music licensing |
+| **Security** | M7 — full review and penetration test before launch, then standing CI gates | The same pass again: facial data changes the risk picture more than anything else planned | — |
 | **Platform** | Web | Web | Web + iOS/Android |
 
 Later phases add **workers, not architecture**. That is the design's main claim, and the reason for the shape of the `jobs` table.
@@ -120,10 +131,10 @@ These are the documents this set was built from. Kept for reference; **supersede
 - **Money is integer minor units** — cents, paise — with its currency beside it. Never floats.
 - **Spatial values are normalised 0–1** relative to the canvas, never pixels. This is what makes a 480p preview and a 1080p export agree.
 - API fields are `camelCase`; database columns are `snake_case`; translation happens in the serialisation layer.
-- Identifiers are prefixed UUIDs: `ast_`, `prj_`, `job_`, `clp_`, `trk_`, `pay_`.
+- Identifiers are prefixed UUIDs: `usr_`, `ast_`, `prj_`, `job_`, `clp_`, `trk_`, `pay_`. The format is the prefix, an underscore, then the canonical lowercase UUID — `usr_9b1d0c4e-3f2a-4c81-9d77-2e6b5a1f0c34`. Fixed during M2 in `backend/app/api/ids.py`; the contract's examples are truncated and never pinned it down.
 - Error `code` is stable and machine-readable. Branch on it, never on `message`.
 - Plan limits are enforced **server-side**. Client-side gating exists so the interface can grey a button, never as the only check.
 
 ---
 
-*Documentation set v1.1 · 13 August 2026 · maintained by MMaxouB*
+*Documentation set v1.2 · 17 August 2026 · maintained by MMaxouB*
