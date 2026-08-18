@@ -26,7 +26,7 @@ Everything needed to build this product. Start here.
 |---|---|---|
 | **M1** | [Compositor spike](../frontend/src/editor/playback/README.md) | touching the renderer or the playback clock |
 | **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
-| **M3** | [UI Charter](08-ui-charter.md) | writing any component or stylesheet. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
+| **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
 
 ### If you have fifteen minutes
 
@@ -60,11 +60,11 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. M3 is under way — the editor's core is done, its interface is next.**
+**Nothing blocking. M3 is done bar two deliberate omissions; M4 can start.**
 
-Projects persist as of 18 August. On the server: the five routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency, and `project_assets` rebuilt from the document. On the client: the timeline type is **generated** from `openapi.json` and never hand-written, edits go through an Immer-patch history that makes any commit one undo step, drags stage outside the document and commit once on drop, and autosave debounces two seconds with a real `409` path. The [UI charter](08-ui-charter.md) is applied — one `@theme` block, no component touched.
+Editing survives a reload, verified end to end on a running stack. The server has the five project routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency and `project_assets` rebuilt from the document. The client has a generated timeline type, undo through Immer patches, the full set of editing operations, drag with snapping, a marquee, an inspector, three lanes, virtualisation, and autosave with a real conflict path. The [UI charter](08-ui-charter.md) is applied.
 
-What remains in M3 is the interface over that core: drag handles and snapping, the marquee, the inspector panel, transitions, the audio and text tracks, and timeline virtualisation. Each is a component over an operation that already exists and is already tested.
+Left open on purpose: the text track's font, size and colour controls, and the IndexedDB mirror (💤). Both are in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the three defects M3 found — one of them a security defect in M2's auth code.
 
 Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work.
 

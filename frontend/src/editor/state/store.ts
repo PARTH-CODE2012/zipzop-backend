@@ -41,8 +41,10 @@ import {
   locateClip,
   timelineDurationMs,
   trackOfKind,
+  type AnyClip,
   type MediaClip,
   type TimelineDocument,
+  type Track,
   type Transition,
 } from '@/editor/state/timeline-document'
 import { DEFAULT_ZOOM, clampZoom, type Zoom } from '@/editor/timeline/scale'
@@ -55,6 +57,13 @@ export interface DragState {
   clipId: string
   /** The position the gesture is proposing, already snapped. */
   previewMs: number
+  /**
+   * How far into the clip the pointer landed, for a move.
+   *
+   * Without it the clip's left edge jumps to the cursor on the first pointer
+   * move — grab a clip in its middle and it leaps left by half its width.
+   */
+  grabOffsetMs?: number
 }
 
 export interface EditorState {
@@ -84,6 +93,10 @@ export interface EditorState {
 
   // ------------------------------------------------------------- editing
   addClip: (input: { assetId: string; durationMs: number }) => string
+  addMusicClip: (input: { assetId: string; durationMs: number }) => string
+  addTitle: (text: string) => string
+  setText: (clipId: string, text: string) => void
+  setTrackMuted: (trackId: string, muted: boolean) => void
   splitAtPlayhead: () => string | null
   moveClip: (clipId: string, startMs: number) => void
   trimStart: (clipId: string, startMs: number) => void
@@ -205,6 +218,39 @@ export const useEditor = create<EditorState>((set, get) => ({
     })
     if (id) set({ selection: new Set([id]) })
     return id
+  },
+
+  /** The music track — contract §3.3, one audio track in phase 1. */
+  addMusicClip: ({ assetId, durationMs }) => {
+    let id = ''
+    get().commit('Add music', (draft) => {
+      id = ops.appendClip(draft, { assetId, durationMs, kind: 'audio' })
+    })
+    if (id) set({ selection: new Set([id]) })
+    return id
+  },
+
+  /** Placed at the playhead, not appended: a title is positioned against the
+   * picture underneath it, and the end of the track is never where the user is
+   * looking. */
+  addTitle: (text) => {
+    let id = ''
+    const { playheadMs } = get()
+    get().commit('Add title', (draft) => {
+      id = ops.appendTitle(draft, { text, startMs: playheadMs })
+    })
+    if (id) set({ selection: new Set([id]) })
+    return id
+  },
+
+  setText: (clipId, text) => {
+    get().commit('Edit text', (draft) => ops.setText(draft, clipId, text))
+  },
+
+  setTrackMuted: (trackId, muted) => {
+    get().commit(muted ? 'Mute track' : 'Unmute track', (draft) =>
+      ops.setTrackMuted(draft, trackId, muted),
+    )
   },
 
   splitAtPlayhead: () => {
@@ -397,4 +443,39 @@ export function selectClipBoundsMs(
 
 export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
   return selectClipBoundsMs(state, clip).startMs
+}
+
+/** Every track in the document, in a stable lane order: video, audio, text.
+ *
+ * A stable order matters more than it looks: the lanes are drawn from this, and
+ * a document whose tracks arrive in a different order would redraw the timeline
+ * with the rows swapped.
+ */
+const LANE_ORDER: Record<string, number> = { video: 0, audio: 1, text: 2 }
+const NO_TRACKS: readonly Track[] = Object.freeze([])
+
+export function selectLanes(state: EditorState): readonly Track[] {
+  const tracks = state.timeline.tracks
+  if (tracks.length === 0) return NO_TRACKS
+  return [...tracks].sort((a, b) => (LANE_ORDER[a.kind] ?? 9) - (LANE_ORDER[b.kind] ?? 9))
+}
+
+/** Every clip on every track — what the marquee and the snap candidates read. */
+export function selectAllClips(state: EditorState): AnyClip[] {
+  return state.timeline.tracks.flatMap((track) => track.clips as AnyClip[])
+}
+
+/** The selected clip whatever kind it is — what the inspector reads.
+ *
+ * `selectSelectedClip` narrows to media, which is right for the preview and
+ * wrong for a panel that also has to edit a title's words.
+ */
+export function selectSelectedAnyClip(state: EditorState): AnyClip | null {
+  const id = selectSingleClipId(state)
+  if (!id) return null
+  for (const track of state.timeline.tracks) {
+    const found = (track.clips as AnyClip[]).find((clip) => clip.id === id)
+    if (found) return found
+  }
+  return null
 }

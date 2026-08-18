@@ -15,7 +15,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { ApiError } from '@/lib/api/client'
+import { API_BASE_URL, ApiError } from '@/lib/api/client'
 import * as endpoints from '@/lib/api/endpoints'
 import type { MeResponse } from '@/lib/api/endpoints'
 
@@ -112,5 +112,9 @@ export function describe(cause: unknown): string {
         return cause.message
     }
   }
-  return 'Something went wrong. Try again.'
+  // Not an `ApiError`, which means the request never came back with an error
+  // envelope: `fetch` itself threw. The API is not running, the wrong port is
+  // configured, or CORS refused the call — and none of those are fixed by
+  // trying again, which is what the old wording told people to do.
+  return 'Cannot reach the server. Check that the API is running on ' + API_BASE_URL + '.'
 }

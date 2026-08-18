@@ -25,6 +25,7 @@ import {
   isMediaTrack,
   type MediaClip,
   type MediaTrack,
+  type TextTrack,
   type TimelineDocument,
   type Track,
   type Transition,
@@ -436,4 +437,93 @@ export function snapTo(candidates: number[], positionMs: number, toleranceMs: nu
     }
   }
   return best
+}
+
+// --------------------------------------------------------------------------
+// The text track
+// --------------------------------------------------------------------------
+
+/** The style every typed title starts from. Captions bring their own in M4. */
+export const DEFAULT_TITLE_STYLE_ID = 'plain_bold'
+
+export function ensureTextTrack(document: Draftable): Draft<TextTrack> {
+  const existing = document.tracks.find((track) => track.kind === 'text')
+  if (existing) return existing as Draft<TextTrack>
+  const track = {
+    id: newTrackId('text'),
+    kind: 'text',
+    index: 0,
+    muted: false,
+    locked: false,
+    clips: [],
+  } as Draft<TextTrack>
+  document.tracks.push(track)
+  return track
+}
+
+/**
+ * Add a typed title — contract §4.2, `kind: "title"`.
+ *
+ * Placed at the playhead rather than appended, because a title is positioned
+ * against the picture underneath it and the end of the track is almost never
+ * where the user is looking. If the playhead sits inside an existing title the
+ * new one lands after it, since invariant 1 forbids the overlap.
+ */
+export function appendTitle(
+  document: Draftable,
+  input: { text: string; startMs: number; durationMs?: number },
+): string {
+  const track = ensureTextTrack(document)
+  const id = newClipId()
+  const durationMs = Math.max(MIN_CLIP_MS, Math.round(input.durationMs ?? 3_000))
+
+  let startMs = Math.max(0, Math.round(input.startMs))
+  for (const clip of track.clips) {
+    if (startMs < clip.startMs + clip.durationMs && startMs + durationMs > clip.startMs) {
+      startMs = clip.startMs + clip.durationMs
+    }
+  }
+
+  track.clips.push({
+    id,
+    kind: 'title',
+    startMs,
+    durationMs,
+    text: input.text,
+    styleId: DEFAULT_TITLE_STYLE_ID,
+    // Normalised, never pixels: this is what lets a 480p preview and a 1080p
+    // export put the words in the same place (contract §4.3).
+    position: { x: 0.5, y: 0.82, anchor: 'center' },
+    emphasis: 0,
+  })
+  track.clips.sort((a, b) => a.startMs - b.startMs)
+  return id
+}
+
+/** Edit a title's words. The whole reason captions are clips and not a burn-in. */
+export function setText(document: Draftable, clipId: string, text: string): void {
+  for (const track of document.tracks) {
+    if (track.kind !== 'text') continue
+    const clip = (track as Draft<TextTrack>).clips.find((each) => each.id === clipId)
+    if (clip) {
+      clip.text = text.slice(0, 2_000)
+      return
+    }
+  }
+}
+
+// --------------------------------------------------------------------------
+// Track state
+// --------------------------------------------------------------------------
+
+/**
+ * Mute or unmute a lane.
+ *
+ * Editor state that the renderer honours (contract §4.2), so it lives in the
+ * document and is undoable like anything else — a mute the user cannot take
+ * back with ⌘Z is a surprise.
+ */
+export function setTrackMuted(document: Draftable, trackId: string, muted: boolean): void {
+  const track = document.tracks.find((each) => each.id === trackId)
+  if (track) track.muted = muted
 }

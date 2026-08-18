@@ -27,11 +27,13 @@ import { actionFor, isTypingTarget, NUDGE_MS } from '@/editor/keyboard'
 import { Preview } from '@/editor/playback/Preview'
 import type { ResolvedAsset } from '@/editor/playback/timeline-adapter'
 import {
+  selectCanRedo,
+  selectCanUndo,
   selectClips,
   selectDurationMs,
-  selectSingleClipId,
   useEditor,
 } from '@/editor/state/store'
+import { Inspector } from '@/editor/inspector/Inspector'
 import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
 import { Timeline } from '@/editor/timeline/Timeline'
 import { formatTimecode } from '@/editor/timeline/scale'
@@ -93,7 +95,6 @@ function Workspace({
   const clips = useEditor(selectClips)
   const durationMs = useEditor(selectDurationMs)
   const isPlaying = useEditor((state) => state.isPlaying)
-  const selectedClipId = useEditor(selectSingleClipId)
 
   const persistence = useProjectPersistence(projectId)
 
@@ -246,6 +247,8 @@ function Workspace({
         </button>
       </header>
 
+      <Toolbar />
+
       {persistence.conflictVersion !== null && (
         <ConflictBar
           currentVersion={persistence.conflictVersion}
@@ -267,14 +270,8 @@ function Workspace({
           <div className="min-h-0 flex-1">
             <Preview assets={assets} />
           </div>
-          <div
-            className="flex h-16 shrink-0 items-center gap-4 border-t px-4 text-xs"
-            style={{ borderColor: 'var(--color-rule)', color: 'var(--color-ink-3)' }}
-          >
-            <span className="uppercase tracking-widest">Inspector — M3</span>
-            <span className="tnum">
-              {selectedClipId ? `clip ${selectedClipId}` : 'nothing selected'}
-            </span>
+          <div className="h-44 shrink-0 overflow-hidden">
+            <Inspector />
           </div>
         </div>
       </div>
@@ -283,6 +280,90 @@ function Workspace({
         <Timeline />
       </div>
     </div>
+  )
+}
+
+/**
+ * The toolbar — one dedicated, named button per feature, which is what the
+ * project lead asked for at the start and what the A2 mockup keeps.
+ *
+ * Everything here is free. The three AI tools are named and disabled until M4
+ * lands them, and they are visually separate because they will cost credits:
+ * charter rule 5, a user must never learn what a button costs by pressing it.
+ */
+function Toolbar() {
+  const canUndo = useEditor(selectCanUndo)
+  const canRedo = useEditor(selectCanRedo)
+  const hasSelection = useEditor((state) => state.selection.size > 0)
+  const store = useEditor.getState
+
+  return (
+    <div
+      className="flex shrink-0 items-center gap-1.5 px-3 py-2 text-xs"
+      style={{ borderBottom: '1px solid var(--color-rule)' }}
+      data-testid="toolbar"
+    >
+      <Tool onClick={() => store().splitAtPlayhead()}>Split</Tool>
+      <Tool onClick={() => store().duplicateSelection()} disabled={!hasSelection}>
+        Duplicate
+      </Tool>
+      <Tool onClick={() => store().deleteSelection()} disabled={!hasSelection}>
+        Delete
+      </Tool>
+      <Tool onClick={() => store().addTitle('New title')}>Add title</Tool>
+      <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
+      <Tool onClick={() => store().undo()} disabled={!canUndo}>
+        Undo
+      </Tool>
+      <Tool onClick={() => store().redo()} disabled={!canRedo}>
+        Redo
+      </Tool>
+      <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
+      <Tool ai disabled>
+        Captions
+      </Tool>
+      <Tool ai disabled>
+        Smart trim
+      </Tool>
+      <Tool ai disabled>
+        Colour
+      </Tool>
+      <span className="ml-1" style={{ color: 'var(--color-ink-faint)' }}>
+        AI tools land in M4
+      </span>
+    </div>
+  )
+}
+
+function Tool({
+  children,
+  onClick,
+  disabled,
+  ai,
+}: {
+  children: React.ReactNode
+  onClick?: () => void
+  disabled?: boolean
+  ai?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="px-2.5 py-1"
+      style={{
+        borderRadius: 'var(--radius-sm)',
+        background: ai ? 'var(--color-accent-soft)' : 'var(--color-surface-2)',
+        color: ai ? 'var(--color-accent)' : 'var(--color-ink-2)',
+        // Charter §8: disabled is opacity plus no pointer events, never colour
+        // alone.
+        opacity: disabled ? 0.4 : 1,
+        transition: 'background var(--duration-micro) ease-out',
+      }}
+    >
+      {children}
+    </button>
   )
 }
 

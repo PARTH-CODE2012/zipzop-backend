@@ -32,6 +32,7 @@ export function MediaBin() {
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const addClip = useEditor((state) => state.addClip)
+  const addMusicClip = useEditor((state) => state.addMusicClip)
 
   const refresh = useCallback(async () => {
     try {
@@ -213,9 +214,16 @@ export function MediaBin() {
               <button
                 type="button"
                 disabled={asset.status !== 'ready'}
-                onClick={() =>
-                  addClip({ assetId: asset.id, durationMs: asset.durationMs ?? 0 })
-                }
+                onClick={() => {
+                  // An audio-only asset belongs on the music lane, not the
+                  // video one. Sending it to `addClip` would put a soundtrack
+                  // on the picture track, where the renderer would try to draw
+                  // it and invariant 1 would fight every video clip already
+                  // there. The asset's own kind is the only thing that can
+                  // decide this, so it decides it here rather than asking.
+                  const add = asset.kind === 'audio' ? addMusicClip : addClip
+                  add({ assetId: asset.id, durationMs: asset.durationMs ?? 0 })
+                }}
                 className="rounded border px-2 py-1 text-[11px] disabled:opacity-40"
                 style={{ borderColor: 'var(--color-rule)' }}
                 data-testid="add-to-timeline"

@@ -153,7 +153,7 @@ infra: ## Start whatever infrastructure is not already up (Postgres, Redis, MinI
 	@./scripts/infra.sh
 
 .PHONY: dev-all
-dev-all: ## Everything you need to click around: API + ingest worker + frontend
+dev-all: infra migrate ## Everything you need to click around: API + ingest worker + frontend
 	@echo "starting the API, the ingest worker and the dev server…"
 	@cd $(BACKEND) && (./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 \
 		--reload > /tmp/zipzop-api.log 2>&1 &)

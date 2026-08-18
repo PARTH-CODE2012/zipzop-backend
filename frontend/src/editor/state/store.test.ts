@@ -204,6 +204,66 @@ describe('selection', () => {
   })
 })
 
+describe('the audio and text tracks', () => {
+  it('puts music on its own lane, not the video one', () => {
+    loaded()
+    state().addClip({ assetId: 'ast_v', durationMs: 4_000 })
+    state().addMusicClip({ assetId: 'ast_a', durationMs: 30_000 })
+
+    const kinds = state().timeline.tracks.map((track) => track.kind)
+    expect(kinds).toEqual(['video', 'audio'])
+    expect(selectDurationMs(state())).toBe(30_000)
+  })
+
+  it('places a title at the playhead rather than at the end', () => {
+    // A title is positioned against the picture underneath it, and the end of
+    // the track is never where the user is looking.
+    loaded()
+    state().addClip({ assetId: 'ast_v', durationMs: 20_000 })
+    state().setPlayhead(7_000)
+    const id = state().addTitle('Hello')
+
+    const text = state().timeline.tracks.find((track) => track.kind === 'text')
+    expect(text?.clips[0]).toMatchObject({ id, startMs: 7_000, kind: 'title', text: 'Hello' })
+  })
+
+  it('pushes a second title clear of the first instead of overlapping it', () => {
+    loaded()
+    state().setPlayhead(1_000)
+    state().addTitle('One')
+    state().setPlayhead(2_000)
+    state().addTitle('Two')
+
+    const clips = state().timeline.tracks.find((t) => t.kind === 'text')?.clips ?? []
+    expect(clips.map((c) => c.startMs)).toEqual([1_000, 4_000])
+  })
+
+  it('edits a title text and undoes it', () => {
+    loaded()
+    const id = state().addTitle('Draft')
+    state().setText(id, 'Final')
+    const clips = () => state().timeline.tracks.find((t) => t.kind === 'text')?.clips ?? []
+    expect(clips()[0]?.text).toBe('Final')
+
+    state().undo()
+    expect(clips()[0]?.text).toBe('Draft')
+  })
+
+  it('muting a lane is an undoable edit, not view state', () => {
+    // The renderer honours `muted` (contract §4.2), so it belongs in the
+    // document — a mute the user cannot take back with undo is a surprise.
+    loaded()
+    state().addMusicClip({ assetId: 'ast_a', durationMs: 5_000 })
+    const track = state().timeline.tracks.find((t) => t.kind === 'audio')!
+
+    state().setTrackMuted(track.id, true)
+    expect(state().timeline.tracks.find((t) => t.kind === 'audio')?.muted).toBe(true)
+
+    state().undo()
+    expect(state().timeline.tracks.find((t) => t.kind === 'audio')?.muted).toBe(false)
+  })
+})
+
 describe('splitAtPlayhead', () => {
   it('splits whatever the playhead is inside and selects the new piece', () => {
     loaded()

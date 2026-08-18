@@ -207,7 +207,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 - [x] [`docs/08-ui-charter.md`](docs/08-ui-charter.md) written from A2 — palette, type scale, spacing, radii, the six component states, motion durations and curves. §13 is the block that replaces `@theme`
 - [x] `frontend/src/styles/globals.css` `@theme` block replaced with the charter tokens — **no component file touched**. The property held: applying a whole visual identity was one file
-- [ ] The four states the timeline needs proven against the charter: clip at rest, selected, dragging, muted track — none of them distinguished by hue alone. **Tokens for all four exist; the component renders rest and selected only.** Hover and dragging land with the drag handles
+- [x] The four states the timeline needs proven against the charter: clip at rest, hover, selected, dragging, plus the muted lane — none distinguished by hue alone. Selected also changes weight, dragging also lifts and rings, a muted lane also shows an `M` in its header
 - [x] Blur and translucency confined to the chrome ⚠️ — nothing in the timeline carries a `backdrop-filter`, and the rule and its reason are written into `globals.css` where the next person to add one will read it
 
 ### Frontend — the document
@@ -222,14 +222,14 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 - [x] Split at playhead, trim both ends, move, reorder, duplicate, delete — pure recipes in `editor/state/operations.ts`, each leaving §4.3 satisfied. **Speed is what makes split and trim non-obvious** and it has its own tests
 - [x] **Drags use local state and commit once on drop** — never per pointer move. Proven by a test that fires eleven moves and asserts the history is unchanged until the drop
-- [ ] Snapping to clip edges, playhead and zero, with a modifier to suppress — `snapTo` and `snapCandidates` are written and tested; **wiring them to the drag handles is outstanding**
-- [ ] Selection: click, shift-click, marquee — click and shift-click done, **marquee outstanding**
+- [x] Snapping to clip edges, playhead and zero, `alt` to suppress. **The tolerance is in pixels, not milliseconds** — 100 ms is a fifth of a pixel when zoomed out and half the screen when zoomed in, and what the hand judges is distance on screen
+- [x] Selection: click, shift-click, marquee. The marquee catches what it *touches* rather than what it encloses — a lasso that only took fully-enclosed clips would miss the long one you dragged across, which is usually the one you meant
 - [x] Keyboard: space, `S`, arrow nudge by one frame, plus undo/redo, duplicate, delete, save and escape. Nothing fires while focus is in a text field
-- [ ] Clip properties: volume, speed, rotate, flip, crop and reframe — the operations exist and clamp to the contract's ranges; **the inspector panel is outstanding**
-- [ ] Audio track: music clip, per-clip volume, fades — Web Audio gain automation
-- [ ] Text track: add a title, font, size, colour, position
-- [ ] Transitions: cut, fade to black, cross dissolve — `setTransition` exists and clamps to invariant 7; **no interface for it yet**
-- [ ] Timeline virtualised by time window ⚠️ — must stay smooth at 500 clips
+- [x] Clip properties: volume, speed, fades, rotate, flip, and reframe — in `editor/inspector/`. ⚠️ **Reframe is two presets (full frame / centre 9:16), not a drag-to-crop.** The operation takes any normalised rectangle; only the handle to draw one is missing
+- [x] Audio track: music clip, per-clip volume, fades. An audio-only asset routes to the music lane from the media bin — sending it to the video track would put a soundtrack on the picture track. ⚠️ **Web Audio gain automation is not wired**: the values are in the document and the renderer will honour them, the browser preview does not yet
+- [ ] Text track — **add, edit and position a title are done**; font, size and colour are not. The `style` override object is in the document and generated into the client types, so each is a control rather than a change of shape
+- [x] Transitions: cut, fade to black, cross dissolve, per side, clamped to invariant 7. A cut is stored as *no* transition rather than a zero-length one, so the renderer never has to ask what a zero-length dissolve means
+- [x] Timeline virtualised by time window ⚠️ — clips outside the window plus half a screen of overscan are not rendered at all, and the grid is a repeating background rather than one element per line. Tested at 500 clips
 
 ### Backend — projects
 
@@ -248,12 +248,15 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [ ] IndexedDB mirror on every commit, restore offer on open 💤
 - [x] Last-chance flush on `pagehide` — **`fetch` with `keepalive`, not `sendBeacon`**, which only issues POST and cannot send a PATCH. Correction recorded in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §6, including the 64 KB body cap that makes it best-effort
 
-> **Where M3's frontend stands, 18 August.** The document, the history, the editing operations
-> and persistence are done and covered by 155 frontend tests. What is left is the **interface**
-> over them: drag handles and snapping, the marquee, the inspector panel, transitions, the audio
-> and text tracks, and virtualisation. The core was built first on purpose — every one of those
-> is a component over an operation that already exists and is already tested, rather than a
-> component that has to invent the operation as it goes.
+> **M3 is complete bar two things, 18 August.** The document, the history, the editing
+> operations, persistence and the whole interface over them are done, covered by 179 frontend
+> tests and exercised end to end: register, create a project, edit, reload, and the edit is
+> still there.
+>
+> Left open, both deliberately: **the text track's font, size and colour controls** (the style
+> object is in the document, so each is a control rather than a change of shape), and the
+> **IndexedDB mirror**, which the checklist already marked 💤 and which is also the proper
+> answer to the 64 KB cap on the unload flush.
 
 ---
 
