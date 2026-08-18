@@ -60,9 +60,11 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. M3 is under way — the backend half is done.**
+**Nothing blocking. M3 is under way — the editor's core is done, its interface is next.**
 
-Projects persist as of 18 August: the five routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency, and `project_assets` rebuilt from the document. `openapi.json` now carries the whole timeline document, and `frontend/src/lib/api/generated.ts` is regenerated from it — so the frontend's timeline type is **generated, never hand-written**, which is the property [`04-frontend-architecture.md`](04-frontend-architecture.md) §3.1 asks for. What is left in M3 is the editor itself: the store, undo through patches, the editing operations, and autosave.
+Projects persist as of 18 August. On the server: the five routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency, and `project_assets` rebuilt from the document. On the client: the timeline type is **generated** from `openapi.json` and never hand-written, edits go through an Immer-patch history that makes any commit one undo step, drags stage outside the document and commit once on drop, and autosave debounces two seconds with a real `409` path. The [UI charter](08-ui-charter.md) is applied — one `@theme` block, no component touched.
+
+What remains in M3 is the interface over that core: drag handles and snapping, the marquee, the inspector panel, transitions, the audio and text tracks, and timeline virtualisation. Each is a component over an operation that already exists and is already tested.
 
 Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work.
 

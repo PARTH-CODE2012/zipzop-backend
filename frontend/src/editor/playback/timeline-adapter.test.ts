@@ -15,6 +15,7 @@ function clip(over: Partial<MediaClip> = {}): MediaClip {
     volume: 1,
     audioFadeInMs: 0,
     audioFadeOutMs: 0,
+    effects: [],
     ...over,
   }
 }

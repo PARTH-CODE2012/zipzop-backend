@@ -11,7 +11,7 @@ import {
   violatedInvariants,
   type MediaClip,
   type TimelineDocument,
-  type Track,
+  type MediaTrack,
 } from './timeline-document'
 
 function clip(over: Partial<MediaClip> = {}): MediaClip {
@@ -25,11 +25,12 @@ function clip(over: Partial<MediaClip> = {}): MediaClip {
     volume: 1,
     audioFadeInMs: 0,
     audioFadeOutMs: 0,
+    effects: [],
     ...over,
   }
 }
 
-function track(clips: MediaClip[]): Track {
+function track(clips: MediaClip[]): MediaTrack {
   return { id: 'trk_video', kind: 'video', index: 0, muted: false, locked: false, clips }
 }
 

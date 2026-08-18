@@ -46,6 +46,18 @@ export function setAccessToken(token: string | null): void {
 }
 
 /**
+ * The current access token, for the one caller that cannot go through
+ * `request()`: the unload flush, which builds its own `fetch` with
+ * `keepalive` because the helper's refresh-and-retry cannot run while the page
+ * is being torn down.
+ */
+export function getAccessToken(): string | null {
+  return accessToken
+}
+
+export { BASE_URL as API_BASE_URL }
+
+/**
  * Refresh once, and only once, no matter how many requests 401 at the same
  * moment. Without this, a page that fires six requests on mount performs six
  * refreshes and rotates the token out from under five of them.

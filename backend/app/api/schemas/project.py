@@ -23,6 +23,14 @@ from pydantic import Field
 
 from app.api.schemas.common import ApiModel
 
+#: `Field(default=[])` rather than `default_factory=list` throughout this
+#: module, and the reason is the generated client. A factory cannot be shown
+#: in a JSON schema, so the field emits no `default` and openapi-typescript
+#: marks it optional — the frontend then gets `clips?: MediaClip[]` and every
+#: caller needs a `?? []`, which is exactly the fresh-array-per-render bug M2
+#: spent an end-to-end run finding. Pydantic deep-copies mutable defaults, so
+#: the list is not shared between instances.
+#:
 #: Bumped only when the document's shape changes incompatibly. A client sending
 #: anything else is refused rather than guessed at.
 SCHEMA_VERSION: Final[Literal[1]] = 1
@@ -123,7 +131,7 @@ class MediaClip(ApiModel):
     audio_fade_in_ms: int = Field(default=0, ge=0)
     audio_fade_out_ms: int = Field(default=0, ge=0)
     transform: Transform | None = None
-    effects: list[ColorGradeEffect] = Field(default_factory=list, max_length=8)
+    effects: list[ColorGradeEffect] = Field(default=[], max_length=8)
     transition_in: Transition | None = None
     transition_out: Transition | None = None
 
@@ -174,7 +182,7 @@ class MediaTrack(ApiModel):
     index: int = Field(default=0, ge=0, le=8)
     muted: bool = False
     locked: bool = False
-    clips: list[MediaClip] = Field(default_factory=list, max_length=MAX_CLIPS_PER_TRACK)
+    clips: list[MediaClip] = Field(default=[], max_length=MAX_CLIPS_PER_TRACK)
 
 
 class TextTrack(ApiModel):
@@ -183,7 +191,7 @@ class TextTrack(ApiModel):
     index: int = Field(default=0, ge=0, le=8)
     muted: bool = False
     locked: bool = False
-    clips: list[TextClip] = Field(default_factory=list, max_length=MAX_CLIPS_PER_TRACK)
+    clips: list[TextClip] = Field(default=[], max_length=MAX_CLIPS_PER_TRACK)
 
 
 #: Discriminated on `kind` so the generated TypeScript is a union a `switch`
@@ -195,7 +203,7 @@ class TimelineDocument(ApiModel):
     schema_version: Literal[1] = 1
     #: Phase 1 allows one track of each kind (invariant 8), so three is the
     #: ceiling; the invariant itself is checked where it can name the offender.
-    tracks: list[Track] = Field(default_factory=list, max_length=3)
+    tracks: list[Track] = Field(default=[], max_length=3)
 
 
 def empty_timeline() -> TimelineDocument:

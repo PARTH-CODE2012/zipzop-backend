@@ -1,88 +1,75 @@
 /**
  * The timeline document.
  *
- * Exactly the shape of docs/05-api-contract.md §4 — the frontend produces it,
- * the backend validates and stores it, the export renderer consumes it, and
- * there is deliberately no client-side variant and no mapping layer
- * (docs/04-frontend-architecture.md §3.1).
+ * **Every type here is an alias into `generated.ts`.** There is no client
+ * variant and no mapping layer: the frontend produces this document, the
+ * backend validates and stores it, the export renderer consumes it, and
+ * `docs/04-frontend-architecture.md` §3.1 requires all three to be reading one
+ * definition. When the contract changes, this file stops compiling — which is
+ * the entire point of generating rather than writing them.
  *
- * ⚠️ **These types are hand-written, and that is temporary.** M3's first task
- * is *"Timeline document type generated from the OpenAPI schema"*, which is
- * only possible once `PATCH /projects/{id}` exists to put the schema in
- * `openapi.json`. Until then there is nothing to generate from. What is here
- * is the M2 subset — one video track, one clip — written to match §4 field for
- * field so the generated version replaces it without touching a caller.
+ * The hand-written M2 subset that used to live here is gone. It was written to
+ * match contract §4 field for field precisely so this swap would touch no
+ * caller, and it did not.
  *
- * Conventions that are not negotiable, and that this file exists to hold:
- * times are **integer milliseconds**, spatial values are **normalised 0–1**
- * relative to the canvas, and nothing derived is ever stored — clip end times
- * and track durations are selectors, because a derived field is a field that
- * can be wrong.
+ * Conventions the module exists to hold: times are **integer milliseconds**,
+ * spatial values are **normalised 0-1** relative to the canvas, and nothing
+ * derived is ever stored — clip ends and track durations are functions,
+ * because a derived field is a field that can disagree with what it came from.
  */
 
-export type TrackKind = 'video' | 'audio' | 'text'
+import type { components } from '@/lib/api/generated'
 
-export interface Transform {
-  scale: number
-  offsetX: number
-  offsetY: number
-  rotation: number
-  flipH: boolean
-  flipV: boolean
-  crop: { x: number; y: number; width: number; height: number } | null
-}
+type Schemas = components['schemas']
 
-export interface Effect {
-  type: 'color_grade'
-  lut: string
-  strength: number
-  sourceJobId?: string | null
-}
+export type TimelineDocument = Schemas['TimelineDocument']
+export type MediaTrack = Schemas['MediaTrack']
+export type TextTrack = Schemas['TextTrack']
+/** Either kind. Discriminated on `kind`, so a `switch` narrows it. */
+export type Track = MediaTrack | TextTrack
+export type TrackKind = Track['kind']
 
-export interface Transition {
-  type: 'cut' | 'fade' | 'dissolve'
-  durationMs: number
-}
+export type MediaClip = Schemas['MediaClip']
+export type TextClip = Schemas['TextClip']
+export type AnyClip = MediaClip | TextClip
 
-/** A clip on a `video` or `audio` track. */
-export interface MediaClip {
-  id: string
-  assetId: string
-  /** Where the clip begins on the timeline. */
-  startMs: number
-  /** How long it occupies on the timeline. Always > 0. */
-  durationMs: number
-  /** Where playback starts inside the asset. */
-  sourceInMs: number
-  /** 0.25–4.0. Source consumed is `durationMs × speed`. */
-  speed: number
-  /** 0.0–2.0. */
-  volume: number
-  audioFadeInMs: number
-  audioFadeOutMs: number
-  transform?: Transform
-  effects?: Effect[]
-  transitionIn?: Transition | null
-  transitionOut?: Transition | null
-}
+export type Transform = Schemas['Transform']
+export type Crop = Schemas['Crop']
+export type Effect = Schemas['ColorGradeEffect']
+export type Transition = Schemas['Transition']
+export type TextStyle = Schemas['TextStyle']
+export type TextPosition = Schemas['TextPosition']
 
-export interface Track {
-  id: string
-  kind: TrackKind
-  /** Layer order within the kind. Higher draws on top. */
-  index: number
-  muted: boolean
-  locked: boolean
-  clips: MediaClip[]
-}
-
-export interface TimelineDocument {
-  schemaVersion: 1
-  tracks: Track[]
-}
+export const SCHEMA_VERSION = 1 as const
 
 export function emptyTimeline(): TimelineDocument {
-  return { schemaVersion: 1, tracks: [] }
+  return { schemaVersion: SCHEMA_VERSION, tracks: [] }
+}
+
+// --------------------------------------------------------------------------
+// Narrowing
+// --------------------------------------------------------------------------
+
+export function isMediaTrack(track: Track): track is MediaTrack {
+  return track.kind === 'video' || track.kind === 'audio'
+}
+
+export function isTextTrack(track: Track): track is TextTrack {
+  return track.kind === 'text'
+}
+
+/**
+ * The one track of a kind, or undefined.
+ *
+ * Phase 1 allows one track per kind (contract §4.3 invariant 8), which is why
+ * this returns a single track rather than a list. Multiple video tracks are
+ * phase 2, and when they arrive this signature changing is the compiler
+ * telling every caller to look again.
+ */
+export function trackOfKind(document: TimelineDocument, kind: 'video' | 'audio'): MediaTrack | undefined
+export function trackOfKind(document: TimelineDocument, kind: 'text'): TextTrack | undefined
+export function trackOfKind(document: TimelineDocument, kind: TrackKind): Track | undefined {
+  return document.tracks.find((track) => track.kind === kind)
 }
 
 // --------------------------------------------------------------------------
@@ -98,7 +85,7 @@ export function sourceOutMs(clip: MediaClip): number {
   return clip.sourceInMs + Math.round(clip.durationMs * clip.speed)
 }
 
-export function clipEndMs(clip: MediaClip): number {
+export function clipEndMs(clip: AnyClip): number {
   return clip.startMs + clip.durationMs
 }
 
@@ -115,7 +102,7 @@ export function timelineDurationMs(document: TimelineDocument): number {
  *
  * The conversion M4 depends on for captions and smart trim, and the one the
  * M1 spike measured to a millisecond. Speed multiplies: two seconds into a
- * clip playing at 2× is four seconds into its media.
+ * clip playing at 2x is four seconds into its media.
  */
 export function timelineMsToAssetMs(clip: MediaClip, timelineMs: number): number {
   return clip.sourceInMs + Math.round((timelineMs - clip.startMs) * clip.speed)
@@ -126,7 +113,10 @@ export function assetMsToTimelineMs(clip: MediaClip, assetMs: number): number {
 }
 
 /** The clip under a playhead position, or null in a gap. */
-export function clipAt(track: Track, timelineMs: number): MediaClip | null {
+export function clipAt<ClipT extends AnyClip>(
+  track: { clips: ClipT[] },
+  timelineMs: number,
+): ClipT | null {
   for (const clip of track.clips) {
     if (timelineMs >= clip.startMs && timelineMs < clipEndMs(clip)) return clip
   }
@@ -145,6 +135,19 @@ export function snapCandidates(document: TimelineDocument): number[] {
   return [...edges].sort((a, b) => a - b)
 }
 
+/** Find a clip anywhere in the document, with the track that holds it. */
+export function locateClip(
+  document: TimelineDocument,
+  clipId: string,
+): { track: Track; clip: AnyClip; index: number } | null {
+  for (const track of document.tracks) {
+    const index = track.clips.findIndex((clip) => clip.id === clipId)
+    const clip = index >= 0 ? track.clips[index] : undefined
+    if (clip) return { track, clip, index }
+  }
+  return null
+}
+
 // --------------------------------------------------------------------------
 // Invariants — contract §4.3
 // --------------------------------------------------------------------------
@@ -154,9 +157,9 @@ export function snapCandidates(document: TimelineDocument): number[] {
  *
  * Invariants 4 and 5 need the asset's duration and ownership, which only the
  * server knows, so they are not here. This is **not** a substitute for the
- * server's validation — plan limits and document validity are enforced
- * server-side, and this exists so the editor can refuse to build something
- * invalid rather than discover it at save time (which is M3).
+ * server's validation — it exists so the editor can refuse to build something
+ * invalid rather than discover it when the autosave comes back 422, two
+ * seconds and several edits later.
  */
 export function violatedInvariants(document: TimelineDocument): string[] {
   const problems: string[] = []
@@ -185,7 +188,6 @@ export function violatedInvariants(document: TimelineDocument): string[] {
   }
 
   for (const [kind, count] of byKind) {
-    // Phase 1 allows one track of each kind.
     if (count > 1) problems.push(`${count} ${kind} tracks; phase 1 allows one`)
   }
   return problems

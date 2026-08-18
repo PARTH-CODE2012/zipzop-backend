@@ -12,6 +12,7 @@
  * and the conversion is testable without a browser.
  */
 
+import { trackOfKind } from '@/editor/state/timeline-document'
 import type { MediaClip, TimelineDocument } from '@/editor/state/timeline-document'
 import type { SpikeMediaClip, SpikeTimeline } from '@/editor/playback/timeline'
 
@@ -48,7 +49,10 @@ export function documentToPlaybackTimeline(
   const skipped: AdapterResult['skipped'] = []
   const video: SpikeMediaClip[] = []
 
-  const videoTrack = document.tracks.find((track) => track.kind === 'video')
+  // `trackOfKind` narrows to a MediaTrack, so `clip` is a MediaClip and not
+  // the union — a text clip has no `assetId` and nothing here would mean
+  // anything for one.
+  const videoTrack = trackOfKind(document, 'video')
   for (const clip of videoTrack?.clips ?? []) {
     const asset = lookup(clip.assetId)
     if (!asset) {

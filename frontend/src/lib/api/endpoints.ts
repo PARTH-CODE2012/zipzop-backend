@@ -97,3 +97,60 @@ export function reserveUpload(
 export function completeUpload(assetId: string, etag: string | null): Promise<AssetResponse> {
   return api.post<AssetResponse>(`/media/${assetId}/complete`, { etag, parts: null })
 }
+
+// ----------------------------------------------------------------- projects
+
+export type ProjectResponse = Schemas['ProjectResponse']
+export type ProjectSummary = Schemas['ProjectSummary']
+export type ProjectSaveResponse = Schemas['ProjectSaveResponse']
+export type ProjectAssetRef = Schemas['ProjectAssetRef']
+export type CreateProjectRequest = Schemas['CreateProjectRequest']
+export type TimelineDocumentWire = Schemas['TimelineDocument']
+
+export function createProject(body: CreateProjectRequest): Promise<ProjectResponse> {
+  return api.post<ProjectResponse>('/projects', body)
+}
+
+export function listProjects(params: { limit?: number; cursor?: string } = {}) {
+  const query = new URLSearchParams()
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.cursor) query.set('cursor', params.cursor)
+  const suffix = query.toString() ? `?${query}` : ''
+  return api.get<{ items: ProjectSummary[]; nextCursor: string | null }>(`/projects${suffix}`)
+}
+
+export function getProject(projectId: string): Promise<ProjectResponse> {
+  return api.get<ProjectResponse>(`/projects/${projectId}`)
+}
+
+/**
+ * Autosave — contract §5.
+ *
+ * `version` is the one the document was loaded or last saved at. A `409
+ * VERSION_CONFLICT` means another tab or device saved first, and its
+ * `details.currentVersion` says what to re-fetch. **There is no automatic
+ * merge**: two timelines cannot be reconciled without knowing which edit the
+ * user meant (`docs/04-frontend-architecture.md` §6.1).
+ */
+export function saveTimeline(
+  projectId: string,
+  body: { timeline: TimelineDocumentWire; version: number },
+): Promise<ProjectSaveResponse> {
+  return api.patch<ProjectSaveResponse>(`/projects/${projectId}`, body)
+}
+
+/** Renaming does not touch the timeline and does not bump `version`. */
+export function updateProjectMetadata(
+  projectId: string,
+  body: { title?: string; aspectRatio?: CreateProjectRequest['aspectRatio'] },
+): Promise<ProjectSaveResponse> {
+  return api.patch<ProjectSaveResponse>(`/projects/${projectId}`, body)
+}
+
+export function duplicateProject(projectId: string): Promise<ProjectResponse> {
+  return api.post<ProjectResponse>(`/projects/${projectId}/duplicate`, {})
+}
+
+export function deleteProject(projectId: string): Promise<void> {
+  return api.delete<void>(`/projects/${projectId}`)
+}

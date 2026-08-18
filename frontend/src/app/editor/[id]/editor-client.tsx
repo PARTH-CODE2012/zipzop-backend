@@ -13,22 +13,26 @@
  *   │ timeline — video track                   │
  *   └──────────────────────────────────────────┘
  *
- * M2 fills in the media bin, the preview and the timeline. The inspector and
- * the AI tools are M3 and M4 and are left as labelled space rather than as
- * something that looks finished and does nothing.
- *
- * **This has no visual identity.** Every colour comes from a token in
- * `globals.css`, and those are all neutral greys until the project lead
- * delivers a palette. The structure and the behaviour are what M2 proves.
+ * M3 adds what makes the milestone's title true: the project is loaded from
+ * the server, every edit commits through the store's patch history, and
+ * autosave puts it back. The visual charter (docs/08-ui-charter.md) is applied
+ * through tokens — there is not a literal colour in this file.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AuthPanel } from '@/account/AuthPanel'
 import { useSession } from '@/account/session'
+import { actionFor, isTypingTarget, NUDGE_MS } from '@/editor/keyboard'
 import { Preview } from '@/editor/playback/Preview'
 import type { ResolvedAsset } from '@/editor/playback/timeline-adapter'
-import { selectClips, selectDurationMs, useEditor } from '@/editor/state/store'
+import {
+  selectClips,
+  selectDurationMs,
+  selectSingleClipId,
+  useEditor,
+} from '@/editor/state/store'
+import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
 import { Timeline } from '@/editor/timeline/Timeline'
 import { formatTimecode } from '@/editor/timeline/scale'
 import { listMedia } from '@/lib/api/endpoints'
@@ -63,6 +67,18 @@ export function EditorClient({ projectId }: { projectId: string }) {
   )
 }
 
+/** Charter §8: a state is never carried by colour alone, so each of these has
+ * its own words as well as its own token. */
+const SAVE_LABEL: Record<SaveStatus, { text: string; token: string }> = {
+  idle: { text: 'Ready', token: 'var(--color-ink-3)' },
+  loading: { text: 'Opening…', token: 'var(--color-ink-3)' },
+  dirty: { text: 'Unsaved changes', token: 'var(--color-ink-2)' },
+  saving: { text: 'Saving…', token: 'var(--color-accent)' },
+  saved: { text: 'All changes saved', token: 'var(--color-ink-3)' },
+  conflict: { text: 'Changed elsewhere', token: 'var(--color-warning)' },
+  error: { text: 'Could not save', token: 'var(--color-danger)' },
+}
+
 function Workspace({
   projectId,
   email,
@@ -77,8 +93,9 @@ function Workspace({
   const clips = useEditor(selectClips)
   const durationMs = useEditor(selectDurationMs)
   const isPlaying = useEditor((state) => state.isPlaying)
-  const setPlaying = useEditor((state) => state.setPlaying)
-  const setPlayhead = useEditor((state) => state.setPlayhead)
+  const selectedClipId = useEditor(selectSingleClipId)
+
+  const persistence = useProjectPersistence(projectId)
 
   /**
    * Signed proxy URLs, keyed by asset id.
@@ -109,28 +126,66 @@ function Workspace({
     void loadAssets()
   }, [loadAssets])
 
-  // A clip cannot be added until its asset resolves, so reload whenever the
-  // timeline gains one.
   useEffect(() => {
     if (clips.length > 0) void loadAssets()
   }, [clips.length, loadAssets])
 
-  // Space plays and pauses, as it does in every editor.
+  // The keyboard map is a pure function in `editor/keyboard.ts`; this is only
+  // the wiring. Nothing fires while focus is in a text field.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
-      if (event.code === 'Space') {
-        event.preventDefault()
-        setPlaying(!isPlaying)
+      const action = actionFor(event, { isTyping: isTypingTarget(event.target) })
+      if (!action) return
+      const store = useEditor.getState()
+
+      switch (action) {
+        case 'play-pause':
+          store.setPlaying(!store.isPlaying)
+          break
+        case 'split':
+          store.splitAtPlayhead()
+          break
+        case 'delete':
+          store.deleteSelection()
+          break
+        case 'duplicate':
+          store.duplicateSelection()
+          break
+        case 'undo':
+          store.undo()
+          break
+        case 'redo':
+          store.redo()
+          break
+        case 'save':
+          void persistence.flush()
+          break
+        case 'nudge-left':
+          store.setPlayhead(store.playheadMs - NUDGE_MS)
+          break
+        case 'nudge-right':
+          store.setPlayhead(store.playheadMs + NUDGE_MS)
+          break
+        case 'go-start':
+          store.setPlayhead(0)
+          break
+        case 'go-end':
+          store.setPlayhead(selectDurationMs(store))
+          break
+        case 'cancel':
+          if (store.drag) store.cancelDrag()
+          else store.select(null)
+          break
       }
-      if (event.code === 'Home') setPlayhead(0)
+      event.preventDefault()
     }
+
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isPlaying, setPlaying, setPlayhead])
+  }, [persistence])
 
   const readyCount = useMemo(() => assets.size, [assets])
+  const save = SAVE_LABEL[persistence.status]
 
   return (
     <div className="no-select flex h-screen flex-col" data-testid="workspace">
@@ -140,28 +195,37 @@ function Workspace({
       >
         <button
           type="button"
-          onClick={() => setPlaying(!isPlaying)}
+          onClick={() => useEditor.getState().setPlaying(!isPlaying)}
           disabled={durationMs === 0}
-          className="rounded border px-3 py-1 disabled:opacity-40"
-          style={{ borderColor: 'var(--color-rule)' }}
+          className="rounded px-3 py-1 disabled:opacity-40"
+          style={{
+            borderRadius: 'var(--radius-pill)',
+            background: 'var(--color-accent)',
+            color: 'var(--color-accent-ink)',
+            fontWeight: 600,
+          }}
           data-testid="play"
           data-playing={isPlaying}
         >
           {isPlaying ? 'Pause' : 'Play'}
         </button>
-        <span className="font-mono tabular-nums" style={{ color: 'var(--color-ink-2)' }}>
+        <span className="tnum" style={{ color: 'var(--color-ink-2)' }}>
           {formatTimecode(durationMs, { withMillis: true })}
         </span>
 
+        <span data-testid="save-status" style={{ color: save.token }}>
+          {save.text}
+        </span>
+
         <span
-          className="ml-auto font-mono uppercase tracking-widest"
-          style={{ color: 'var(--color-ink-2)' }}
+          className="ml-auto uppercase tracking-widest"
+          style={{ color: 'var(--color-ink-3)' }}
         >
           {/* AI tools land in M4. Named, not mocked. */}
           Captions · Smart trim · Colour — M4
         </span>
 
-        <span style={{ color: 'var(--color-ink-2)' }} data-testid="credits">
+        <span className="tnum" style={{ color: 'var(--color-ink-2)' }} data-testid="credits">
           {credits} credits
         </span>
         <span
@@ -175,12 +239,20 @@ function Workspace({
           type="button"
           onClick={onSignOut}
           className="rounded border px-2 py-1"
-          style={{ borderColor: 'var(--color-rule)' }}
+          style={{ borderColor: 'var(--color-rule)', borderRadius: 'var(--radius-sm)' }}
           data-testid="sign-out"
         >
           Sign out
         </button>
       </header>
+
+      {persistence.conflictVersion !== null && (
+        <ConflictBar
+          currentVersion={persistence.conflictVersion}
+          onKeepMine={() => void persistence.keepMine()}
+          onLoadTheirs={() => void persistence.loadTheirs()}
+        />
+      )}
 
       <div className="flex min-h-0 flex-1">
         <aside
@@ -196,11 +268,12 @@ function Workspace({
             <Preview assets={assets} />
           </div>
           <div
-            className="flex h-16 shrink-0 items-center border-t px-4 text-xs"
-            style={{ borderColor: 'var(--color-rule)', color: 'var(--color-ink-2)' }}
+            className="flex h-16 shrink-0 items-center gap-4 border-t px-4 text-xs"
+            style={{ borderColor: 'var(--color-rule)', color: 'var(--color-ink-3)' }}
           >
-            <span className="font-mono uppercase tracking-widest">
-              Inspector — M3 · project <code>{projectId}</code>
+            <span className="uppercase tracking-widest">Inspector — M3</span>
+            <span className="tnum">
+              {selectedClipId ? `clip ${selectedClipId}` : 'nothing selected'}
             </span>
           </div>
         </div>
@@ -209,6 +282,62 @@ function Workspace({
       <div className="h-48 shrink-0">
         <Timeline />
       </div>
+    </div>
+  )
+}
+
+/**
+ * A version conflict — contract §5, `409 VERSION_CONFLICT`.
+ *
+ * Two choices and no automatic merge: two timelines cannot be reconciled
+ * without knowing which edit the user meant (docs/04-frontend-architecture.md
+ * §6.1). A bar rather than a modal, because the user has to be able to look at
+ * what they have before deciding to throw it away.
+ */
+function ConflictBar({
+  currentVersion,
+  onKeepMine,
+  onLoadTheirs,
+}: {
+  currentVersion: number
+  onKeepMine: () => void
+  onLoadTheirs: () => void
+}) {
+  return (
+    <div
+      className="flex shrink-0 items-center gap-4 px-4 py-2 text-xs"
+      style={{
+        background: 'var(--color-surface-2)',
+        borderBottom: '1px solid var(--color-warning)',
+        color: 'var(--color-ink)',
+      }}
+      data-testid="version-conflict"
+    >
+      <span>
+        This project was changed somewhere else — it is now at version {currentVersion}. Autosave
+        is paused until you choose.
+      </span>
+      <button
+        type="button"
+        onClick={onKeepMine}
+        className="px-3 py-1"
+        style={{
+          borderRadius: 'var(--radius-pill)',
+          background: 'var(--color-accent)',
+          color: 'var(--color-accent-ink)',
+          fontWeight: 600,
+        }}
+      >
+        Keep mine
+      </button>
+      <button
+        type="button"
+        onClick={onLoadTheirs}
+        className="border px-3 py-1"
+        style={{ borderRadius: 'var(--radius-pill)', borderColor: 'var(--color-rule)' }}
+      >
+        Load the other version
+      </button>
     </div>
   )
 }

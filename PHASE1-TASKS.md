@@ -206,29 +206,29 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 ### Frontend — visual charter 🟢
 
 - [x] [`docs/08-ui-charter.md`](docs/08-ui-charter.md) written from A2 — palette, type scale, spacing, radii, the six component states, motion durations and curves. §13 is the block that replaces `@theme`
-- [ ] `frontend/src/styles/globals.css` `@theme` block replaced with the charter tokens — **no component file touched**, which is the property M2 was built to preserve
-- [ ] The four states the timeline needs proven against the charter: clip at rest, selected, dragging, muted track — none of them distinguished by hue alone
-- [ ] Blur and translucency confined to the chrome ⚠️ — a `backdrop-filter` on a clip does not survive the 500-clip budget in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §9
+- [x] `frontend/src/styles/globals.css` `@theme` block replaced with the charter tokens — **no component file touched**. The property held: applying a whole visual identity was one file
+- [ ] The four states the timeline needs proven against the charter: clip at rest, selected, dragging, muted track — none of them distinguished by hue alone. **Tokens for all four exist; the component renders rest and selected only.** Hover and dragging land with the drag handles
+- [x] Blur and translucency confined to the chrome ⚠️ — nothing in the timeline carries a `backdrop-filter`, and the rule and its reason are written into `globals.css` where the next person to add one will read it
 
 ### Frontend — the document
 
-- [ ] Timeline document type generated from the OpenAPI schema — **same shape as the API**, no client variant
-- [ ] Zustand store: `timeline`, `selection`, `playhead`, `zoom`, `version`, `isDirty`
-- [ ] `commit(label, recipe)` using `produceWithPatches` — undo/redo from Immer patches, not hand-written inverses
-- [ ] Undo/redo stacks capped at 200, keyboard bound
-- [ ] Memoised selectors for anything derived — nothing derived stored in the document
+- [x] Timeline document type generated from the OpenAPI schema — **same shape as the API**, no client variant. The hand-written M2 subset is gone and swapping it touched no caller, which is what it was written for
+- [x] Zustand store: `timeline`, `selection`, `playhead`, `zoom`, `version`, `isDirty`
+- [x] `commit(label, recipe)` using `produceWithPatches` — undo/redo from Immer patches, not hand-written inverses. A commit is one undo step however much it changed, which is what M4 needs for 1,800 caption clips
+- [x] Undo/redo stacks capped at 200, keyboard bound. The keyboard map is a pure function in `editor/keyboard.ts`, so it is tested without a DOM
+- [x] Memoised selectors for anything derived — nothing derived stored in the document
 
 ### Frontend — editing
 
-- [ ] Split at playhead, trim both ends, move, reorder, duplicate, delete
-- [ ] **Drags use local state and commit once on drop** — never per pointer move
-- [ ] Snapping to clip edges, playhead and zero, with a modifier to suppress
-- [ ] Selection: click, shift-click, marquee
-- [ ] Keyboard: space, `S`, arrow nudge by one frame
-- [ ] Clip properties: volume, speed, rotate, flip, crop and reframe
+- [x] Split at playhead, trim both ends, move, reorder, duplicate, delete — pure recipes in `editor/state/operations.ts`, each leaving §4.3 satisfied. **Speed is what makes split and trim non-obvious** and it has its own tests
+- [x] **Drags use local state and commit once on drop** — never per pointer move. Proven by a test that fires eleven moves and asserts the history is unchanged until the drop
+- [ ] Snapping to clip edges, playhead and zero, with a modifier to suppress — `snapTo` and `snapCandidates` are written and tested; **wiring them to the drag handles is outstanding**
+- [ ] Selection: click, shift-click, marquee — click and shift-click done, **marquee outstanding**
+- [x] Keyboard: space, `S`, arrow nudge by one frame, plus undo/redo, duplicate, delete, save and escape. Nothing fires while focus is in a text field
+- [ ] Clip properties: volume, speed, rotate, flip, crop and reframe — the operations exist and clamp to the contract's ranges; **the inspector panel is outstanding**
 - [ ] Audio track: music clip, per-clip volume, fades — Web Audio gain automation
 - [ ] Text track: add a title, font, size, colour, position
-- [ ] Transitions: cut, fade to black, cross dissolve
+- [ ] Transitions: cut, fade to black, cross dissolve — `setTransition` exists and clamps to invariant 7; **no interface for it yet**
 - [ ] Timeline virtualised by time window ⚠️ — must stay smooth at 500 clips
 
 ### Backend — projects
@@ -242,11 +242,18 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Frontend — persistence
 
-- [ ] Autosave debounced 2 s, plus on blur and `visibilitychange`
-- [ ] One save in flight at a time; never mid-drag
-- [ ] `409` → dialog: "Keep mine" / "Load the other version". **No automatic merge**
+- [x] Autosave debounced 2 s, plus on blur and `visibilitychange`
+- [x] One save in flight at a time; never mid-drag. Both are tested on fake timers — neither would show up in a click-through
+- [x] `409` → a bar with "Keep mine" and "Load the other version", and autosave goes quiet until one is chosen. **No automatic merge**
 - [ ] IndexedDB mirror on every commit, restore offer on open 💤
-- [ ] `sendBeacon` flush on `pagehide`
+- [x] Last-chance flush on `pagehide` — **`fetch` with `keepalive`, not `sendBeacon`**, which only issues POST and cannot send a PATCH. Correction recorded in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §6, including the 64 KB body cap that makes it best-effort
+
+> **Where M3's frontend stands, 18 August.** The document, the history, the editing operations
+> and persistence are done and covered by 155 frontend tests. What is left is the **interface**
+> over them: drag handles and snapping, the marquee, the inspector panel, transitions, the audio
+> and text tracks, and virtualisation. The core was built first on purpose — every one of those
+> is a component over an operation that already exists and is already tested, rather than a
+> component that has to invent the operation as it goes.
 
 ---
 

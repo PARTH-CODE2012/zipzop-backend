@@ -12,7 +12,7 @@
 | **Lands in** | [`../PHASE1-TASKS.md`](../PHASE1-TASKS.md) · M3, *Frontend — visual charter* |
 | **Depends on** | [`04-frontend-architecture.md`](04-frontend-architecture.md) §5, §9 — the timeline's rendering model and the performance budget constrain half of what follows |
 
-> **Nothing in `frontend/` has been changed yet.** This document is the specification; §13 is the block that replaces `@theme` in `frontend/src/styles/globals.css` when the work is picked up. M2 deliberately routed every colour the editor paints through a token so that applying this charter is one file, not a sweep.
+> **Applied 18 August 2026.** §13 is now the `@theme` block in `frontend/src/styles/globals.css`, and applying it touched that one file and nothing else — the property M2 was built to preserve held. What is still outstanding is listed in §15: the webfonts are named but not yet self-hosted, and the timeline renders the rest and selected states but not yet hover or dragging.
 
 > **Four directions were compared before A2, and five before those.** They are kept in [`ui-directions/`](ui-directions/index.html) as the record of what was rejected and why. If a decision below looks arbitrary, the alternative it beat is probably sitting in that folder.
 
@@ -409,6 +409,7 @@ The timeline is the hardest surface in the product to make accessible and the on
 | **High-contrast mode** | 🟠 `forced-colors` is unhandled. Worth an hour before launch; not worth blocking M3 |
 | **The three caption styles** | 🟠 M4. Their type, outline, position and safe-area behaviour need adding here when they are designed — and the open question in [`01-product-vision.md`](01-product-vision.md) §7 about caption position has to be answered first |
 | **The five LUT names** | 🟠 M4. Descriptive names, and per [`01-product-vision.md`](01-product-vision.md) §7 not named after living people |
+| **The webfonts themselves** | 🟠 **Named, not loaded.** `globals.css` puts Plus Jakarta Sans and IBM Plex Mono first in the stacks and falls back to system faces, so the interface is correct but not yet in its own voice. Subsetting them into `public/fonts/` with `font-display: swap` is its own task — §13 rules out a CDN |
 | **Marketing site** | ⚪ Out of scope. It may take the palette; it is not bound by §12 |
 | **Illustration and empty states** | 🟠 Needed for the projects page and an empty media bin. No direction chosen yet |
 | **The wordmark as a drawn asset** | 🟠 Set in Plus Jakarta Sans 700 today, with `zip` in `--color-ink` and `zop` in `--color-accent`. A real logotype is a separate commission |

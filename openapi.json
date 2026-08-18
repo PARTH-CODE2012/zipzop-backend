@@ -547,6 +547,7 @@
             "type": "integer"
           },
           "effects": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/ColorGradeEffect"
             },
@@ -628,6 +629,7 @@
       "MediaTrack": {
         "properties": {
           "clips": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/MediaClip"
             },
@@ -1360,6 +1362,7 @@
       "TextTrack": {
         "properties": {
           "clips": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/TextClip"
             },
@@ -1412,6 +1415,7 @@
             "type": "integer"
           },
           "tracks": {
+            "default": [],
             "items": {
               "discriminator": {
                 "mapping": {

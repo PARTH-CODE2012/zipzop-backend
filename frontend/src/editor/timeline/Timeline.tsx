@@ -21,6 +21,7 @@ import {
   selectClips,
   selectDurationMs,
   useEditor,
+  selectSingleClipId,
 } from '@/editor/state/store'
 import { clipEndMs, type MediaClip } from '@/editor/state/timeline-document'
 import {
@@ -44,7 +45,7 @@ export function Timeline() {
   const durationMs = useEditor(selectDurationMs)
   const zoom = useEditor((state) => state.zoom)
   const playheadMs = useEditor((state) => state.playheadMs)
-  const selectedClipId = useEditor((state) => state.selectedClipId)
+  const selectedClipId = useEditor(selectSingleClipId)
   const setZoom = useEditor((state) => state.setZoom)
   const setPlayhead = useEditor((state) => state.setPlayhead)
   const select = useEditor((state) => state.select)

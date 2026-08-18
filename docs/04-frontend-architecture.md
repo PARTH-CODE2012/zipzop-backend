@@ -256,7 +256,18 @@ Rules that matter:
 
 - **Never autosave mid-drag.** Save on committed state only.
 - **One save in flight at a time.** If edits arrive while a save is running, mark dirty and save again when it returns. Overlapping saves race on `version` and produce spurious conflicts.
-- Use `navigator.sendBeacon` on `pagehide` as a last-chance flush.
+- Use `fetch(..., { keepalive: true })` on `pagehide` as a last-chance flush.
+
+> **Corrected 18 August, during M3.** This line said `navigator.sendBeacon`, and it cannot do
+> the job: `sendBeacon` only ever issues a **POST**, while the save is a `PATCH`, so the
+> request would be rejected before it reached the handler. `fetch` with `keepalive` survives
+> the page being torn down and carries any method.
+>
+> It is not a like-for-like replacement, and the difference matters: `keepalive` caps the body
+> at **64 KB**, which a caption-heavy timeline will exceed. So this is best-effort and not the
+> safety net. The two-second debounce and the flush on `visibilitychange` — which fires when a
+> laptop lid closes and where `pagehide` often does not — are what actually protect the work,
+> and the IndexedDB mirror below is the proper answer.
 
 ### 6.1 Version conflicts
 
