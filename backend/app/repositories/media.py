@@ -32,6 +32,23 @@ class MediaAssetRepository(ScopedRepository[MediaAsset]):
         result = await self._session.execute(self._visible().where(MediaAsset.id == asset_id))
         return result.scalar_one_or_none()
 
+    async def by_ids(self, asset_ids: set[uuid.UUID]) -> dict[uuid.UUID, MediaAsset]:
+        """The caller's assets among those ids, keyed by id.
+
+        Timeline validation calls this once per save rather than once per clip:
+        a caption run puts thousands of clips on the timeline, but they point at
+        a handful of assets, and one `IN` is the difference between a save that
+        is a query and a save that is a thousand.
+
+        **Absence carries the ownership check.** Invariant 5 is satisfied by a
+        referenced id simply not appearing in the returned mapping, which is why
+        this goes through `_visible()` and not a bare select.
+        """
+        if not asset_ids:
+            return {}
+        result = await self._session.execute(self._visible().where(MediaAsset.id.in_(asset_ids)))
+        return {asset.id: asset for asset in result.scalars().all()}
+
     async def create_pending(
         self,
         *,

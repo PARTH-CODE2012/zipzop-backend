@@ -504,6 +504,28 @@ Copy (timeline and asset references, not the media) and soft delete.
 
 ---
 
+### 5.1 Settled while implementing, 18 August 2026
+
+The routes above were written against §4 and §5 as they stood. Seven things the
+contract did not pin down had to be decided to make them work, and they are
+recorded here rather than left in the code for someone to discover.
+
+| | Decision | Why |
+|---|---|---|
+| **`thumbnailUrl` on each asset** | Added to the `assets` block, alongside `proxyUrl`, `peaksUrl` and `durationMs` | Without it the media bin calls `/media` immediately after opening a project — the second request the block exists to avoid. Additive, so nothing breaks |
+| **`aspectRatio` in the list summary** | Added | The projects page draws a card per project and cannot pick a shape without it |
+| **A timeline save with no `version`** | `422 INVALID_TIMELINE`, `details.reason = "missingVersion"` | It is the one field that makes a save safe. Defaulting it to "current" would turn every such request into a silent overwrite of whatever another tab just wrote |
+| **A metadata-only `PATCH`** | Returns the same `{version, durationMs, updatedAt}` body, with `version` unchanged | One response shape per endpoint. A client that renames a project should not have to parse a second |
+| **`transform.rotation`** | `0`, `90`, `180` or `270` only | Phase 1 ships *rotate*, not free rotation: arbitrary angles need interpolation the renderer does not do, and keyframes and motion paths are explicitly out of scope |
+| **Invariant 4 tolerance** | 1 ms of slack on `sourceInMs + durationMs * speed <= asset.durationMs` | The product is a float and a frame at 30 fps is 33.33 ms, so a clip trimmed exactly to the end of its media can land a fraction over. One millisecond costs nothing at export and removes a rejection the user cannot act on |
+| **`project_assets` after a soft delete** | Kept | Those rows are what holds the media against the `RESTRICT`. Dropping them would let a user delete footage that a restorable project still points at |
+
+`GET /projects` is cursor-paged like every other list (§1), ordered by
+`updatedAt` descending — a projects list is read to get back to what you were
+working on, not to what you created first.
+
+---
+
 ## 6. Jobs
 
 One endpoint creates every kind of server work. `tool` decides the rest.

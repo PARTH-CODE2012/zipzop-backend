@@ -201,7 +201,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 > **Visual baseline settled 17 August 2026: A2 Studio** — [`docs/ui-directions/ui-directions-modern/`](docs/ui-directions/ui-directions-modern/index.html), written up as [`docs/08-ui-charter.md`](docs/08-ui-charter.md). Dark surfaces, neon yellow accents, rounded translucent chrome, and a deliberately technical grid timeline. The blocker recorded against M3 in `docs/README.md` is cleared.
 
-> ⚠️ **The order inside M3 is forced, and it is backend first.** `openapi.json` today has twelve paths — auth, `/me`, media — and **no project or timeline schema at all**. The first frontend task below generates the timeline document type from that schema, so it cannot run until *Backend — projects* has shipped and `make openapi && make types` has been run again. The design is not the blocker: [`docs/05-api-contract.md`](docs/05-api-contract.md) §4 and §5 already specify the document, the eight invariants and all five project routes. Start at *Backend — projects*.
+> 🟢 **Backend projects shipped 18 August. The frontend half is unblocked.** `openapi.json` now carries the five project routes and the whole timeline document — `TimelineDocument`, `MediaTrack`, `TextTrack`, `MediaClip`, `TextClip`, `Transform`, `Crop`, `Transition`, `ColorGradeEffect` — and `make types` has regenerated `frontend/src/lib/api/generated.ts` from it. `tracks` comes out as `MediaTrack | TextTrack`, which a `switch (track.kind)` narrows, so the first task below is generation rather than authorship. **Do not hand-write the timeline type.**
 
 ### Frontend — visual charter 🟢
 
@@ -233,12 +233,12 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Backend — projects
 
-- [ ] `POST /projects`, `GET /projects`, `GET /projects/{id}` with assets and fresh signed URLs
-- [ ] `PATCH /projects/{id}` — timeline + version, `409` on stale version
-- [ ] **Timeline validation on every write** — all eight invariants from [`docs/05-api-contract.md`](docs/05-api-contract.md) §4.3, rejecting with the offending clip named
-- [ ] `project_assets` rebuilt from the document on each save
-- [ ] `duration_ms` derived on save
-- [ ] Duplicate, soft delete
+- [x] `POST /projects`, `GET /projects`, `GET /projects/{id}` with assets and fresh signed URLs
+- [x] `PATCH /projects/{id}` — timeline + version, `409` on stale version. **The check and the bump are one `UPDATE … WHERE version = :expected`** — reading, comparing in Python and then writing leaves a window where two tabs both read 12 and both write 13, which is the exact failure the 409 exists to make visible
+- [x] **Timeline validation on every write** — all eight invariants from [`docs/05-api-contract.md`](docs/05-api-contract.md) §4.3, rejecting with the offending clip named. Structure first and with no query at all, then one batched asset lookup for invariants 4 and 5
+- [x] `project_assets` rebuilt from the document on each save — diffed rather than deleted-and-reinserted, because autosave runs every two seconds
+- [x] `duration_ms` derived on save, never sent by the client
+- [x] Duplicate, soft delete. `project_assets` survives a soft delete, so a restore inside the retention window still finds its footage
 
 ### Frontend — persistence
 

@@ -60,9 +60,11 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. M3 can start — begin at *Backend — projects*.**
+**Nothing blocking. M3 is under way — the backend half is done.**
 
-Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work. The order inside M3 is forced and it is backend first: `openapi.json` carries no project or timeline schema yet, so the frontend cannot generate the timeline document type until those routes exist. [`PHASE1-TASKS.md`](../PHASE1-TASKS.md) · M3 says the same thing where you will actually be reading it.
+Projects persist as of 18 August: the five routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency, and `project_assets` rebuilt from the document. `openapi.json` now carries the whole timeline document, and `frontend/src/lib/api/generated.ts` is regenerated from it — so the frontend's timeline type is **generated, never hand-written**, which is the property [`04-frontend-architecture.md`](04-frontend-architecture.md) §3.1 asks for. What is left in M3 is the editor itself: the store, undo through patches, the editing operations, and autosave.
+
+Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work.
 
 Approved by the project lead **12 August**: it is an editor · phased release · face mapping works on both own and imported footage · web first · lip sync is in.
 
