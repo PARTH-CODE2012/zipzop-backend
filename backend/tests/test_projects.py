@@ -682,6 +682,68 @@ async def test_deleting_hides_the_project_but_keeps_its_media_held(
     assert await _asset_rows(db, project["id"]) == {uuid.UUID(asset_id.removeprefix("ast_"))}
 
 
+async def test_a_rejected_timeline_rolls_back_the_rename_in_the_same_request(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A PATCH is one transaction, so a 409 takes the whole thing back.
+
+    `get_session` commits on success and rolls back on any exception, which
+    means a request carrying both a rename and a stale timeline leaves neither
+    applied. The alternative — a rename that survives its own request's failure
+    — would be very hard to explain to a user looking at the result.
+    """
+    headers, user_id = await _account(client)
+    asset_id = await _ready_asset(db, user_id)
+    project = await _project(client, headers, title="Before")
+    await _save(client, headers, project["id"], [_video_track(_clip(asset_id))], version=0)
+
+    response = await client.patch(
+        f"{V1}/projects/{project['id']}",
+        headers=headers,
+        json={
+            "title": "After",
+            "timeline": {"schemaVersion": 1, "tracks": [_video_track(_clip(asset_id))]},
+            "version": 0,
+        },
+    )
+    assert response.status_code == 409
+
+    body = (await client.get(f"{V1}/projects/{project['id']}", headers=headers)).json()
+    assert body["title"] == "Before"
+
+
+async def test_editing_a_copy_leaves_the_original_alone(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """The copy owns its own document.
+
+    Both rows are written from the same source dict, so this is the test that
+    catches them being the *same* dict rather than equal ones.
+    """
+    headers, user_id = await _account(client)
+    asset_id = await _ready_asset(db, user_id)
+    original = await _project(client, headers, title="Ep. 42")
+    await _save(client, headers, original["id"], [_video_track(_clip(asset_id))], version=0)
+
+    copy = (await client.post(f"{V1}/projects/{original['id']}/duplicate", headers=headers)).json()
+    await _save(
+        client,
+        headers,
+        copy["id"],
+        [
+            _video_track(
+                _clip(asset_id, startMs=0, durationMs=1_000),
+                _clip(asset_id, startMs=2_000, durationMs=1_000),
+            )
+        ],
+        version=0,
+    )
+
+    after = (await client.get(f"{V1}/projects/{original['id']}", headers=headers)).json()
+    assert len(after["timeline"]["tracks"][0]["clips"]) == 1
+    assert after["durationMs"] == 4_000
+
+
 async def test_no_endpoint_returns_another_accounts_project(
     client: AsyncClient, db: AsyncSession
 ) -> None:

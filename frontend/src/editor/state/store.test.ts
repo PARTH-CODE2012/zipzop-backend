@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   selectCanRedo,
   selectCanUndo,
+  selectClipBoundsMs,
   selectClipStartMs,
   selectClips,
   selectDurationMs,
@@ -79,10 +80,26 @@ describe('load and save bookkeeping', () => {
     expect(selectCanUndo(state())).toBe(false)
   })
 
+  it('keeps the document dirty when an edit lands while a save is in flight', () => {
+    // The save carries a snapshot. An edit made during the few hundred
+    // milliseconds it is in flight is not in that snapshot, so clearing the
+    // dirty flag when it returns would strand that edit: nothing would send it
+    // until the *next* change, and closing the tab in between loses it.
+    loaded()
+    state().addClip({ assetId: 'ast_1', durationMs: 1_000 })
+    const inFlight = state().timeline
+
+    state().addClip({ assetId: 'ast_2', durationMs: 1_000 })
+    state().markSaved(4, inFlight)
+
+    expect(state().version).toBe(4)
+    expect(state().isDirty).toBe(true)
+  })
+
   it('markSaved clears dirty and takes the new version', () => {
     loaded()
     state().addClip({ assetId: 'ast_1', durationMs: 1_000 })
-    state().markSaved(4)
+    state().markSaved(4, state().timeline)
 
     expect(state().version).toBe(4)
     expect(state().isDirty).toBe(false)
@@ -112,6 +129,23 @@ describe('dragging', () => {
     state().endDrag()
     expect(state().history.past).toHaveLength(stepsBefore + 1)
     expect(state().isDirty).toBe(true)
+  })
+
+  it('previews all three gesture kinds without touching the document', () => {
+    loaded()
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 4_000 })
+    const clip = () => selectClips(state()).find((each) => each.id === id)!
+
+    state().beginDrag({ kind: 'trim-start', clipId: id, previewMs: 1_000 })
+    expect(selectClipBoundsMs(state(), clip())).toEqual({ startMs: 1_000, durationMs: 3_000 })
+
+    state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 2_500 })
+    expect(selectClipBoundsMs(state(), clip())).toEqual({ startMs: 0, durationMs: 2_500 })
+
+    // Still nothing committed: a trim whose preview fell back to the committed
+    // bounds would leave the edge frozen under the pointer.
+    expect(clip().durationMs).toBe(4_000)
+    state().cancelDrag()
   })
 
   it('cancelling leaves nothing to undo', () => {

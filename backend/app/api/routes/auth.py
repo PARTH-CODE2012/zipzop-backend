@@ -183,6 +183,12 @@ async def refresh(
         # false negative costs the account.
         ended = await tokens.revoke_all_for_user(stored.user_id)
         log.warning("refresh_token_reuse", user_id=str(stored.user_id), sessions_ended=ended)
+        # **Committed before raising, and it has to be.** `get_session` rolls
+        # back on any exception, so without this the 401 below would undo the
+        # revocation this branch exists to perform: the API would log the reuse,
+        # tell the user to sign in again, and leave every token in the chain
+        # valid — surviving exactly the event that is meant to kill it.
+        await session.commit()
         _clear_refresh_cookie(response)
         raise TokenRevokedError("This session was ended for security. Please sign in again.")
 

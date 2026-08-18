@@ -157,7 +157,20 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app = create_app()
 
     async def _session_override() -> AsyncGenerator[AsyncSession, None]:
-        yield db
+        """Mirror `app.db.get_session`: commit on success, roll back on error.
+
+        Handing the session over bare — which this did until 18 August — means
+        no test can observe the request transaction boundary at all. Every
+        request in a test would share one open transaction that is never ended,
+        so a handler that raised half way through would leave its earlier writes
+        visible to the assertions, and a test asserting they were rolled back
+        would fail against code that is correct in production.
+
+        The savepoint is nested inside the one the `db` fixture already holds,
+        so the whole test is still rolled back at the end.
+        """
+        async with db.begin_nested():
+            yield db
 
     app.dependency_overrides[get_session] = _session_override
     transport = ASGITransport(app=app)

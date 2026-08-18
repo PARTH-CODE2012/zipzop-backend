@@ -193,7 +193,9 @@ description.
 ### 6.1 Authentication and sessions
 
 Register and log in as two users and hold both sessions throughout. Then: reuse
-a rotated refresh token (the chain must die), use a refresh token after logout,
+a rotated refresh token (the chain must die — **it did not, until 18 August: see**
+[`06-m2-notes.md`](06-m2-notes.md) §2b.1, where the revocation was rolled back by the
+401 that followed it), use a refresh token after logout,
 use an access token after the account is disabled, forge a JWT with `alg: none`
 and with the public key as an HMAC secret, replay a token across accounts, and
 enumerate users through timing or response differences on login, register and

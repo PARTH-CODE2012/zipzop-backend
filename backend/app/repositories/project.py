@@ -10,6 +10,7 @@ and the version bump have to be the same statement — see its docstring.
 """
 
 import uuid
+from copy import deepcopy
 from typing import Any
 
 import sqlalchemy as sa
@@ -240,7 +241,11 @@ class ProjectRepository(ScopedRepository[Project]):
             width=project.width,
             height=project.height,
             fps=project.fps,
-            timeline=project.timeline,
+            # Deep-copied, not shared. Both rows would otherwise hold the same
+            # Python dict, and anything that mutated one in place would silently
+            # edit the other. Nothing does today; this costs one call and removes
+            # the trap rather than relying on that staying true.
+            timeline=deepcopy(project.timeline),
             version=0,
             duration_ms=project.duration_ms,
             thumbnail_key=project.thumbnail_key,

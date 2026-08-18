@@ -40,7 +40,9 @@ export interface AutosaveDeps {
     timeline: TimelineDocument
     version: number
   }) => Promise<{ version: number }>
-  onSaved: (version: number) => void
+  /** `savedTimeline` is the snapshot this save carried — the caller needs it to
+   * tell an edit made during the request from one that was included in it. */
+  onSaved: (version: number, savedTimeline: TimelineDocument) => void
   /** Another tab saved first. `currentVersion` is what to re-fetch. */
   onConflict: (currentVersion: number) => void
   onError?: (error: unknown) => void
@@ -125,14 +127,20 @@ export class Autosave {
       return
     }
 
+    // Captured before the await, not read back after it. `read()` is allowed to
+    // return a view onto live state, and reading `snapshot.timeline` once the
+    // request has resolved would hand back whatever the document is *now* —
+    // which is precisely the value the caller uses to detect that it changed.
+    const sent = snapshot.timeline
+
     this.inFlight = true
     try {
       const result = await this.deps.save({
         projectId: snapshot.projectId,
-        timeline: snapshot.timeline,
+        timeline: sent,
         version: snapshot.version,
       })
-      this.deps.onSaved(result.version)
+      this.deps.onSaved(result.version, sent)
     } catch (error) {
       const conflict = asConflict(error)
       if (conflict !== null) {

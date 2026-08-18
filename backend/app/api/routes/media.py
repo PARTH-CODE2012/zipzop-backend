@@ -233,6 +233,12 @@ async def complete_upload(
         # client here would let someone reserve a byte against their quota and
         # upload a gigabyte.
         await assets.soft_delete(asset)
+        # Committed before raising, for the same reason as the token revocation
+        # in `auth.refresh`: `get_session` rolls back on exception, and the
+        # rejected reservation would survive. It would sit at its *announced*
+        # size while the object in storage is whatever was really uploaded —
+        # which is the quota evasion this check exists to stop.
+        await session.commit()
         raise UnsupportedMediaError(
             "The uploaded file did not match what was announced.",
             details={"announcedBytes": asset.size_bytes, "actualBytes": stored.size_bytes},

@@ -79,7 +79,7 @@ export interface EditorState {
   commit: (label: string, recipe: (draft: TimelineDocument) => void) => boolean
   undo: () => void
   redo: () => void
-  markSaved: (version: number) => void
+  markSaved: (version: number, savedTimeline?: TimelineDocument) => void
   reset: () => void
 
   // ------------------------------------------------------------- editing
@@ -166,14 +166,21 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   /**
-   * The save landed. `isDirty` is cleared **only if nothing changed while the
-   * request was in flight** — the autosave sends a snapshot, and an edit made
-   * during those few hundred milliseconds is not in it.
+   * The save landed.
+   *
+   * `savedTimeline` is the snapshot the request actually carried, and it has to
+   * be passed in: an edit made during the few hundred milliseconds the save was
+   * in flight is **not** in that snapshot, so clearing `isDirty` unconditionally
+   * strands it. Nothing would send it until the next change, and closing the tab
+   * in between loses it.
+   *
+   * Compared by reference, which is exactly right here — every commit produces a
+   * new document object, so a different reference means an edit landed.
    */
-  markSaved: (version) =>
+  markSaved: (version, savedTimeline) =>
     set((state) => ({
       version,
-      isDirty: state.isDirty && state.timeline !== get().timeline,
+      isDirty: savedTimeline !== undefined ? state.timeline !== savedTimeline : false,
     })),
 
   reset: () =>
@@ -201,13 +208,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   splitAtPlayhead: () => {
-    const { timeline, playheadMs, selection } = get()
-    // The selected clip if the playhead is inside it, otherwise whatever is
-    // under the playhead on the video track. Splitting something the user
-    // cannot see the playhead crossing would be a surprise.
+    const { timeline, playheadMs } = get()
+    // Whatever the playhead is inside, selected or not. Splitting a clip the
+    // user cannot see the playhead crossing would be a surprise, so the
+    // selection deliberately does not widen this.
     const track = trackOfKind(timeline, 'video')
-    const under = track ? clipAt(track, playheadMs) : null
-    const target = [...selection].find((id) => under?.id === id) ?? under?.id
+    const target = track ? clipAt(track, playheadMs)?.id : undefined
     if (!target) return null
 
     let created: string | null = null
@@ -364,11 +370,31 @@ export function selectCanRedo(state: EditorState): boolean {
 }
 
 /**
- * Where a clip should be drawn: its committed position, or the drag preview
- * when a gesture is moving it. The document is not touched until the drop.
+ * Where a clip should be drawn, and how wide.
+ *
+ * Its committed position, or the gesture's preview while one is in flight — the
+ * document is not touched until the drop, so this is the only place the two are
+ * reconciled. All three drag kinds are handled: a trim that fell back to the
+ * committed bounds would leave the edge frozen under the pointer.
  */
-export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
+export function selectClipBoundsMs(
+  state: EditorState,
+  clip: MediaClip,
+): { startMs: number; durationMs: number } {
   const { drag } = state
-  if (drag?.clipId === clip.id && drag.kind === 'move') return drag.previewMs
-  return clip.startMs
+  if (drag?.clipId !== clip.id) return { startMs: clip.startMs, durationMs: clip.durationMs }
+
+  const end = clip.startMs + clip.durationMs
+  switch (drag.kind) {
+    case 'move':
+      return { startMs: drag.previewMs, durationMs: clip.durationMs }
+    case 'trim-start':
+      return { startMs: drag.previewMs, durationMs: Math.max(1, end - drag.previewMs) }
+    case 'trim-end':
+      return { startMs: clip.startMs, durationMs: Math.max(1, drag.previewMs - clip.startMs) }
+  }
+}
+
+export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
+  return selectClipBoundsMs(state, clip).startMs
 }

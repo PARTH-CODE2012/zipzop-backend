@@ -30,6 +30,7 @@ function harness(overrides: Partial<World> = {}) {
     ...overrides,
   }
   const saved: number[] = []
+  const savedSnapshots: TimelineDocument[] = []
   const conflicts: number[] = []
   const errors: unknown[] = []
 
@@ -48,10 +49,11 @@ function harness(overrides: Partial<World> = {}) {
   const autosave = new Autosave({
     read: () => world,
     save,
-    onSaved: (version) => {
+    onSaved: (version, snapshot) => {
       world.version = version
       world.isDirty = false
       saved.push(version)
+      savedSnapshots.push(snapshot)
     },
     onConflict: (version) => conflicts.push(version),
     onError: (error) => errors.push(error),
@@ -62,6 +64,7 @@ function harness(overrides: Partial<World> = {}) {
     autosave,
     save,
     saved,
+    savedSnapshots,
     conflicts,
     errors,
     settle: async (version = 4) => {
@@ -164,6 +167,23 @@ describe('the three rules that are about timing', () => {
     h.autosave.schedule()
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS)
     expect(h.save).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('what comes back to the caller', () => {
+  it('hands back the snapshot the request carried, not the current document', async () => {
+    // The caller compares it by reference to decide whether an edit landed
+    // while the save was in flight. Without it, that edit is stranded.
+    const h = harness()
+    const sent = h.world.timeline
+    h.autosave.schedule()
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS)
+
+    h.world.timeline = { schemaVersion: 1, tracks: [] }
+    await h.settle(4)
+
+    expect(h.savedSnapshots[0]).toBe(sent)
+    expect(h.savedSnapshots[0]).not.toBe(h.world.timeline)
   })
 })
 

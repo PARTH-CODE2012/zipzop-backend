@@ -92,8 +92,8 @@ export function useProjectPersistence(projectId: string): PersistenceState {
         setStatus('saving')
         return saveTimeline(id, { timeline, version })
       },
-      onSaved: (version) => {
-        useEditor.getState().markSaved(version)
+      onSaved: (version, savedTimeline) => {
+        useEditor.getState().markSaved(version, savedTimeline)
         setStatus(useEditor.getState().isDirty ? 'dirty' : 'saved')
       },
       onConflict: (version) => {

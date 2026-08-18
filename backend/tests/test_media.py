@@ -242,6 +242,14 @@ async def test_complete_rejects_an_object_of_the_wrong_size(client: AsyncClient,
     assert response.status_code == 422
     assert response.json()["error"]["details"] == {"announcedBytes": 10, "actualBytes": 5000}
 
+    # The half of the property this test used to describe and not check. The
+    # rejected reservation has to be *gone*: left behind it counts 10 bytes
+    # against the quota while 5,000 sit in storage, which is the evasion the
+    # size check exists to stop. It survived until 18 August because the
+    # rollback that discarded the delete was invisible to the test harness.
+    after = await client.get(f"{V1}/media/{reserved['assetId']}", headers=headers)
+    assert after.status_code == 404
+
 
 async def test_complete_twice_is_harmless(
     client: AsyncClient, s3: Any, sample_video: Any, monkeypatch: pytest.MonkeyPatch

@@ -117,6 +117,45 @@ added `usr_`, which the list had omitted while the contract used it throughout.
 
 ---
 
+## 2b. What the test harness was hiding — found 18 August, during M3
+
+Two M2 defects, one of them a security defect, both invisible because of the
+same gap: **the test suite never exercised the request transaction boundary.**
+
+`app/db.py` promises *"commits on success, rolls back on any exception"*. The
+`client` fixture overrode `get_session` with a bare `yield db` — no commit, no
+rollback — so every request in a test ran inside one transaction that was never
+ended. Any handler that wrote and then raised looked correct to the suite and
+was wrong in production. The override now mirrors the real semantics with a
+nested savepoint, and adding that made an existing, previously-green test fail.
+
+### 2b.1 The refresh-token chain was never actually revoked 🔴
+
+Contract §2: *"Presenting an already-rotated token revokes the whole chain and
+forces a fresh sign-in; that pattern means a token leaked."* The handler does
+call `revoke_all_for_user()` — and then raises `TokenRevokedError` to return the
+401. `get_session` caught that exception and rolled the revocation back.
+
+So on a replayed refresh token the API logged the reuse, cleared the cookie, told
+the user to sign in again, and **left every token in the chain valid**. The
+branch that exists to kill a leaked session was the one event guaranteed to undo
+itself. `revoke_all_for_user` is now committed before the raise.
+
+### 2b.2 A rejected upload kept its reservation
+
+`POST /media/{id}/complete` compares the object's real size against the size that
+was announced, and soft-deletes the reservation when they disagree — the check
+that stops someone reserving one byte and uploading a gigabyte. The soft delete
+was rolled back by the 422 that followed it, so the row survived at its
+*announced* size while storage held whatever was really uploaded, which is the
+quota evasion the check exists to prevent. Also committed before the raise.
+
+The test for it asserted the 422 and the error details but never that the
+reservation was gone — its own docstring described a property it did not check.
+It does now.
+
+---
+
 ## 3. What the browser found that nothing else could
 
 The M1 spike established the method: drive a real Chromium over the DevTools
