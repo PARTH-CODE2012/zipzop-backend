@@ -12,6 +12,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import {
+  IconMovie,
+  IconMusic,
+  IconTrash,
+  IconUpload,
+} from '@/editor/icons'
 import { useEditor } from '@/editor/state/store'
 import { ApiError } from '@/lib/api/client'
 import { deleteMedia, listMedia, type AssetResponse } from '@/lib/api/endpoints'
@@ -105,10 +111,11 @@ export function MediaBin() {
         <button
           type="button"
           onClick={() => fileInput.current?.click()}
-          className="rounded border px-3 py-1.5 text-xs"
+          className="flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs"
           style={{ borderColor: 'var(--color-rule)', color: 'var(--color-ink)' }}
           data-testid="upload-button"
         >
+          <IconUpload size={14} aria-hidden="true" />
           Add media
         </button>
         <input
@@ -224,19 +231,25 @@ export function MediaBin() {
                   const add = asset.kind === 'audio' ? addMusicClip : addClip
                   add({ assetId: asset.id, durationMs: asset.durationMs ?? 0 })
                 }}
-                className="rounded border px-2 py-1 text-[11px] disabled:opacity-40"
+                className="flex items-center gap-1 rounded border px-2 py-1 text-[11px] disabled:opacity-40"
                 style={{ borderColor: 'var(--color-rule)' }}
                 data-testid="add-to-timeline"
               >
+                {asset.kind === 'audio' ? (
+                  <IconMusic size={12} aria-hidden="true" />
+                ) : (
+                  <IconMovie size={12} aria-hidden="true" />
+                )}
                 Add to timeline
               </button>
               <button
                 type="button"
                 onClick={() => void onDelete(asset)}
-                className="rounded border px-2 py-1 text-[11px]"
-                style={{ borderColor: 'var(--color-rule)' }}
+                className="flex items-center gap-1 rounded border px-2 py-1 text-[11px]"
+                style={{ borderColor: 'var(--color-rule)', color: 'var(--color-danger)' }}
                 data-testid="delete-asset"
               >
+                <IconTrash size={12} aria-hidden="true" />
                 Delete
               </button>
             </div>

@@ -216,7 +216,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Zustand store: `timeline`, `selection`, `playhead`, `zoom`, `version`, `isDirty`
 - [x] `commit(label, recipe)` using `produceWithPatches` — undo/redo from Immer patches, not hand-written inverses. A commit is one undo step however much it changed, which is what M4 needs for 1,800 caption clips
 - [x] Undo/redo stacks capped at 200, keyboard bound. The keyboard map is a pure function in `editor/keyboard.ts`, so it is tested without a DOM
-- [x] Memoised selectors for anything derived — nothing derived stored in the document
+- [x] Memoised selectors for anything derived — nothing derived stored in the document. **Memoised on the document's identity, not merely written as functions**: a selector that builds a fresh array each call is an infinite render loop, which this project has now shipped twice. `selector stability` in `store.test.ts` is the test that fails instead of the browser
 
 ### Frontend — editing
 
@@ -263,6 +263,15 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 ## M4 · The first AI tool works
 
 *Ends when: you run captions on a real clip, watch progress, see the words appear in time, and fix a misspelled name.*
+
+> **Read [`docs/10-m4-readiness.md`](docs/10-m4-readiness.md) first.** Written 19 August
+> from a full read of the schema, the workers and the contract — what M4 inherits already
+> built (the tables, the enums, the queues, the concurrency limits, the seeded plan
+> catalogue), what the contract already specifies in full so it does not need re-deciding
+> (every per-tool payload, the large-result split, the WebSocket's fallback contract), and
+> **two real open decisions found while preparing this** — which transcription engine
+> powers Captions, and the still-blocked language list — with a recommendation for the
+> first rather than a decision made without you.
 
 ### Backend — job pipeline 🔗
 

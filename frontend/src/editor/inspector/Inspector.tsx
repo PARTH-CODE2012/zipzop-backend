@@ -13,6 +13,7 @@
  * because a slider alone cannot tell you that speed is exactly 1.00.
  */
 
+import { IconCrop, IconTransition, IconVolume } from '@/editor/icons'
 import { selectSelectedAnyClip, useEditor } from '@/editor/state/store'
 import type { AnyClip, MediaClip, TextClip } from '@/editor/state/timeline-document'
 
@@ -64,6 +65,7 @@ function MediaProperties({ clip }: { clip: MediaClip }) {
       <Header title="Clip" subtitle={clip.assetId} />
 
       <Slider
+        icon={<IconVolume size={13} />}
         label="Volume"
         value={clip.volume}
         min={0}
@@ -100,7 +102,7 @@ function MediaProperties({ clip }: { clip: MediaClip }) {
         onChange={(audioFadeOutMs) => store().setClipProperties(clip.id, { audioFadeOutMs })}
       />
 
-      <Row label="Rotate">
+      <Row label="Rotate" icon={<IconTransition size={13} />}>
         {([0, 90, 180, 270] as const).map((rotation) => (
           <Chip
             key={rotation}
@@ -112,7 +114,7 @@ function MediaProperties({ clip }: { clip: MediaClip }) {
         ))}
       </Row>
 
-      <Row label="Flip">
+      <Row label="Flip" icon={<IconCrop size={13} />}>
         <Chip
           active={transform?.flipH ?? false}
           onClick={() => store().setClipProperties(clip.id, { flipH: !(transform?.flipH ?? false) })}
@@ -127,7 +129,7 @@ function MediaProperties({ clip }: { clip: MediaClip }) {
         </Chip>
       </Row>
 
-      <Row label="Reframe">
+      <Row label="Reframe" icon={<IconCrop size={13} />}>
         {/* Normalised, never pixels — contract §4.3. A crop written in pixels
             puts the subject somewhere else at export than in the preview. */}
         <Chip
@@ -167,7 +169,7 @@ function TransitionRow({ clip, side }: { clip: MediaClip; side: 'in' | 'out' }) 
   const store = useEditor.getState
 
   return (
-    <Row label={side === 'in' ? 'Transition in' : 'Transition out'}>
+    <Row label={side === 'in' ? 'Transition in' : 'Transition out'} icon={<IconTransition size={13} />}>
       {(['cut', 'fade', 'dissolve'] as const).map((option) => (
         <Chip
           key={option}
@@ -236,10 +238,23 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
   )
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  icon,
+  children,
+}: {
+  label: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-24 shrink-0" style={{ color: 'var(--color-ink-3)' }}>
+      <span className="flex w-24 shrink-0 items-center gap-1.5" style={{ color: 'var(--color-ink-3)' }}>
+        {icon && (
+          <span aria-hidden="true" style={{ color: 'var(--color-ink-faint)' }}>
+            {icon}
+          </span>
+        )}
         {label}
       </span>
       {children}
@@ -279,6 +294,7 @@ function Chip({
 
 function Slider({
   label,
+  icon,
   value,
   min,
   max,
@@ -287,6 +303,7 @@ function Slider({
   onChange,
 }: {
   label: string
+  icon?: React.ReactNode
   value: number
   min: number
   max: number
@@ -296,7 +313,12 @@ function Slider({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-24 shrink-0" style={{ color: 'var(--color-ink-3)' }}>
+      <span className="flex w-24 shrink-0 items-center gap-1.5" style={{ color: 'var(--color-ink-3)' }}>
+        {icon && (
+          <span aria-hidden="true" style={{ color: 'var(--color-ink-faint)' }}>
+            {icon}
+          </span>
+        )}
         {label}
       </span>
       <input

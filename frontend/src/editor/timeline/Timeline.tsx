@@ -23,7 +23,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import {
   selectAllClips,
-  selectClipBoundsMs,
+  clipBoundsMs,
   selectDurationMs,
   selectLanes,
   useEditor,
@@ -53,6 +53,14 @@ import {
   tickLabel,
   ticksForWindow,
 } from '@/editor/timeline/scale'
+import {
+  IconMovie,
+  IconMusic,
+  IconTypography,
+  IconVolume,
+  IconVolumeOff,
+  type IconProps,
+} from '@/editor/icons'
 import { WaveformCanvas } from '@/editor/timeline/WaveformCanvas'
 
 const RULER_HEIGHT = 26
@@ -390,8 +398,15 @@ function gridImage(ticks: { px: number; major: boolean }[], scrollPx: number): s
   )
 }
 
+const LANE_ICON: Record<string, React.ComponentType<IconProps>> = {
+  video: IconMovie,
+  audio: IconMusic,
+  text: IconTypography,
+}
+
 function LaneHeader({ track }: { track: Track }) {
   const muted = track.muted ?? false
+  const KindIcon = LANE_ICON[track.kind]
   return (
     <div
       className="flex items-center gap-2 px-3 text-xs"
@@ -405,20 +420,27 @@ function LaneHeader({ track }: { track: Track }) {
       data-track-kind={track.kind}
       data-muted={muted}
     >
+      {KindIcon && <KindIcon size={13} aria-hidden="true" />}
       <span style={{ fontWeight: 600 }}>{LANE_LABEL[track.kind] ?? track.kind}</span>
       <button
         type="button"
         onClick={() => useEditor.getState().setTrackMuted(track.id, !muted)}
-        className="ml-auto px-1.5"
+        className="ml-auto flex items-center gap-1 px-1.5"
         style={{
           borderRadius: 'var(--radius-xs)',
           border: '1px solid var(--color-rule)',
-          // Charter rule 3: the state is the letter as well as the colour.
+          // Charter rule 3: the icon swaps and the letter stays, on top of the
+          // colour change — three signals, not one.
           color: muted ? 'var(--color-warning)' : 'var(--color-ink-faint)',
         }}
         aria-label={muted ? `Unmute ${track.kind}` : `Mute ${track.kind}`}
         aria-pressed={muted}
       >
+        {muted ? (
+          <IconVolumeOff size={12} aria-hidden="true" />
+        ) : (
+          <IconVolume size={12} aria-hidden="true" />
+        )}
         M
       </button>
     </div>
@@ -509,8 +531,13 @@ function ClipView({
   onHover: (id: string | null) => void
   onPointerDown: (event: React.PointerEvent, clip: AnyClip, widthPx: number) => void
 }) {
-  const bounds = useEditor((state) => selectClipBoundsMs(state, clip as MediaClip))
-  const dragging = useEditor((state) => state.drag?.clipId === clip.id)
+  // Subscribe to the drag itself — one stable reference per pointer move — and
+  // compute the bounds outside the subscription. Subscribing to the computed
+  // object instead returns a fresh value on every read, which Zustand sees as a
+  // change, which re-renders, which reads again: the infinite loop.
+  const drag = useEditor((state) => state.drag)
+  const bounds = clipBoundsMs(drag, clip as MediaClip)
+  const dragging = drag?.clipId === clip.id
 
   const left = msToPx(bounds.startMs, zoom) - scrollPx
   const width = Math.max(2, msToPx(bounds.durationMs, zoom))

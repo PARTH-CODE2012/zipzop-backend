@@ -153,6 +153,14 @@ infra: ## Start whatever infrastructure is not already up (Postgres, Redis, MinI
 	@./scripts/infra.sh
 
 .PHONY: dev-all
+.PHONY: watch
+watch: ## One tmux session, three visible panes: API + worker + web — Ctrl-C in a pane stops just that service
+	@./scripts/dev-up.sh
+
+.PHONY: watch-stop
+watch-stop: ## Stop what `make watch` started, leaving the containers up
+	@./scripts/dev-down.sh
+
 dev-all: infra migrate ## Everything you need to click around: API + ingest worker + frontend
 	@echo "starting the API, the ingest worker and the dev server…"
 	@cd $(BACKEND) && (./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 \

@@ -33,6 +33,21 @@ import {
   selectDurationMs,
   useEditor,
 } from '@/editor/state/store'
+import {
+  IconCopy,
+  IconLogout,
+  IconMessage,
+  IconPalette,
+  IconPause,
+  IconPlay,
+  IconRedo,
+  IconScissors,
+  IconSparkles,
+  IconTrash,
+  IconTypography,
+  IconUndo,
+  IconWand,
+} from '@/editor/icons'
 import { Inspector } from '@/editor/inspector/Inspector'
 import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
 import { Timeline } from '@/editor/timeline/Timeline'
@@ -198,7 +213,7 @@ function Workspace({
           type="button"
           onClick={() => useEditor.getState().setPlaying(!isPlaying)}
           disabled={durationMs === 0}
-          className="rounded px-3 py-1 disabled:opacity-40"
+          className="flex items-center gap-1.5 px-3 py-1 disabled:opacity-40"
           style={{
             borderRadius: 'var(--radius-pill)',
             background: 'var(--color-accent)',
@@ -208,6 +223,7 @@ function Workspace({
           data-testid="play"
           data-playing={isPlaying}
         >
+          {isPlaying ? <IconPause size={13} aria-hidden="true" /> : <IconPlay size={13} aria-hidden="true" />}
           {isPlaying ? 'Pause' : 'Play'}
         </button>
         <span className="tnum" style={{ color: 'var(--color-ink-2)' }}>
@@ -226,7 +242,12 @@ function Workspace({
           Captions · Smart trim · Colour — M4
         </span>
 
-        <span className="tnum" style={{ color: 'var(--color-ink-2)' }} data-testid="credits">
+        <span
+          className="tnum flex items-center gap-1"
+          style={{ color: 'var(--color-ink-2)' }}
+          data-testid="credits"
+        >
+          <IconSparkles size={12} aria-hidden="true" style={{ color: 'var(--color-accent)' }} />
           {credits} credits
         </span>
         <span
@@ -239,10 +260,11 @@ function Workspace({
         <button
           type="button"
           onClick={onSignOut}
-          className="rounded border px-2 py-1"
+          className="flex items-center gap-1.5 border px-2 py-1"
           style={{ borderColor: 'var(--color-rule)', borderRadius: 'var(--radius-sm)' }}
           data-testid="sign-out"
         >
+          <IconLogout size={13} aria-hidden="true" />
           Sign out
         </button>
       </header>
@@ -303,32 +325,45 @@ function Toolbar() {
       style={{ borderBottom: '1px solid var(--color-rule)' }}
       data-testid="toolbar"
     >
-      <Tool onClick={() => store().splitAtPlayhead()}>Split</Tool>
-      <Tool onClick={() => store().duplicateSelection()} disabled={!hasSelection}>
+      <Tool icon={<IconScissors size={15} />} onClick={() => store().splitAtPlayhead()}>
+        Split
+      </Tool>
+      <Tool
+        icon={<IconCopy size={15} />}
+        onClick={() => store().duplicateSelection()}
+        disabled={!hasSelection}
+      >
         Duplicate
       </Tool>
-      <Tool onClick={() => store().deleteSelection()} disabled={!hasSelection}>
+      <Tool
+        icon={<IconTrash size={15} />}
+        onClick={() => store().deleteSelection()}
+        disabled={!hasSelection}
+      >
         Delete
       </Tool>
-      <Tool onClick={() => store().addTitle('New title')}>Add title</Tool>
+      <Tool icon={<IconTypography size={15} />} onClick={() => store().addTitle('New title')}>
+        Add title
+      </Tool>
       <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
-      <Tool onClick={() => store().undo()} disabled={!canUndo}>
+      <Tool icon={<IconUndo size={15} />} onClick={() => store().undo()} disabled={!canUndo}>
         Undo
       </Tool>
-      <Tool onClick={() => store().redo()} disabled={!canRedo}>
+      <Tool icon={<IconRedo size={15} />} onClick={() => store().redo()} disabled={!canRedo}>
         Redo
       </Tool>
       <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
-      <Tool ai disabled>
+      <Tool ai disabled icon={<IconMessage size={15} />}>
         Captions
       </Tool>
-      <Tool ai disabled>
+      <Tool ai disabled icon={<IconWand size={15} />}>
         Smart trim
       </Tool>
-      <Tool ai disabled>
+      <Tool ai disabled icon={<IconPalette size={15} />}>
         Colour
       </Tool>
-      <span className="ml-1" style={{ color: 'var(--color-ink-faint)' }}>
+      <span className="ml-1 flex items-center gap-1" style={{ color: 'var(--color-ink-faint)' }}>
+        <IconSparkles size={12} aria-hidden="true" />
         AI tools land in M4
       </span>
     </div>
@@ -337,11 +372,13 @@ function Toolbar() {
 
 function Tool({
   children,
+  icon,
   onClick,
   disabled,
   ai,
 }: {
   children: React.ReactNode
+  icon?: React.ReactNode
   onClick?: () => void
   disabled?: boolean
   ai?: boolean
@@ -351,10 +388,12 @@ function Tool({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="px-2.5 py-1"
+      className="flex items-center gap-1.5 px-2.5 py-1"
       style={{
         borderRadius: 'var(--radius-sm)',
         background: ai ? 'var(--color-accent-soft)' : 'var(--color-surface-2)',
+        // The icon inherits this via `currentColor` — one value to change, not
+        // two things to keep in sync.
         color: ai ? 'var(--color-accent)' : 'var(--color-ink-2)',
         // Charter §8: disabled is opacity plus no pointer events, never colour
         // alone.
@@ -362,6 +401,7 @@ function Tool({
         transition: 'background var(--duration-micro) ease-out',
       }}
     >
+      {icon && <span aria-hidden="true" className="flex shrink-0">{icon}</span>}
       {children}
     </button>
   )

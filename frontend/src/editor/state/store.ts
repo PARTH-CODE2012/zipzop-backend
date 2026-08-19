@@ -422,12 +422,17 @@ export function selectCanRedo(state: EditorState): boolean {
  * document is not touched until the drop, so this is the only place the two are
  * reconciled. All three drag kinds are handled: a trim that fell back to the
  * committed bounds would leave the edge frozen under the pointer.
+ *
+ * **Takes the drag, not the whole state, and is deliberately not a `select*`.**
+ * It returns a fresh object by nature, so subscribing a component to it through
+ * `useEditor` is the infinite loop described above and no cache can fix it. The
+ * caller subscribes to `state.drag` — one stable reference per pointer move —
+ * and calls this outside the subscription.
  */
-export function selectClipBoundsMs(
-  state: EditorState,
+export function clipBoundsMs(
+  drag: DragState | null,
   clip: MediaClip,
 ): { startMs: number; durationMs: number } {
-  const { drag } = state
   if (drag?.clipId !== clip.id) return { startMs: clip.startMs, durationMs: clip.durationMs }
 
   const end = clip.startMs + clip.durationMs
@@ -442,7 +447,7 @@ export function selectClipBoundsMs(
 }
 
 export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
-  return selectClipBoundsMs(state, clip).startMs
+  return clipBoundsMs(state.drag, clip).startMs
 }
 
 /** Every track in the document, in a stable lane order: video, audio, text.
@@ -454,15 +459,54 @@ export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
 const LANE_ORDER: Record<string, number> = { video: 0, audio: 1, text: 2 }
 const NO_TRACKS: readonly Track[] = Object.freeze([])
 
-export function selectLanes(state: EditorState): readonly Track[] {
-  const tracks = state.timeline.tracks
-  if (tracks.length === 0) return NO_TRACKS
-  return [...tracks].sort((a, b) => (LANE_ORDER[a.kind] ?? 9) - (LANE_ORDER[b.kind] ?? 9))
+/**
+ * Derived arrays are cached on the document they were derived from.
+ *
+ * **This is not an optimisation, it is a correctness requirement**, and it is
+ * the second time this project has learned it. Zustand compares what a selector
+ * returns by reference to decide whether to re-render. A selector that builds a
+ * fresh array on every call is never equal to its own previous result, so the
+ * component re-renders, the selector runs again, and React stops with either
+ * "Maximum update depth exceeded" or "The result of getSnapshot should be cached
+ * to avoid an infinite loop".
+ *
+ * M2 hit it with a `?? []` (see `docs/06-m2-notes.md` §3.1). M3 hit it again with
+ * a `.sort()` and a `.flatMap()`. `selectorStability` in `store.test.ts` is the
+ * test that now fails instead of the browser.
+ *
+ * A `WeakMap` keyed on the document is the right cache: `commit` produces a new
+ * document object exactly when something changed, so the key changes precisely
+ * when the answer does, and entries are collected with the documents they belong
+ * to rather than accumulating one per undo step.
+ */
+function derived<T>(
+  cache: WeakMap<TimelineDocument, T>,
+  document: TimelineDocument,
+  compute: () => T,
+): T {
+  const hit = cache.get(document)
+  if (hit !== undefined) return hit
+  const value = compute()
+  cache.set(document, value)
+  return value
 }
 
+const laneCache = new WeakMap<TimelineDocument, readonly Track[]>()
+
+export function selectLanes(state: EditorState): readonly Track[] {
+  if (state.timeline.tracks.length === 0) return NO_TRACKS
+  return derived(laneCache, state.timeline, () =>
+    [...state.timeline.tracks].sort((a, b) => (LANE_ORDER[a.kind] ?? 9) - (LANE_ORDER[b.kind] ?? 9)),
+  )
+}
+
+const allClipsCache = new WeakMap<TimelineDocument, readonly AnyClip[]>()
+
 /** Every clip on every track — what the marquee and the snap candidates read. */
-export function selectAllClips(state: EditorState): AnyClip[] {
-  return state.timeline.tracks.flatMap((track) => track.clips as AnyClip[])
+export function selectAllClips(state: EditorState): readonly AnyClip[] {
+  return derived(allClipsCache, state.timeline, () =>
+    state.timeline.tracks.flatMap((track) => track.clips as AnyClip[]),
+  )
 }
 
 /** The selected clip whatever kind it is — what the inspector reads.

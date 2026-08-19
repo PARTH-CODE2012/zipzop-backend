@@ -84,6 +84,23 @@ suite. Restoring the real semantics made an existing, green test fail.
 - **A rejected upload kept its reservation**, at its *announced* size, while
   storage held whatever was really uploaded — the quota evasion the size check
   exists to prevent.
+- 🔁 **The M2 render loop, reintroduced.** `selectLanes` sorted and
+  `selectAllClips` flat-mapped, so both built a fresh array on every read.
+  Zustand compares by reference, so the value was never equal to its previous
+  self: render, re-read, render — `Maximum update depth exceeded` and
+  `The result of getSnapshot should be cached to avoid an infinite loop`, and a
+  blank editor. `selectClipBoundsMs` had it too, by returning a fresh object.
+  **Both selectors are perfectly correct in isolation**, which is exactly why
+  M2's unit suite missed it and M3's did too — the fault only exists once React
+  subscribes.
+
+  The fix is a `WeakMap` keyed on the timeline document, which changes precisely
+  when the answer does, and demoting the bounds helper out of the `select*`
+  namespace so nobody subscribes to it. The guard is
+  `selector stability` in `store.test.ts`: it asserts identity rather than
+  values, which is the property Zustand actually needs and the one no ordinary
+  assertion checks.
+
 - **`markSaved` always cleared the dirty flag.** `state.timeline !== get().timeline`
   inside a Zustand `set()` callback compares the same object. An edit made while
   a save was in flight was stranded: nothing sent it until the next change, and

@@ -9,12 +9,15 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  clipBoundsMs,
+  selectAllClips,
   selectCanRedo,
   selectCanUndo,
-  selectClipBoundsMs,
   selectClipStartMs,
   selectClips,
   selectDurationMs,
+  selectLanes,
+  selectSelectedAnyClip,
   selectSingleClipId,
   useEditor,
 } from './store'
@@ -64,6 +67,71 @@ describe('commit', () => {
     state().redo()
     expect(selectClips(state())).toHaveLength(2)
     expect(selectDurationMs(state())).toBe(6_000)
+  })
+})
+
+describe('selector stability', () => {
+  /**
+   * The property Zustand actually requires, and the one this project has now
+   * got wrong twice.
+   *
+   * `useEditor` compares what a selector returns by reference. A selector that
+   * builds a fresh array or object on every call is never equal to its own
+   * previous result: the component re-renders, the selector runs again, and
+   * React stops the page with "Maximum update depth exceeded" or "The result of
+   * getSnapshot should be cached to avoid an infinite loop".
+   *
+   * M2 hit it with a `?? []`. M3 hit it again with a `.sort()` and a
+   * `.flatMap()`. Neither was caught by a unit test, because both selectors are
+   * perfectly correct in isolation — the fault only exists once React
+   * subscribes. So the test is about identity, not about values.
+   */
+  const subscriptionSelectors = {
+    selectClips,
+    selectLanes,
+    selectAllClips,
+    selectSelectedAnyClip,
+  } as const
+
+  it('returns the same reference until the document changes', () => {
+    loaded()
+    state().addClip({ assetId: 'ast_1', durationMs: 4_000 })
+    state().addMusicClip({ assetId: 'ast_2', durationMs: 4_000 })
+    state().addTitle('Hello')
+
+    for (const [name, selector] of Object.entries(subscriptionSelectors)) {
+      const first = selector(state())
+      const second = selector(state())
+      expect(second, `${name} built a new value for an unchanged document`).toBe(first)
+    }
+  })
+
+  it('returns a different reference once it does', () => {
+    // The other half: a cache that never invalidates would be just as broken,
+    // and silently — the timeline would simply stop redrawing.
+    loaded()
+    state().addClip({ assetId: 'ast_1', durationMs: 1_000 })
+    const before = Object.fromEntries(
+      Object.entries(subscriptionSelectors).map(([name, fn]) => [name, fn(state())]),
+    )
+
+    state().addClip({ assetId: 'ast_2', durationMs: 1_000 })
+
+    expect(selectClips(state())).not.toBe(before.selectClips)
+    expect(selectAllClips(state())).not.toBe(before.selectAllClips)
+  })
+
+  it('holds across a playhead move, which changes state but not the document', () => {
+    // The common case: something unrelated to the timeline updates the store on
+    // every animation frame during playback.
+    loaded()
+    state().addClip({ assetId: 'ast_1', durationMs: 4_000 })
+    const lanes = selectLanes(state())
+
+    state().setPlayhead(1_234)
+    state().select(null)
+
+    expect(selectLanes(state())).toBe(lanes)
   })
 })
 
@@ -137,10 +205,10 @@ describe('dragging', () => {
     const clip = () => selectClips(state()).find((each) => each.id === id)!
 
     state().beginDrag({ kind: 'trim-start', clipId: id, previewMs: 1_000 })
-    expect(selectClipBoundsMs(state(), clip())).toEqual({ startMs: 1_000, durationMs: 3_000 })
+    expect(clipBoundsMs(state().drag, clip())).toEqual({ startMs: 1_000, durationMs: 3_000 })
 
     state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 2_500 })
-    expect(selectClipBoundsMs(state(), clip())).toEqual({ startMs: 0, durationMs: 2_500 })
+    expect(clipBoundsMs(state().drag, clip())).toEqual({ startMs: 0, durationMs: 2_500 })
 
     // Still nothing committed: a trim whose preview fell back to the committed
     // bounds would leave the edge frozen under the pointer.

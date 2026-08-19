@@ -27,6 +27,7 @@ Everything needed to build this product. Start here.
 | **M1** | [Compositor spike](../frontend/src/editor/playback/README.md) | touching the renderer or the playback clock |
 | **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
 | **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
+| **M4 prep** | [M4 readiness](10-m4-readiness.md) | starting M4 — what is already built, what the contract already specifies, and two open decisions found while checking |
 
 ### If you have fifteen minutes
 

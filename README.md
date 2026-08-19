@@ -51,7 +51,109 @@ Anything unexpected:
 make doctor     # says exactly what is missing, and what to run for it
 ```
 
+### Running it in your own terminals
+
+`make dev-all` backgrounds all three processes and buries their output in
+`/tmp`, which is the wrong tool the moment something misbehaves — a traceback
+you need is somewhere you are not looking. Two better options, in order of
+convenience:
+
+**`make watch`** — one command, one tmux session, three windows (`api`,
+`worker`, `web`), each running exactly the foreground command below. Every
+window's output is live on screen and `Ctrl-C` inside one stops only that
+service. It checks and starts infrastructure first, so it is genuinely the
+one command to run.
+
+```bash
+make watch
+```
+
+```
+Ctrl-b then 0 / 1 / 2     switch window
+Ctrl-b then d             detach — leaves everything running
+tmux attach -t zipzop     reattach later
+make watch-stop           stop all three
+```
+
+No tmux, or you would rather see three separate terminal windows: type the
+three commands below yourself, one per terminal.
+
+**Once, and they stay up on their own** — detached containers, so closing the
+terminal does not stop them:
+
+```bash
+make infra
+```
+
+```bash
+make migrate
+```
+
+`make migrate` is the one people skip, and it is the one that bites. It runs
+against the **development** database; the test suite migrates `zipzop_test` by
+itself, so a green `make test` says nothing about whether the app can start.
+Skipping it means the API answers `500` on the very first query — creating an
+account — with nothing on screen but *"something went wrong"*.
+
+**Then one terminal each**, in the foreground, stopped with `Ctrl-C`:
+
+```bash
+cd backend && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+```bash
+cd backend && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2
+```
+
+```bash
+cd frontend && pnpm dev --port 3000
+```
+
+Then **http://localhost:3000/editor/scratch**. A route segment that is not a
+real project id means *open a fresh project*: the app creates one and swaps its
+id into the address bar, so reloading returns to the same project rather than
+making another.
+
+To check the API is really up before blaming the interface:
+
+```bash
+curl -s http://localhost:8000/health
+```
+
+`"status": "ok"` with both dependencies `true` is the only answer that means the
+stack is ready. `"degraded"` names which one is down.
+
+When you are done — the servers stop with `Ctrl-C`, the containers with:
+
+```bash
+make down
+```
+
+> **These commands belong in a terminal you control.** Anything long-running —
+> the API, the worker, the dev server — should be started by the person at the
+> keyboard, not from an assistant's tool session: those processes live in a
+> shell you cannot see, cannot stop, and whose logs you cannot read, and they
+> can die between one command and the next while everything still looks fine
+> from the outside. Short commands are fine anywhere. Detached containers are
+> the exception, because `docker` can manage them from any shell.
+
 ### What each service is for
+
+Looking at what is actually in the database — accounts, projects, the credit
+ledger — is one command:
+
+```bash
+make psql
+```
+
+```sql
+\dt                    -- every table
+SELECT id, email, display_name, status FROM users;
+```
+
+`\q` to leave. Any ordinary Postgres client (DBeaver, TablePlus, the VS Code
+PostgreSQL extension) connects the same way: `localhost:5432`, database
+`zipzop`, user and password `zipzop` — the dev defaults in `backend/app/config.py`.
 
 | | | Without it |
 |---|---|---|
@@ -91,6 +193,16 @@ from the committed `openapi.json`; committing it too would let the two drift.
 A fresh clone therefore has no API types, and `pnpm typecheck`, `pnpm build`
 and `pnpm dev` all fail on a missing module until `make types` has run.
 `make setup` does it — but if you installed by hand, that is why.
+
+### When the editor will not start
+
+| What you see | What it is | Fix |
+|---|---|---|
+| `500` on sign-up, or *"something went wrong on our side"* | The development database has no schema — `alembic` has only ever run against `zipzop_test` | `make migrate` |
+| *"Cannot reach the server…"* on the sign-in panel | The request never left the browser: the API is not running, or is on another port | Start the API, then `curl -s http://localhost:8000/health` |
+| `/health` says `degraded` | Postgres, Redis or MinIO is down. Containers do not restart themselves after a daemon restart | `make infra` |
+| The editor `500`s **after** a `pnpm build` | The build overwrote the `.next/` the running dev server was using | `Ctrl-C`, `rm -rf frontend/.next`, start `pnpm dev` again |
+| Uploads fail, everything else works | FFmpeg is missing, or MinIO is down | `ffmpeg -version`, then `make infra` |
 
 ### Without Docker
 
