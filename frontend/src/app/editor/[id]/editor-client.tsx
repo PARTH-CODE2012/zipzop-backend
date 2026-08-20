@@ -126,12 +126,20 @@ function Workspace({
     try {
       const page = await listMedia({ limit: 100 })
       const next = new Map<string, ResolvedAsset>()
+      const durations: Record<string, number> = {}
       for (const asset of page.items) {
         if (asset.status === 'ready' && asset.proxyUrl) {
           next.set(asset.id, { proxyUrl: asset.proxyUrl, durationMs: asset.durationMs ?? 0 })
         }
+        // Every asset with a length, not only the ones with a proxy: an
+        // audio-only file never gets one, and a music clip is trimmed against
+        // its media exactly like a video clip is. This is what stops a trim
+        // running past the end of the file and failing the next autosave on
+        // invariant 4.
+        if (asset.durationMs != null) durations[asset.id] = asset.durationMs
       }
       setAssets(next)
+      useEditor.getState().setAssetDurations(durations)
     } catch {
       // The media bin surfaces its own failure; the preview simply has nothing
       // to play, which it already handles.

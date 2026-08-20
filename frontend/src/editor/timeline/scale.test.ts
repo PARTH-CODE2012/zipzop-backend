@@ -9,7 +9,6 @@ import {
   msToPx,
   pxToMs,
   scrollForAnchoredZoom,
-  snapMs,
   tickLabel,
   tickStepMs,
   ticksForWindow,
@@ -128,29 +127,5 @@ describe('timecode', () => {
 
   it('handles a negative offset', () => {
     expect(formatTimecode(-1500, { withMillis: true })).toBe('-0:01.500')
-  })
-})
-
-describe('snapping', () => {
-  it('pulls onto the nearest candidate within the threshold', () => {
-    const zoom = 100 // 100 px per second, so 8 px is 80 ms
-    expect(snapMs(1050, [1000, 5000], zoom, 8)).toBe(1000)
-  })
-
-  it('leaves a position alone when nothing is close', () => {
-    const ms = 3000
-    expect(snapMs(ms, [1000, 5000], 100, 8)).toBe(ms)
-  })
-
-  it('feels the same at every zoom because the threshold is in pixels', () => {
-    // 50 ms away. Snaps when zoomed in enough for 50 ms to be under 8 px of
-    // travel, and not before — a millisecond threshold would be unusably
-    // sticky zoomed out and useless zoomed in.
-    expect(snapMs(1050, [1000], 400, 8)).toBe(1050) // 20 px away — no
-    expect(snapMs(1050, [1000], 100, 8)).toBe(1000) // 5 px away — yes
-  })
-
-  it('prefers the closer of two candidates', () => {
-    expect(snapMs(1040, [1000, 1050], 200, 20)).toBe(1050)
   })
 })

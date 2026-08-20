@@ -13,8 +13,17 @@
  */
 
 import { trackOfKind } from '@/editor/state/timeline-document'
-import type { MediaClip, TimelineDocument } from '@/editor/state/timeline-document'
-import type { SpikeMediaClip, SpikeTimeline } from '@/editor/playback/timeline'
+import type { MediaClip, TextClip, TimelineDocument } from '@/editor/state/timeline-document'
+import type { SpikeMediaClip, SpikeTextClip, SpikeTimeline } from '@/editor/playback/timeline'
+
+/**
+ * Cap height as a fraction of the canvas, for a title with no style override.
+ *
+ * The same value the M1 spike drew its captions at, and normalised rather than
+ * a pixel count so a 480p preview and a 1080p export put the words in the same
+ * place (contract §4.3).
+ */
+export const DEFAULT_TEXT_SIZE = 0.062
 
 /** What the adapter needs to know about an asset that the document does not carry. */
 export interface ResolvedAsset {
@@ -66,23 +75,46 @@ export function documentToPlaybackTimeline(
     video.push(toPlaybackClip(clip, asset))
   }
 
-  const durationMs = video.reduce(
+  // Titles need no asset, so they are never skipped — they are the one thing
+  // in the document that can be drawn the instant it is typed.
+  const text = (trackOfKind(document, 'text')?.clips ?? []).map(toPlaybackText)
+
+  const durationMs = [...video, ...text].reduce(
     (longest, clip) => Math.max(longest, clip.startMs + clip.durationMs),
     0,
   )
 
   return {
     timeline: {
-      // M2 has no transitions in the interface, so every join is a cut. The
-      // engine's crossfade path is proven (M1, on iOS too) and waits for M3,
-      // where transitions become editable.
+      // ⚠️ **Every join is a cut, including the ones the user set a dissolve
+      // on.** The engine derives a crossfade from two clips *overlapping in
+      // time*, and the document forbids that (invariant 1) — a transition is
+      // metadata on a join, and turning it into an overlap means deciding which
+      // side gives up the frames, which the contract does not say. Rendering
+      // one in the preview is engine work plus a contract decision, not an
+      // adapter change; see docs/09-m3-notes.md §5.
       mode: 'cut',
       transitionMs: 0,
       durationMs,
       video,
-      text: [],
+      text,
     },
     skipped,
+  }
+}
+
+function toPlaybackText(clip: TextClip): SpikeTextClip {
+  return {
+    id: clip.id,
+    startMs: clip.startMs,
+    durationMs: clip.durationMs,
+    text: clip.text,
+    emphasis: clip.emphasis,
+    // The defaults match `appendTitle`, so a title typed into the editor lands
+    // where the editor said it would.
+    position: { x: clip.position?.x ?? 0.5, y: clip.position?.y ?? 0.82 },
+    fontSize: clip.style?.fontSize ?? DEFAULT_TEXT_SIZE,
+    anchor: clip.position?.anchor ?? 'center',
   }
 }
 

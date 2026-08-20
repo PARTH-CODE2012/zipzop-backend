@@ -45,6 +45,9 @@ export interface SpikeTextClip {
   readonly position: { readonly x: number; readonly y: number }
   /** Cap height as a fraction of canvas height. */
   readonly fontSize: number
+  /** Which edge `position.x` names. Absent means centred, which is what every
+   * caption the spike drew used. */
+  readonly anchor?: 'center' | 'left' | 'right'
 }
 
 export type TransitionMode = 'cut' | 'crossfade'

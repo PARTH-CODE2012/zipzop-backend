@@ -70,6 +70,24 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
 
 
+def _cookie_cleared() -> dict[str, str]:
+    """The same `Set-Cookie`, as a header to hang on an error.
+
+    **Setting a cookie on the injected `Response` and then raising does
+    nothing.** FastAPI copies that object's headers onto the reply only when the
+    handler *returns*; an exception is turned into a response by the error
+    handler, which has never seen it. Every branch below that clears the cookie
+    also raises, so all of them were no-ops: the browser kept sending a dead
+    refresh token until it expired thirty days later.
+
+    Built from a throwaway `Response` rather than a hand-written string, so the
+    path and flags cannot drift from `_clear_refresh_cookie`.
+    """
+    probe = Response()
+    _clear_refresh_cookie(probe)
+    return {"set-cookie": probe.headers["set-cookie"]}
+
+
 def _session_payload(user: User, access_token: str, expires_in: int) -> SessionResponse:
     return SessionResponse(
         user=UserSummary(
@@ -189,16 +207,18 @@ async def refresh(
         # tell the user to sign in again, and leave every token in the chain
         # valid — surviving exactly the event that is meant to kill it.
         await session.commit()
-        _clear_refresh_cookie(response)
-        raise TokenRevokedError("This session was ended for security. Please sign in again.")
+        raise TokenRevokedError(
+            "This session was ended for security. Please sign in again.",
+            headers=_cookie_cleared(),
+        )
 
     if stored.revoked_at is not None:
-        _clear_refresh_cookie(response)
-        raise TokenRevokedError()
+        raise TokenRevokedError(headers=_cookie_cleared())
 
     if stored.expires_at <= datetime.now(UTC):
-        _clear_refresh_cookie(response)
-        raise TokenExpiredError("Your session has expired. Please sign in again.")
+        raise TokenExpiredError(
+            "Your session has expired. Please sign in again.", headers=_cookie_cleared()
+        )
 
     user = await UserRepository(session).by_id(stored.user_id)
     if user is None:

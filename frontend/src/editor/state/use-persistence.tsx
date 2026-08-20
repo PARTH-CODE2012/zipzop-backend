@@ -46,33 +46,63 @@ export function useProjectPersistence(projectId: string): PersistenceState {
   const [conflictVersion, setConflictVersion] = useState<number | null>(null)
   const autosaveRef = useRef<Autosave | null>(null)
 
-  const open = useCallback(async () => {
-    setStatus('loading')
-    // A route segment that is not a real project id — `/editor/new`, and the
-    // `/editor/e2e` and `/editor/scratch` the end-to-end run and the dev flow
-    // have always used — means "open a fresh project". Before M3 those URLs
-    // opened a browser-only timeline that was gone on reload; now they create
-    // a real one and swap the id into the address bar, so reloading comes back
-    // to the same project rather than making another.
-    const project = projectId.startsWith('prj_')
-      ? await getProject(projectId)
-      : await createProject({ title: 'Untitled project', aspectRatio: '9:16' })
-    if (project.id !== projectId && typeof window !== 'undefined') {
-      window.history.replaceState(null, '', `/editor/${project.id}`)
-    }
-    useEditor.getState().load({
-      projectId: project.id,
-      timeline: project.timeline,
-      version: project.version,
-    })
-    setConflictVersion(null)
-    setStatus('saved')
-  }, [projectId])
+  /**
+   * `requested` overrides the route segment, and the callers that pass it are
+   * the reason it exists.
+   *
+   * `/editor/scratch` creates a project and swaps its id into the address bar
+   * with `replaceState`, which does **not** re-render the route — so the
+   * `projectId` prop still reads `scratch` for the rest of the session. Any
+   * caller reopening the project after that has to ask the store what was
+   * actually opened, or it creates a second project instead of reloading the
+   * first.
+   */
+  const open = useCallback(
+    async (requested?: string) => {
+      const target = requested ?? projectId
+      setStatus('loading')
+      // A route segment that is not a real project id — `/editor/new`, and the
+      // `/editor/e2e` and `/editor/scratch` the end-to-end run and the dev flow
+      // have always used — means "open a fresh project". Before M3 those URLs
+      // opened a browser-only timeline that was gone on reload; now they create
+      // a real one and swap the id into the address bar, so reloading comes back
+      // to the same project rather than making another.
+      const project = target.startsWith('prj_')
+        ? await getProject(target)
+        : await createProject({ title: 'Untitled project', aspectRatio: '9:16' })
+      if (project.id !== target && typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `/editor/${project.id}`)
+      }
+      useEditor.getState().load({
+        projectId: project.id,
+        timeline: project.timeline,
+        version: project.version,
+      })
+      setConflictVersion(null)
+      setStatus('saved')
+    },
+    [projectId],
+  )
 
   // ---------------------------------------------------------------- open
+  /**
+   * Opened once per project id, and the guard is not decoration.
+   *
+   * Strict Mode mounts, tears down and remounts every effect in development
+   * (`next.config.ts` keeps it on deliberately). Without this, opening
+   * `/editor/scratch` runs the create path twice and leaves an orphaned empty
+   * project behind on every visit — the ref survives the double invoke, a real
+   * remount gets a fresh one.
+   */
+  const openedRef = useRef<string | null>(null)
   useEffect(() => {
-    void open().catch(() => setStatus('error'))
-  }, [open])
+    if (openedRef.current === projectId) return
+    openedRef.current = projectId
+    void open().catch(() => {
+      openedRef.current = null
+      setStatus('error')
+    })
+  }, [open, projectId])
 
   // ------------------------------------------------------------- autosave
   useEffect(() => {
@@ -147,7 +177,8 @@ export function useProjectPersistence(projectId: string): PersistenceState {
   const keepMine = useCallback(async () => {
     // Take the server's version number without its document, so the next save
     // is accepted and overwrites it. The user was shown both and chose.
-    const current = await getProject(projectId)
+    // The id comes from the store, not the route — see `open` above.
+    const current = await getProject(useEditor.getState().projectId ?? projectId)
     useEditor.setState({ version: current.version, isDirty: true })
     autosaveRef.current?.resume()
     setConflictVersion(null)
@@ -156,9 +187,9 @@ export function useProjectPersistence(projectId: string): PersistenceState {
   }, [projectId])
 
   const loadTheirs = useCallback(async () => {
-    await open()
+    await open(useEditor.getState().projectId ?? projectId)
     autosaveRef.current?.resume()
-  }, [open])
+  }, [open, projectId])
 
   const flush = useCallback(async () => {
     await autosaveRef.current?.flush()

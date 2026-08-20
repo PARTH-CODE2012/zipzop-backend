@@ -142,35 +142,3 @@ export function formatTimecode(ms: number, { withMillis = false } = {}): string 
 export function tickLabel(ms: number, zoom: Zoom): string {
   return formatTimecode(ms, { withMillis: tickStepMs(zoom) < 1000 })
 }
-
-// --------------------------------------------------------------------------
-// Snapping
-// --------------------------------------------------------------------------
-
-/**
- * Pull a dragged position onto a nearby edge.
- *
- * The threshold is in **pixels**, not milliseconds, so snapping feels the same
- * at every zoom — a fixed millisecond threshold would be unusably sticky when
- * zoomed out and useless when zoomed in.
- *
- * Returns the original value when nothing is close enough, so a caller can
- * compare identity to know whether a snap happened.
- */
-export function snapMs(
-  ms: number,
-  candidates: readonly number[],
-  zoom: Zoom,
-  thresholdPx = 8,
-): number {
-  let best = ms
-  let bestDistance = Infinity
-  for (const candidate of candidates) {
-    const distance = Math.abs(msToPx(candidate - ms, zoom))
-    if (distance <= thresholdPx && distance < bestDistance) {
-      best = candidate
-      bestDistance = distance
-    }
-  }
-  return best
-}

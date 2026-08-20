@@ -228,7 +228,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Clip properties: volume, speed, fades, rotate, flip, and reframe — in `editor/inspector/`. ⚠️ **Reframe is two presets (full frame / centre 9:16), not a drag-to-crop.** The operation takes any normalised rectangle; only the handle to draw one is missing
 - [x] Audio track: music clip, per-clip volume, fades. An audio-only asset routes to the music lane from the media bin — sending it to the video track would put a soundtrack on the picture track. ⚠️ **Web Audio gain automation is not wired**: the values are in the document and the renderer will honour them, the browser preview does not yet
 - [ ] Text track — **add, edit and position a title are done**; font, size and colour are not. The `style` override object is in the document and generated into the client types, so each is a control rather than a change of shape
-- [x] Transitions: cut, fade to black, cross dissolve, per side, clamped to invariant 7. A cut is stored as *no* transition rather than a zero-length one, so the renderer never has to ask what a zero-length dissolve means
+- [x] Transitions: cut, fade to black, cross dissolve, per side, clamped to invariant 7 — and **re-clamped after any edit that changes a duration or a neighbour**, because the bound is a property of two clips and trimming one of them breaks it without touching the transition. A cut is stored as *no* transition rather than a zero-length one, so the renderer never has to ask what a zero-length dissolve means. ⚠️ **The preview draws every join as a cut**: the engine derives a crossfade from overlapping clips and the document forbids overlap, so rendering one needs a contract decision about which side gives up the frames — see [`docs/09-m3-notes.md`](docs/09-m3-notes.md) §5
 - [x] Timeline virtualised by time window ⚠️ — clips outside the window plus half a screen of overscan are not rendered at all, and the grid is a repeating background rather than one element per line. Tested at 500 clips
 
 ### Backend — projects
@@ -248,15 +248,22 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [ ] IndexedDB mirror on every commit, restore offer on open 💤
 - [x] Last-chance flush on `pagehide` — **`fetch` with `keepalive`, not `sendBeacon`**, which only issues POST and cannot send a PATCH. Correction recorded in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §6, including the 64 KB body cap that makes it best-effort
 
-> **M3 is complete bar two things, 18 August.** The document, the history, the editing
-> operations, persistence and the whole interface over them are done, covered by 179 frontend
-> tests and exercised end to end: register, create a project, edit, reload, and the edit is
-> still there.
+> **M3 is complete bar three things, 18 August — audited and repaired 20 August.** The
+> document, the history, the editing operations, persistence and the whole interface over
+> them are done, covered by 201 frontend tests and exercised end to end: register, create a
+> project, edit, reload, and the edit is still there.
 >
-> Left open, both deliberately: **the text track's font, size and colour controls** (the style
-> object is in the document, so each is a control rather than a change of shape), and the
-> **IndexedDB mirror**, which the checklist already marked 💤 and which is also the proper
-> answer to the 64 KB cap on the unload flush.
+> Left open: **the text track's font, size and colour controls** (the style object is in the
+> document, so each is a control rather than a change of shape); the **IndexedDB mirror**,
+> which the checklist already marked 💤 and which is also the proper answer to the 64 KB cap
+> on the unload flush; and **transitions in the preview**, which is not an omission anyone
+> chose — it needs a contract decision first.
+>
+> The audit that followed found nine defects, two of which silently lost the user's work: a
+> trim past the end of its media, and a transition left over its bound by a later trim. Both
+> were rejected by the server on the next autosave, with the editor then stuck on "Could not
+> save". All nine are fixed and written up in [`docs/09-m3-notes.md`](docs/09-m3-notes.md)
+> §6, with a test each that fails on the old code.
 
 ---
 

@@ -96,6 +96,34 @@ export function marqueeHits(clips: readonly AnyClip[], fromMs: number, toMs: num
   return clips.filter((clip) => clip.startMs <= high && clipEndMs(clip) >= low).map((c) => c.id)
 }
 
+/** A rubber band: a time range **and** a range of lanes. */
+export interface MarqueeBand {
+  readonly fromMs: number
+  readonly toMs: number
+  /** Indices into the lanes passed alongside it. */
+  readonly fromLane: number
+  readonly toLane: number
+}
+
+/**
+ * What a rubber band selects — the lanes it covers, then the clips it touches.
+ *
+ * **The vertical half is not decoration.** Without it a band is a time range
+ * over every track at once, so a plain click on an empty patch of the text lane
+ * selects whatever video happens to be playing at that instant. Either half
+ * alone gives the wrong answer; both together are what a lasso is.
+ */
+export function marqueeSelection(
+  lanes: readonly { readonly clips: readonly AnyClip[] }[],
+  band: MarqueeBand,
+): string[] {
+  const low = Math.max(0, Math.min(band.fromLane, band.toLane))
+  const high = Math.min(lanes.length - 1, Math.max(band.fromLane, band.toLane))
+  if (high < low) return []
+  const reachable = lanes.slice(low, high + 1).flatMap((lane) => lane.clips)
+  return marqueeHits(reachable, band.fromMs, band.toMs)
+}
+
 /** Which part of a clip a pointer landed on, in the clip's own pixel space. */
 export type ClipZone = 'trim-start' | 'trim-end' | 'move'
 

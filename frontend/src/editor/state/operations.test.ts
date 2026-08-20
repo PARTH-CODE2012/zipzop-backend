@@ -19,7 +19,6 @@ import {
   removeClips,
   setClipProperties,
   setTransition,
-  snapTo,
   splitAt,
   trimEnd,
   trimStart,
@@ -336,12 +335,84 @@ describe('setTransition', () => {
   })
 })
 
-describe('snapTo', () => {
-  it('takes the nearest candidate inside the tolerance', () => {
-    expect(snapTo([0, 4_000, 9_000], 3_900, 200)).toBe(4_000)
+/**
+ * Invariant 7 depends on two clip *durations*, so it can be broken by an edit
+ * that never touches the transition. The server checks it on every save, and
+ * the report comes back as a `422` on an autosave two seconds later, naming a
+ * clip the user is no longer looking at — with autosave then stuck until
+ * something undoes it. Each of these is one of the edits that used to do it.
+ */
+describe('transitions stay inside invariant 7 after the clips move', () => {
+  const pair = () =>
+    timeline(
+      clip({
+        id: 'clp_a',
+        startMs: 0,
+        durationMs: 5_000,
+        transitionOut: { type: 'dissolve', durationMs: 400 },
+      }),
+      clip({ id: 'clp_b', startMs: 5_000, durationMs: 5_000 }),
+    )
+
+  it('re-clamps when the clip is trimmed shorter from the right', () => {
+    const document = edit(pair(), (draft) => {
+      trimEnd(draft, 'clp_a', 500)
+    })
+    expect(byId(document, 'clp_a')?.durationMs).toBe(500)
+    expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 250 })
   })
 
-  it('leaves a position alone when nothing is close', () => {
-    expect(snapTo([0, 4_000], 2_000, 200)).toBe(2_000)
+  it('re-clamps when the clip is trimmed shorter from the left', () => {
+    const document = edit(pair(), (draft) => {
+      trimStart(draft, 'clp_a', 4_400)
+    })
+    expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 300 })
+  })
+
+  it('re-clamps when the *neighbour* becomes the shorter one', () => {
+    const document = edit(pair(), (draft) => {
+      trimEnd(draft, 'clp_b', 5_600)
+    })
+    expect(byId(document, 'clp_b')?.durationMs).toBe(600)
+    expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 300 })
+  })
+
+  it('re-clamps when splitting leaves two shorter halves', () => {
+    const document = edit(pair(), (draft) => {
+      splitAt(draft, 'clp_a', 4_500)
+    })
+    // The right half is 500 ms and keeps the outgoing dissolve.
+    const halves = trackOfKind(document, 'video')!.clips
+    expect(halves[1]?.durationMs).toBe(500)
+    expect(halves[1]?.transitionOut).toEqual({ type: 'dissolve', durationMs: 250 })
+  })
+
+  it('re-clamps when deleting a clip hands a shorter neighbour over', () => {
+    const document = edit(
+      timeline(
+        clip({
+          id: 'clp_a',
+          startMs: 0,
+          durationMs: 5_000,
+          transitionOut: { type: 'dissolve', durationMs: 400 },
+        }),
+        clip({ id: 'clp_b', startMs: 5_000, durationMs: 5_000 }),
+        clip({ id: 'clp_c', startMs: 10_000, durationMs: 600 }),
+      ),
+      (draft) => {
+        removeClips(draft, ['clp_b'])
+      },
+    )
+    expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 300 })
+  })
+
+  it('leaves a transition that still fits completely alone', () => {
+    const before = pair()
+    const document = edit(before, (draft) => {
+      trimEnd(draft, 'clp_a', 4_000)
+    })
+    // 400 <= half of 4000: untouched, and untouched means no Immer patch and
+    // therefore no spurious undo step.
+    expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 400 })
   })
 })

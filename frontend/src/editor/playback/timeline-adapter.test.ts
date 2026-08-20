@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import type { MediaClip, TimelineDocument } from '@/editor/state/timeline-document'
+import type { MediaClip, TextClip, TimelineDocument } from '@/editor/state/timeline-document'
 
-import { documentToPlaybackTimeline, type ResolvedAsset } from './timeline-adapter'
+import {
+  DEFAULT_TEXT_SIZE,
+  documentToPlaybackTimeline,
+  type ResolvedAsset,
+} from './timeline-adapter'
 
 function clip(over: Partial<MediaClip> = {}): MediaClip {
   return {
@@ -102,9 +106,9 @@ describe('documentToPlaybackTimeline', () => {
     expect(timeline.mode).toBe('cut')
   })
 
-  it('ignores audio and text tracks for now', () => {
-    // M2 renders one video track. An audio clip reaching the video pool would
-    // become a <video> element with no picture.
+  it('keeps audio off the video track', () => {
+    // An audio clip reaching the video pool would become a <video> element with
+    // no picture. The music lane is Web Audio's job, not the compositor's.
     const doc = document([clip()])
     doc.tracks.push({
       id: 'trk_music',
@@ -116,6 +120,78 @@ describe('documentToPlaybackTimeline', () => {
     })
     const { timeline } = documentToPlaybackTimeline(doc, lookupReady)
     expect(timeline.video.map((c) => c.id)).toEqual(['clp_a'])
+  })
+
+  /**
+   * Titles used to stop at the store. The adapter handed the engine `text: []`
+   * unconditionally, so a title could be added, typed, moved and saved — and
+   * never once appear over the picture it was written for. The engine has drawn
+   * text since M1; nothing was reaching it.
+   */
+  describe('the text track', () => {
+    const title = (over: Partial<TextClip> = {}): TextClip => ({
+      id: 'clp_t1',
+      kind: 'title',
+      startMs: 1_000,
+      durationMs: 3_000,
+      text: 'Hello',
+      styleId: 'plain_bold',
+      emphasis: 0,
+      position: { x: 0.5, y: 0.82, anchor: 'center' },
+      ...over,
+    })
+
+    const withText = (clips: TextClip[]): TimelineDocument => {
+      const doc = document([clip()])
+      doc.tracks.push({ id: 'trk_text', kind: 'text', index: 0, muted: false, locked: false, clips })
+      return doc
+    }
+
+    it('carries a title through to the overlay', () => {
+      const { timeline } = documentToPlaybackTimeline(withText([title()]), lookupReady)
+      expect(timeline.text).toEqual([
+        {
+          id: 'clp_t1',
+          startMs: 1_000,
+          durationMs: 3_000,
+          text: 'Hello',
+          emphasis: 0,
+          position: { x: 0.5, y: 0.82 },
+          fontSize: DEFAULT_TEXT_SIZE,
+          anchor: 'center',
+        },
+      ])
+    })
+
+    it('needs no asset — a title is drawable the instant it is typed', () => {
+      const doc: TimelineDocument = {
+        schemaVersion: 1,
+        tracks: [
+          { id: 'trk_text', kind: 'text', index: 0, muted: false, locked: false, clips: [title()] },
+        ],
+      }
+      const result = documentToPlaybackTimeline(doc, () => undefined)
+      expect(result.skipped).toEqual([])
+      expect(result.timeline.text).toHaveLength(1)
+    })
+
+    it('takes a style override for the size, still normalised', () => {
+      const { timeline } = documentToPlaybackTimeline(
+        withText([title({ style: { fontSize: 0.11 } })]),
+        lookupReady,
+      )
+      expect(timeline.text.at(0)?.fontSize).toBe(0.11)
+    })
+
+    it('measures the timeline by the last thing on it, title or clip', () => {
+      // A title after the final cut is still part of the project: stopping at
+      // the last video clip would end playback before the words appeared.
+      const { timeline } = documentToPlaybackTimeline(
+        withText([title({ startMs: 9_000, durationMs: 2_000 })]),
+        lookupReady,
+      )
+      expect(timeline.durationMs).toBe(11_000)
+    })
   })
 
   it('carries a colour grade through', () => {

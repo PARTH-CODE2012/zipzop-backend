@@ -168,6 +168,9 @@ export function splitAt(document: Draftable, clipId: string, timelineMs: number)
   clip.durationMs = elapsed
   clip.transitionOut = null
   track.clips.splice(index + 1, 0, right)
+  // Both halves are shorter than the clip they came from, so a transition on
+  // either outside edge may no longer fit under invariant 7.
+  clampTransitions(track)
   return rightId
 }
 
@@ -213,6 +216,24 @@ export function trimStart(
   clip.startMs = target
   clip.durationMs -= delta
   clip.sourceInMs = Math.max(0, clip.sourceInMs + Math.round(delta * clip.speed))
+  clampTransitions(track)
+}
+
+/**
+ * The furthest a clip's right edge may go before it reads past its media —
+ * invariant 4, as far as the client can see it.
+ *
+ * At 2x a clip consumes source twice as fast, so the headroom left in the file
+ * buys half as much timeline. Exported because the *preview* during a trim has
+ * to agree with the commit at the end of it: an edge that follows the pointer
+ * and then snaps back on release looks like the editor lost the gesture.
+ */
+export function maxTrimEndMs(
+  clip: { startMs: number; sourceInMs: number; speed: number },
+  maxSourceMs: number,
+): number {
+  const available = Math.max(0, maxSourceMs - clip.sourceInMs)
+  return clip.startMs + Math.floor(available / clip.speed)
 }
 
 /**
@@ -232,14 +253,12 @@ export function trimEnd(
   const next = track.clips[index + 1]
   let ceiling = next ? next.startMs : Number.MAX_SAFE_INTEGER
   if (bounds.maxSourceMs !== undefined) {
-    // Invariant 4, as far as the client can see it: the clip may not read past
-    // the end of its media, and at 2x it consumes source twice as fast.
-    const available = Math.max(0, bounds.maxSourceMs - clip.sourceInMs)
-    ceiling = Math.min(ceiling, clip.startMs + Math.floor(available / clip.speed))
+    ceiling = Math.min(ceiling, maxTrimEndMs(clip, bounds.maxSourceMs))
   }
   const floor = clip.startMs + MIN_CLIP_MS
   const target = Math.min(ceiling, Math.max(floor, Math.round(newEndMs)))
   clip.durationMs = target - clip.startMs
+  clampTransitions(track)
 }
 
 // --------------------------------------------------------------------------
@@ -266,6 +285,9 @@ export function moveClip(document: Draftable, clipId: string, startMs: number): 
   const ceiling = next ? next.startMs - clip.durationMs : Number.MAX_SAFE_INTEGER
   clip.startMs = Math.max(floor, Math.min(ceiling, Math.max(0, Math.round(startMs))))
   reorder(track)
+  // The move can change which clip is the neighbour, and the bound is half the
+  // shorter of the pair.
+  clampTransitions(track)
 }
 
 // --------------------------------------------------------------------------
@@ -298,6 +320,7 @@ export function duplicateClip(document: Draftable, clipId: string): string | nul
   }
   track.clips.push(copy)
   reorder(track)
+  clampTransitions(track)
   return id
 }
 
@@ -307,6 +330,8 @@ export function removeClips(document: Draftable, clipIds: Iterable<string>): voi
   for (const track of document.tracks) {
     track.clips = track.clips.filter((clip) => !doomed.has(clip.id)) as typeof track.clips
   }
+  // Deleting a clip hands its neighbours a new partner, which may be shorter.
+  for (const track of mediaTracks(document)) clampTransitions(track)
   // A track left empty is kept. Removing it would delete the user's mute and
   // lock settings along with it, and re-adding a clip would silently restore
   // defaults they had changed.
@@ -407,36 +432,60 @@ export function setTransition(
     return
   }
 
-  const neighbour = side === 'in' ? track.clips[index - 1] : track.clips[index + 1]
-  const shortest = Math.min(clip.durationMs, neighbour?.durationMs ?? clip.durationMs)
-  const durationMs = clamp(Math.round(transition.durationMs), 0, Math.floor(shortest / 2))
+  const durationMs = clamp(
+    Math.round(transition.durationMs),
+    0,
+    transitionLimitMs(track.clips, index, side),
+  )
   const value: Draft<Transition> = { type: transition.type, durationMs }
   if (side === 'in') clip.transitionIn = value
   else clip.transitionOut = value
 }
 
-// --------------------------------------------------------------------------
-// Snapping
-// --------------------------------------------------------------------------
+/** Half the shorter of the two clips a transition joins — invariant 7's bound. */
+function transitionLimitMs(
+  clips: readonly Draft<MediaClip>[],
+  index: number,
+  side: 'in' | 'out',
+): number {
+  const clip = clips[index]
+  if (!clip) return 0
+  const neighbour = side === 'in' ? clips[index - 1] : clips[index + 1]
+  const shortest = Math.min(clip.durationMs, neighbour?.durationMs ?? clip.durationMs)
+  return Math.floor(shortest / 2)
+}
 
 /**
- * Snap a position to the nearest edge within `toleranceMs`, or leave it alone.
+ * Bring every transition on a track back inside invariant 7.
  *
- * The tolerance is in milliseconds and the caller converts it from pixels, so
- * snapping feels the same at every zoom: a fixed pixel tolerance would snap
- * across ten seconds when zoomed out.
+ * **A transition is clamped when it is set, and that is not enough**: the bound
+ * depends on two clip *durations*, so trimming a clip after the fact — or
+ * splitting it, or moving a neighbour away — can put a transition that was
+ * legal over the line without touching it. The server checks the invariant on
+ * every save, so the result is a `422` two seconds and several edits later,
+ * naming a clip the user was not editing, with autosave then stuck. Anything
+ * that changes a duration or a neighbour calls this.
+ *
+ * One pass over the track, and it writes only where the value actually changes,
+ * so a no-op produces no Immer patch and therefore no history entry.
  */
-export function snapTo(candidates: number[], positionMs: number, toleranceMs: number): number {
-  let best = positionMs
-  let distance = toleranceMs
-  for (const candidate of candidates) {
-    const gap = Math.abs(candidate - positionMs)
-    if (gap <= distance) {
-      distance = gap
-      best = candidate
+export function clampTransitions(track: Draft<MediaTrack>): void {
+  track.clips.forEach((clip, index) => {
+    for (const side of ['in', 'out'] as const) {
+      const transition = side === 'in' ? clip.transitionIn : clip.transitionOut
+      if (!transition) continue
+      const limit = transitionLimitMs(track.clips, index, side)
+      if (transition.durationMs <= limit) continue
+      if (limit <= 0) {
+        // Nothing left to dissolve across. A zero-length transition is stored
+        // as no transition at all, the same rule the inspector's "cut" follows.
+        if (side === 'in') clip.transitionIn = null
+        else clip.transitionOut = null
+      } else {
+        transition.durationMs = limit
+      }
     }
-  }
-  return best
+  })
 }
 
 // --------------------------------------------------------------------------

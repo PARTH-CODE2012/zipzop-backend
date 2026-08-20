@@ -19,6 +19,7 @@ import {
   selectLanes,
   selectSelectedAnyClip,
   selectSingleClipId,
+  trimEndCeilingMs,
   useEditor,
 } from './store'
 import { emptyTimeline, type TimelineDocument } from './timeline-document'
@@ -235,6 +236,95 @@ describe('dragging', () => {
     state().beginDrag({ kind: 'move', clipId: id, previewMs: 0 })
     state().undo()
     expect(selectClips(state())).toHaveLength(1)
+  })
+})
+
+/**
+ * The one bound the document cannot express.
+ *
+ * Invariant 4 — a clip may not read past the end of its media — needs the
+ * asset's own length, which the timeline deliberately does not carry. Dropping
+ * a trim-end gesture without it produced a document the server rejects with a
+ * `422` on the next autosave: the editor then shows "Could not save", stops
+ * retrying, and everything since the last good save is lost on reload. Nothing
+ * in the interface says which clip is at fault.
+ */
+describe('trimming against the media, not just the neighbours', () => {
+  beforeEach(() => {
+    useEditor.getState().setAssetDurations({ ast_1: 10_000 })
+  })
+
+  it('a dropped trim-end stops at the end of the file', () => {
+    loaded()
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+
+    state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 10_000 })
+    state().updateDrag(40_000) // dragged far past the end of the media
+    state().endDrag()
+
+    expect(selectClips(state())[0]?.durationMs).toBe(10_000)
+  })
+
+  it('counts speed, because 2x eats the file twice as fast', () => {
+    loaded()
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 4_000 })
+    state().setClipProperties(id, { speed: 2 })
+
+    state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 4_000 })
+    state().updateDrag(40_000)
+    state().endDrag()
+
+    // Ten seconds of media at 2x is five seconds of timeline.
+    expect(selectClips(state())[0]?.durationMs).toBe(5_000)
+  })
+
+  it('still stops at the next clip when that comes first', () => {
+    loaded()
+    const first = state().addClip({ assetId: 'ast_1', durationMs: 2_000 })
+    state().addClip({ assetId: 'ast_1', durationMs: 2_000 })
+
+    state().beginDrag({ kind: 'trim-end', clipId: first, previewMs: 2_000 })
+    state().updateDrag(9_000)
+    state().endDrag()
+
+    expect(selectClips(state())[0]?.durationMs).toBe(2_000)
+  })
+
+  it('trims freely when the media length is not known yet', () => {
+    // The media list has not come back, or the asset is not in it. The server
+    // is still the authority; the editor must not invent a limit of its own.
+    loaded()
+    useEditor.getState().setAssetDurations({})
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 4_000 })
+
+    state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 4_000 })
+    state().updateDrag(9_000)
+    state().endDrag()
+
+    expect(selectClips(state())[0]?.durationMs).toBe(9_000)
+  })
+
+  it('records nothing when the gesture ends where it started', () => {
+    // The clamp now runs on every trim, including one that changes nothing.
+    // A pass that wrote the same values back would produce Immer patches, an
+    // undo step for a drag the user cancelled by returning, and an autosave.
+    loaded()
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+    state().markSaved(4)
+    const steps = state().history.past.length
+
+    state().beginDrag({ kind: 'trim-end', clipId: id, previewMs: 10_000 })
+    state().updateDrag(10_000)
+    state().endDrag()
+
+    expect(state().history.past).toHaveLength(steps)
+    expect(state().isDirty).toBe(false)
+  })
+
+  it('reports the ceiling the preview has to respect', () => {
+    loaded()
+    const id = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+    expect(trimEndCeilingMs(state(), id)).toBe(10_000)
   })
 })
 

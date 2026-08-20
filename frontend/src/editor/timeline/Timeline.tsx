@@ -19,13 +19,14 @@
  * `gestures.ts`, tested without a DOM. What is left here is pointer plumbing.
  */
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import {
   selectAllClips,
   clipBoundsMs,
   selectDurationMs,
   selectLanes,
+  trimEndCeilingMs,
   useEditor,
 } from '@/editor/state/store'
 import {
@@ -37,7 +38,7 @@ import {
 } from '@/editor/state/timeline-document'
 import {
   clipsInWindow,
-  marqueeHits,
+  marqueeSelection,
   msAtLaneX,
   snapCandidatesFor,
   snapMs,
@@ -74,6 +75,16 @@ const LANE_LABEL: Record<string, string> = { video: 'V1', audio: 'A1', text: 'T1
 interface Marquee {
   fromMs: number
   toMs: number
+  /**
+   * The lanes the rubber band covers, as indices into `lanes`.
+   *
+   * **A marquee without a vertical extent is not a marquee**, it is a time
+   * range: it would catch every clip playing at that instant on every lane, and
+   * a plain click on an empty patch of the text lane would select whatever
+   * video happened to be underneath it.
+   */
+  fromLane: number
+  toLane: number
   additive: boolean
 }
 
@@ -87,6 +98,7 @@ export function Timeline() {
   const drag = useEditor((state) => state.drag)
 
   const laneRef = useRef<HTMLDivElement>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
   const [viewportPx, setViewportPx] = useState(0)
   const [scrollPx, setScrollPx] = useState(0)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
@@ -126,7 +138,7 @@ export function Timeline() {
   /** Ctrl/⌘ + wheel zooms around the cursor; a plain wheel scrolls. Anchoring on
    * the cursor is what stops the clip you are looking at sliding away. */
   const onWheel = useCallback(
-    (event: React.WheelEvent) => {
+    (event: WheelEvent) => {
       if (!(event.ctrlKey || event.metaKey)) {
         setScrollPx((current) => Math.max(0, current + event.deltaX + event.deltaY))
         return
@@ -142,6 +154,27 @@ export function Timeline() {
     },
     [scrollPx, zoom],
   )
+
+  /**
+   * Registered by hand, because **React's `onWheel` is passive**.
+   *
+   * React attaches `wheel` (with `touchstart` and `touchmove`) to the root with
+   * `{ passive: true }`, so `preventDefault()` inside a JSX `onWheel` does
+   * nothing but log a warning — ⌘/ctrl + wheel would zoom the timeline *and*
+   * the whole browser page at the same time. A listener added here can say it
+   * is not passive; the one on the JSX attribute cannot.
+   */
+  const latestWheel = useRef(onWheel)
+  useLayoutEffect(() => {
+    latestWheel.current = onWheel
+  }, [onWheel])
+  useEffect(() => {
+    const lane = laneRef.current
+    if (!lane) return
+    const handler = (event: WheelEvent) => latestWheel.current(event)
+    lane.addEventListener('wheel', handler, { passive: false })
+    return () => lane.removeEventListener('wheel', handler)
+  }, [])
 
   // ------------------------------------------------------------------ drag
   const onClipPointerDown = useCallback(
@@ -168,20 +201,38 @@ export function Timeline() {
     [xToMs],
   )
 
+  /** Which lane a pointer is over, as an index into `lanes`. */
+  const laneAt = useCallback(
+    (clientY: number) => {
+      const grid = gridRef.current
+      if (!grid) return 0
+      const offset = clientY - grid.getBoundingClientRect().top
+      return Math.max(0, Math.min(lanes.length - 1, Math.floor(offset / LANE_HEIGHT)))
+    },
+    [lanes.length],
+  )
+
   const onLanePointerMove = useCallback(
     (event: React.PointerEvent) => {
       const store = useEditor.getState()
       const current = store.drag
       if (current) {
         const raw = xToMs(event.clientX) - (current.grabOffsetMs ?? 0)
-        store.updateDrag(snapMs(raw, snapTargets, zoom, event.altKey))
+        let previewMs = snapMs(raw, snapTargets, zoom, event.altKey)
+        if (current.kind === 'trim-end') {
+          // The commit clamps to this; so must the preview, or the edge trails
+          // the pointer past the end of the media and snaps back on release.
+          const ceiling = trimEndCeilingMs(store, current.clipId)
+          if (ceiling !== undefined) previewMs = Math.min(previewMs, ceiling)
+        }
+        store.updateDrag(previewMs)
         return
       }
       if (marquee && event.buttons === 1) {
-        setMarquee({ ...marquee, toMs: xToMs(event.clientX) })
+        setMarquee({ ...marquee, toMs: xToMs(event.clientX), toLane: laneAt(event.clientY) })
       }
     },
-    [marquee, snapTargets, xToMs, zoom],
+    [laneAt, marquee, snapTargets, xToMs, zoom],
   )
 
   const onLanePointerUp = useCallback(() => {
@@ -191,12 +242,13 @@ export function Timeline() {
       return
     }
     if (marquee) {
-      const hits = marqueeHits(allClips, marquee.fromMs, marquee.toMs)
+      // Only the lanes the band actually covers — see `marqueeSelection`.
+      const hits = marqueeSelection(lanes, marquee)
       const next = marquee.additive ? [...store.selection, ...hits] : hits
       store.selectMany(next)
       setMarquee(null)
     }
-  }, [allClips, marquee])
+  }, [lanes, marquee])
 
   /** An empty patch of lane starts a marquee. The ruler is what scrubs — a lane
    * that both scrubbed and lassoed would move the playhead on every attempt to
@@ -205,9 +257,10 @@ export function Timeline() {
     (event: React.PointerEvent) => {
       ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
       const at = xToMs(event.clientX)
-      setMarquee({ fromMs: at, toMs: at, additive: event.shiftKey })
+      const lane = laneAt(event.clientY)
+      setMarquee({ fromMs: at, toMs: at, fromLane: lane, toLane: lane, additive: event.shiftKey })
     },
-    [xToMs],
+    [laneAt, xToMs],
   )
 
   const scrub = useCallback(
@@ -270,7 +323,6 @@ export function Timeline() {
         <div
           ref={laneRef}
           className="relative min-w-0 flex-1 overflow-hidden"
-          onWheel={onWheel}
           onPointerMove={onLanePointerMove}
           onPointerUp={onLanePointerUp}
           data-testid="timeline-lane"
@@ -311,11 +363,12 @@ export function Timeline() {
           </div>
 
           <div
+            ref={gridRef}
             className="relative"
             style={{
               // The grid the project lead asked to keep technical: majors on the
               // ruler's own labels, minors at a fifth of that, 1px hairlines.
-              backgroundImage: gridImage(ticks, scrollPx),
+              ...gridStyle(ticks, scrollPx),
               backgroundColor: 'var(--color-track)',
             }}
             onPointerDown={onLanePointerDown}
@@ -337,14 +390,19 @@ export function Timeline() {
             ))}
             {marquee && Math.abs(marquee.toMs - marquee.fromMs) > 0 && (
               <div
-                className="pointer-events-none absolute top-0 bottom-0"
+                className="pointer-events-none absolute"
                 style={{
                   left: msToPx(Math.min(marquee.fromMs, marquee.toMs), zoom) - scrollPx,
                   width: msToPx(Math.abs(marquee.toMs - marquee.fromMs), zoom),
+                  top: Math.min(marquee.fromLane, marquee.toLane) * LANE_HEIGHT,
+                  height:
+                    (Math.abs(marquee.toLane - marquee.fromLane) + 1) * LANE_HEIGHT,
                   background: 'var(--color-accent-soft)',
                   border: '1px solid var(--color-accent-line)',
                 }}
                 data-testid="marquee"
+                data-from-lane={Math.min(marquee.fromLane, marquee.toLane)}
+                data-to-lane={Math.max(marquee.fromLane, marquee.toLane)}
               />
             )}
           </div>
@@ -383,19 +441,37 @@ export function Timeline() {
  *
  * One div per gridline at 500 clips' worth of zoom is thousands of nodes that
  * exist only to be one pixel wide. `background-image` costs one paint.
+ *
+ * **The scroll offset is the whole reason this returns a position too.** The
+ * gradient repeats from the element's own left edge, while the ruler draws its
+ * ticks at `tick.px - scrollPx`: leave the background where it is and the grid
+ * and the ruler agree only at the top of the timeline, then drift apart by up
+ * to a full interval as soon as anything is scrolled. Both layers share the
+ * origin — the minor interval divides the major one exactly — so one offset
+ * moves them together.
  */
-function gridImage(ticks: { px: number; major: boolean }[], scrollPx: number): string {
+function gridStyle(
+  ticks: { px: number; major: boolean }[],
+  scrollPx: number,
+): { backgroundImage: string; backgroundPosition: string } {
   const majors = ticks.filter((tick) => tick.major)
   const first = majors[0]
   const second = majors[1]
-  if (!first || !second) return 'none'
+  if (!first || !second) return { backgroundImage: 'none', backgroundPosition: '0 0' }
   const majorPx = second.px - first.px
-  if (majorPx <= 0) return 'none'
-  void scrollPx
-  return (
-    `repeating-linear-gradient(90deg, var(--color-grid-major) 0 1px, transparent 1px ${majorPx}px), ` +
-    `repeating-linear-gradient(90deg, var(--color-grid-minor) 0 1px, transparent 1px ${majorPx / 5}px)`
-  )
+  if (majorPx <= 0) return { backgroundImage: 'none', backgroundPosition: '0 0' }
+  return {
+    backgroundImage:
+      `repeating-linear-gradient(90deg, var(--color-grid-major) 0 1px, transparent 1px ${majorPx}px), ` +
+      `repeating-linear-gradient(90deg, var(--color-grid-minor) 0 1px, transparent 1px ${majorPx / 5}px)`,
+    backgroundPosition: `${-modulo(scrollPx, majorPx)}px 0`,
+  }
+}
+
+/** `%` keeps the sign of the dividend in JavaScript, and a negative offset here
+ * would shift the grid the wrong way at the left edge. */
+function modulo(value: number, span: number): number {
+  return ((value % span) + span) % span
 }
 
 const LANE_ICON: Record<string, React.ComponentType<IconProps>> = {

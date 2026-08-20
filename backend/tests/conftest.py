@@ -17,6 +17,7 @@ late.
 import os
 import pathlib
 import subprocess
+import sys
 import uuid
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
@@ -90,8 +91,14 @@ def database() -> Iterator[None]:
             conn.execute(sa.text(f'CREATE DATABASE "{name}"'))
     admin.dispose()
 
+    # `sys.executable -m alembic`, not a bare `alembic`. The Makefile runs the
+    # suite as `./.venv/bin/pytest` without activating the environment, so the
+    # virtualenv's `bin` is not on PATH and the bare name raises
+    # `FileNotFoundError` — 129 errors before a single test runs, from the
+    # command the README tells people to use. CI never saw it because it
+    # installs into the runner's own Python, where `alembic` resolves.
     subprocess.run(
-        ["alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         cwd=BACKEND_ROOT,
         check=True,
         capture_output=True,

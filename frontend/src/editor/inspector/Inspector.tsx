@@ -13,6 +13,8 @@
  * because a slider alone cannot tell you that speed is exactly 1.00.
  */
 
+import { useState } from 'react'
+
 import { IconCrop, IconTransition, IconVolume } from '@/editor/icons'
 import { selectSelectedAnyClip, useEditor } from '@/editor/state/store'
 import type { AnyClip, MediaClip, TextClip } from '@/editor/state/timeline-document'
@@ -292,6 +294,19 @@ function Chip({
   )
 }
 
+/**
+ * A slider that writes to the document **once, when the gesture ends**.
+ *
+ * The store's second rule — *"a drag does not commit"* — was written for
+ * dragging clips, and it applies just as much here: `onChange` on a range input
+ * fires per pixel of travel, so committing from it puts forty entries in the
+ * undo stack for one pull of the volume handle, queues forty autosaves, and
+ * makes ⌘Z appear broken because each press moves the value by one step.
+ *
+ * The number under the hand is local state; the release is what edits the
+ * document. `pointerup` covers the mouse, `keyup` the arrow keys, and `blur`
+ * the case where the pointer is released somewhere the input never hears about.
+ */
 function Slider({
   label,
   icon,
@@ -311,6 +326,15 @@ function Slider({
   format: (value: number) => string
   onChange: (value: number) => void
 }) {
+  const [dragged, setDragged] = useState<number | null>(null)
+  const shown = dragged ?? value
+
+  const commit = () => {
+    if (dragged === null) return
+    setDragged(null)
+    if (dragged !== value) onChange(dragged)
+  }
+
   return (
     <div className="flex items-center gap-2">
       <span className="flex w-24 shrink-0 items-center gap-1.5" style={{ color: 'var(--color-ink-3)' }}>
@@ -326,13 +350,17 @@ function Slider({
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        value={shown}
+        onChange={(event) => setDragged(Number(event.target.value))}
+        onPointerUp={commit}
+        onLostPointerCapture={commit}
+        onKeyUp={commit}
+        onBlur={commit}
         aria-label={label}
         className="flex-1"
       />
       <span className="tnum w-16 text-right" style={{ color: 'var(--color-ink)' }}>
-        {format(value)}
+        {format(shown)}
       </span>
     </div>
   )

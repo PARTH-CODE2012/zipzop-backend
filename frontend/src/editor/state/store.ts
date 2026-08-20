@@ -75,6 +75,17 @@ export interface EditorState {
   /** Set by `commit`, cleared by `markSaved`. Autosave reads it. */
   isDirty: boolean
   history: History
+  /**
+   * Each asset's own length, keyed by `assetId` — **not** part of the document.
+   *
+   * Invariant 4 says a clip may not read past the end of its media, and the
+   * document deliberately does not carry the asset's duration (contract §4.2:
+   * nothing derivable is stored). Without it here the editor cannot enforce the
+   * one bound only the file knows, and a trim past the end of the media is
+   * rejected by the server two seconds later, on an autosave, naming a clip the
+   * user has already stopped looking at.
+   */
+  assetDurationsMs: Readonly<Record<string, number>>
 
   // -------------------------------------------------------------- editing
   selection: ReadonlySet<string>
@@ -89,6 +100,7 @@ export interface EditorState {
   undo: () => void
   redo: () => void
   markSaved: (version: number, savedTimeline?: TimelineDocument) => void
+  setAssetDurations: (durations: Readonly<Record<string, number>>) => void
   reset: () => void
 
   // ------------------------------------------------------------- editing
@@ -123,6 +135,7 @@ export interface EditorState {
 }
 
 const NO_SELECTION: ReadonlySet<string> = Object.freeze(new Set<string>())
+const NO_DURATIONS: Readonly<Record<string, number>> = Object.freeze({})
 
 export const useEditor = create<EditorState>((set, get) => ({
   projectId: null,
@@ -130,6 +143,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   version: 0,
   isDirty: false,
   history: emptyHistory(),
+  assetDurationsMs: NO_DURATIONS,
 
   selection: NO_SELECTION,
   playheadMs: 0,
@@ -196,6 +210,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       isDirty: savedTimeline !== undefined ? state.timeline !== savedTimeline : false,
     })),
 
+  /** Fed from `GET /media` — every ready asset, not only the ones with a proxy:
+   * an audio file has no proxy and still has a length to trim against. */
+  setAssetDurations: (durations) => set({ assetDurationsMs: durations }),
+
+  /** Closes the project. `assetDurationsMs` deliberately survives: it describes
+   * the account's media library, not the open timeline, and the next project to
+   * open uses the same files. */
   reset: () =>
     set({
       projectId: null,
@@ -354,7 +375,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ drag: null })
     if (drag.kind === 'move') get().moveClip(drag.clipId, drag.previewMs)
     else if (drag.kind === 'trim-start') get().trimStart(drag.clipId, drag.previewMs)
-    else get().trimEnd(drag.clipId, drag.previewMs)
+    else {
+      // The asset's length is the one bound the document cannot express, and
+      // dropping it here is what sends an invalid timeline to the server.
+      const maxSourceMs = assetDurationMs(get(), drag.clipId)
+      get().trimEnd(drag.clipId, drag.previewMs, maxSourceMs === undefined ? {} : { maxSourceMs })
+    }
   },
 
   /** Escape during a drag. The document was never touched, so there is nothing
@@ -448,6 +474,38 @@ export function clipBoundsMs(
 
 export function selectClipStartMs(state: EditorState, clip: MediaClip): number {
   return clipBoundsMs(state.drag, clip).startMs
+}
+
+/** The length of the file a clip reads from, when the media library has told
+ * us. Undefined for a text clip, or an asset that has not been listed yet. */
+export function assetDurationMs(state: EditorState, clipId: string): number | undefined {
+  const found = locateClip(state.timeline, clipId)
+  if (!found || !('assetId' in found.clip)) return undefined
+  return state.assetDurationsMs[found.clip.assetId]
+}
+
+/**
+ * The furthest right a trim-end gesture may drag, in timeline milliseconds.
+ *
+ * The commit clamps to this anyway; the *preview* has to as well, or the edge
+ * follows the pointer for half a second and then jumps back on release, which
+ * reads as the editor having lost the gesture rather than as a limit.
+ *
+ * Undefined when nothing constrains it — no next clip and no known asset length.
+ */
+export function trimEndCeilingMs(state: EditorState, clipId: string): number | undefined {
+  const found = locateClip(state.timeline, clipId)
+  if (!found || !('assetId' in found.clip)) return undefined
+  const clip = found.clip
+
+  const next = found.track.clips[found.index + 1]
+  const maxSourceMs = state.assetDurationsMs[clip.assetId]
+  const ceilings = [
+    next?.startMs,
+    maxSourceMs === undefined ? undefined : ops.maxTrimEndMs(clip, maxSourceMs),
+  ].filter((value): value is number => value !== undefined)
+
+  return ceilings.length ? Math.min(...ceilings) : undefined
 }
 
 /** Every track in the document, in a stable lane order: video, audio, text.

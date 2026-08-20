@@ -278,6 +278,30 @@ async def test_replaying_a_rotated_token_revokes_the_whole_chain(
     assert live_tokens == 0
 
 
+async def test_a_refused_refresh_clears_the_dead_cookie(client: AsyncClient) -> None:
+    """Every branch that rejects a refresh also tells the browser to drop it.
+
+    It used to call `response.delete_cookie(...)` and then raise, which does
+    nothing at all: FastAPI copies the injected `Response`'s headers onto the
+    reply only when the handler *returns*, and an exception is turned into a
+    response by the error handler, which has never seen that object. The token
+    was dead on the server and the browser kept sending it for thirty days.
+    """
+    await _register(client)
+    stolen = client.cookies.get(REFRESH_COOKIE_NAME)
+    assert stolen
+    assert (await client.post(f"{V1}/auth/refresh")).status_code == 200
+
+    client.cookies.set(REFRESH_COOKIE_NAME, stolen)
+    replay = await client.post(f"{V1}/auth/refresh")
+
+    assert replay.status_code == 401
+    cleared = replay.headers.get("set-cookie", "")
+    assert REFRESH_COOKIE_NAME in cleared
+    # A deletion is an empty value with an expiry in the past.
+    assert "Max-Age=0" in cleared or "expires=Thu, 01 Jan 1970" in cleared
+
+
 async def test_refresh_without_a_cookie_is_refused(client: AsyncClient) -> None:
     response = await client.post(f"{V1}/auth/refresh")
     assert response.status_code == 401

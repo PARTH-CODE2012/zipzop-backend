@@ -155,5 +155,103 @@ help, so it now names the address it could not reach.
 - **Web Audio gain automation.** Per-clip volume and fades are in the document
   and the export renderer will honour them; the browser preview does not apply
   them yet.
+- **Transitions in the preview.** They are editable, clamped and saved, and the
+  preview draws every join as a cut. This one was *not* a decision when M3
+  shipped — it was an oversight the audit below found, and it stays open because
+  closing it is not an adapter change. The engine derives a crossfade from two
+  clips **overlapping in time**, and the document forbids that (invariant 1): a
+  transition is metadata on a join. Turning it into an overlap means deciding
+  which side gives up the frames, and **the contract does not say** — §4.2 only
+  records that a transition *"overlaps the neighbouring clip"*. Whatever is
+  decided, the export renderer in M5 has to make the same choice, so it belongs
+  in `05-api-contract.md` before it belongs in code.
 - **The IndexedDB mirror** 💤 — already marked deferrable, and the proper answer
   to the 64 KB unload cap above.
+
+---
+
+## 6. The audit after M3, and what a second read found
+
+M3 shipped with 182 green tests and a working end-to-end run. Reading it again
+found nine defects anyway, and the pattern in them is worth more than the list:
+**almost every one lives at a seam that no single module owns.**
+
+### The two that lost the user's work
+
+Both end the same way — the autosave comes back `422 INVALID_TIMELINE`, the
+status bar says "Could not save", the loop stops, and everything since the last
+good save is gone on reload. Neither names the clip on screen.
+
+- 🔴 **A trim-end drag could read past the end of its media.** `trimEnd` has
+  taken a `maxSourceMs` bound since it was written, it is tested, and **nothing
+  in the interface ever passed it**: `endDrag` called the two-argument form. The
+  only ceiling was the next clip, so the very first thing a user does — add a
+  clip, pull its right edge out — produced a document the server rejects on
+  invariant 4. The asset's length is not in the document (nothing derivable is),
+  so the store now holds it separately, fed from `GET /media`, and both the
+  commit and the drag preview clamp to it.
+- 🔴 **A transition was clamped when it was set, and never again.** Invariant 7
+  is a bound on *two clip durations*, so trimming, splitting, moving or deleting
+  a clip can put a transition over the line without touching it. `clampTransitions`
+  now runs after every operation that changes a duration or a neighbour — one
+  pass, writing only where the value actually changes, so a no-op produces no
+  Immer patch and no spurious undo step.
+
+### The seams
+
+- **Titles never reached the screen.** The adapter handed the engine `text: []`
+  unconditionally. The engine has drawn text since M1 and the document has
+  carried it since M3; the join between them was the one place nobody looked.
+  And once wired, the overlay's dirty check keyed on clip **ids** — correct for
+  captions, which are generated once, and wrong for the one thing M3 added: a
+  title exists to be retyped, and retyping it would not have redrawn.
+- **`keepMine` and `loadTheirs` used the route segment, not the project.**
+  `/editor/scratch` creates a project and swaps the id in with `replaceState`,
+  which does not re-render the route — so the prop still read `scratch` for the
+  rest of the session. Resolving a conflict therefore 404'd, and "load the other
+  version" created a *third* project instead of reloading. Both now ask the
+  store what was actually opened.
+- **Strict Mode created two projects.** `next.config.ts` keeps Strict Mode on
+  deliberately and warns that effects run twice; the open effect was not written
+  for it, so every visit to `/editor/scratch` left an orphaned empty project.
+
+### The interface
+
+- **A plain click on empty lane selected clips on other lanes.** The marquee had
+  a time range and no vertical extent, so it was a band across every track at
+  once. `marqueeSelection` now takes the lanes it covers; either half alone
+  gives the wrong answer.
+- **⌘/ctrl + wheel zoomed the browser as well as the timeline.** React attaches
+  `wheel` to the root with `{ passive: true }`, so `preventDefault()` inside a
+  JSX `onWheel` does nothing but log a warning. The listener is registered by
+  hand now, where it can say it is not passive.
+- **The grid did not move with the scroll.** A `repeating-linear-gradient`
+  repeats from the element's own left edge while the ruler draws ticks at
+  `tick.px - scrollPx`, so the two agreed only at the very start of the
+  timeline.
+- **Every inspector slider committed per pixel of travel.** One pull of the
+  volume handle was forty undo steps and forty queued autosaves. The store's
+  rule 2 — *a drag does not commit* — was written for clips and applies here
+  unchanged: the number under the hand is local state, the release is the edit.
+
+### And the one that hid the rest
+
+**`make test-backend` did not run from a clean shell.** The fixture shelled out
+to a bare `alembic`, and the Makefile runs `./.venv/bin/pytest` without
+activating the environment — 129 errors before a single test executed, from the
+command the README names as the gate before pushing. CI never saw it, because CI
+installs into the runner's own Python where `alembic` resolves. `sys.executable
+-m alembic` works in both. **A green CI badge is not evidence that the
+developer's command works**, and the one people actually type is the one that
+has to.
+
+Also fixed, smaller: **`text-overlay.ts` was a binary file to git.** Its
+"nothing drawn yet" sentinel was a *literal NUL byte* in the source, and one NUL
+in the first 8 kB is all it takes — the file has never appeared in a diff, a
+blame or a review since M1, silently. The same value written as `'\u0000'`
+behaves identically and is six ASCII characters. `auth.refresh` cleared the
+refresh cookie on three error paths and none of them worked — FastAPI copies the injected `Response`'s headers
+onto the reply only when the handler *returns*, and all three raise, so the
+browser kept a dead token for thirty days. And `scale.ts` and `operations.ts`
+each carried a snapping implementation nothing imported; `gestures.ts` is the
+one the timeline uses.
