@@ -282,27 +282,27 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Backend — job pipeline 🔗
 
-- [ ] `POST /jobs` — validate, resolve assets, price, reserve credits, insert, enqueue, **all in one transaction**
-- [ ] `allocate()` — plan credits first, then top-up. Two ledger rows when it spans both
-- [ ] Idempotency key handling, replay returns the original job
-- [ ] Per-plan concurrency caps
-- [ ] Priority bands, queues split per family
-- [ ] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
-- [ ] Progress published to Redis at real checkpoints, not on a timer
-- [ ] Retry transient failures 3× with backoff; permanent failures go straight to `failed`
-- [ ] Refund on failure, **to the buckets it took from**, read back from the reservation rows
-- [ ] Period-rollover edge case: refund to `topup` instead
-- [ ] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
-- [ ] Results over 256 KB go to S3, `result_key` instead of `result`
-- [ ] WebSocket `/ws` + Redis pub/sub fan-out
+- [x] `POST /jobs` — validate, resolve assets, price, reserve credits, insert, **all in one transaction**. ⚠️ The enqueue is deliberately **after** the commit: sending the task inside the transaction hands a worker an id no other connection can see yet, and the job fails before the user is told it exists
+- [x] `allocate()` — plan credits first, then top-up. Two ledger rows when it spans both. Both of the documented examples are tests
+- [x] Idempotency key handling, replay returns the original job and charges once
+- [x] Per-plan concurrency caps — applied **at the claim**, not at creation: the contract promises the request still succeeds and the job waits for a slot
+- [x] Priority bands, queues split per family. Redis has no native priority, so Celery's `priority_steps` are set to the four plans' `queue_priority` values and `apply_async(priority=…)` needs no translation
+- [x] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
+- [x] Progress published to Redis at real checkpoints, not on a timer
+- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times
+- [x] Refund on failure, **to the buckets it took from**, read back from the reservation rows
+- [x] Period-rollover edge case: refund to `topup` instead — with a tolerance, because `jobs.created_at` is the database's clock and `current_period_start` is written by whatever granted it
+- [x] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
+- [x] Results over 256 KB go to S3, `result_key` instead of `result`
+- [ ] WebSocket `/ws` + Redis pub/sub fan-out — **the publish half is done** (`app/services/job_events.py`); the socket endpoint and the client are not
 - [ ] Nightly ledger reconciliation, alerting on drift
 
 ### Backend — the three tools
 
-- [ ] **Captions** — transcribe, word-level timings, emphasis detection. Language list confirmed
-- [ ] **Smart trim** — silence, filler, stutter, repeat detection. Three strengths. Ranges in **asset time**
-- [ ] **Colour analysis** — returns LUT name + strength + alternatives
-- [ ] Ship 3 caption styles and 5 LUTs, with the `.cube` files **shared with the frontend** ⚠️
+- [ ] **Captions** — transcribe, word-level timings, emphasis detection. ⚠️ Blocked on the engine decision in [`docs/10-m4-readiness.md`](docs/10-m4-readiness.md) §1, which is a commercial call, not an implementation one
+- [ ] **Smart trim** — silence, filler, stutter, repeat detection. Three strengths. Ranges in **asset time**. Partly blocked by the same decision: silence is free from ffmpeg, filler and repeat need a transcript
+- [x] **Colour analysis** — returns LUT name + strength + alternatives. Sampled frames through `signalstats`, no external dependency, which is why the readiness doc put it first
+- [ ] Ship 3 caption styles and 5 LUTs, with the `.cube` files **shared with the frontend** ⚠️ — the five looks are named and recommended; only `cinematic_warm` has a `.cube` file. **A recommendation the browser cannot render is worse than none**
 
 ### Frontend — tools
 

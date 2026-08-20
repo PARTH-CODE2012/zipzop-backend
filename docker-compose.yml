@@ -96,7 +96,10 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       S3_ENDPOINT_URL: http://minio:9000
     ports:
-      - "8000:8000"
+      # Inside the container 8000 is uncontested — it has the network namespace
+      # to itself. Only the host side can collide, so only the host side moves,
+      # and it reads the same API_PORT as every other entry point.
+      - "${API_PORT:-8123}:8000"
     volumes:
       - ./backend:/app
     depends_on:

@@ -185,6 +185,90 @@
         "title": "AssetResponse",
         "type": "object"
       },
+      "CaptionsInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "language": {
+            "default": "auto",
+            "title": "Language",
+            "type": "string"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "CaptionsInput",
+        "type": "object"
+      },
+      "ColorAnalysisInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "preferredLook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferredlook"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "ColorAnalysisInput",
+        "type": "object"
+      },
       "ColorGradeEffect": {
         "description": "contract \u00a74.4. Phase 1 defines exactly one effect type.\n\nWhen a second arrives this becomes a discriminated union on `type`, which is\nwhy `type` is a Literal rather than absent \u2014 the field is already carrying\nthe discriminator's weight before there is anything to discriminate.",
         "properties": {
@@ -273,6 +357,44 @@
           "etag"
         ],
         "title": "CompletedPart",
+        "type": "object"
+      },
+      "CreateJobRequest": {
+        "properties": {
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionsInput"
+              },
+              {
+                "$ref": "#/components/schemas/SmartTrimInput"
+              },
+              {
+                "$ref": "#/components/schemas/ColorAnalysisInput"
+              }
+            ],
+            "title": "Input"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectid"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/JobTool"
+          }
+        },
+        "required": [
+          "tool",
+          "input"
+        ],
+        "title": "CreateJobRequest",
         "type": "object"
       },
       "CreateProjectRequest": {
@@ -400,6 +522,45 @@
         "title": "DependencyStatus",
         "type": "object"
       },
+      "EstimateResponse": {
+        "description": "What `POST /jobs` would charge, without creating anything.\n\n`blockedBy` carries the error code the real call would return, so the client\ncan put \"Not enough credits\" on the button itself rather than after a failed\nclick (contract \u00a76.1).",
+        "properties": {
+          "blockedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockedby"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "estimatedSeconds": {
+            "title": "Estimatedseconds",
+            "type": "integer"
+          },
+          "sufficientBalance": {
+            "title": "Sufficientbalance",
+            "type": "boolean"
+          },
+          "wouldReserveFrom": {
+            "$ref": "#/components/schemas/ReservedFrom"
+          }
+        },
+        "required": [
+          "credits",
+          "wouldReserveFrom",
+          "estimatedSeconds",
+          "sufficientBalance"
+        ],
+        "title": "EstimateResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -447,6 +608,207 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "JobError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "JobError",
+        "type": "object"
+      },
+      "JobFamily": {
+        "enum": [
+          "analysis",
+          "render",
+          "inference"
+        ],
+        "title": "JobFamily",
+        "type": "string"
+      },
+      "JobResponse": {
+        "properties": {
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "creditsReserved": {
+            "title": "Creditsreserved",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimatedSeconds": {
+            "title": "Estimatedseconds",
+            "type": "integer"
+          },
+          "family": {
+            "$ref": "#/components/schemas/JobFamily"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outputAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputassetid"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectid"
+          },
+          "reservedFrom": {
+            "$ref": "#/components/schemas/ReservedFrom"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "resultUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resulturl"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/JobTool"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "family",
+          "status",
+          "progress",
+          "priority",
+          "creditsReserved",
+          "reservedFrom",
+          "estimatedSeconds",
+          "createdAt"
+        ],
+        "title": "JobResponse",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "JobTool": {
+        "enum": [
+          "captions",
+          "smart_trim",
+          "color_analysis",
+          "export",
+          "face_map",
+          "lip_sync",
+          "denoise",
+          "dereverb",
+          "clip_finder",
+          "template_suggest",
+          "upscale",
+          "stabilize"
+        ],
+        "title": "JobTool",
+        "type": "string"
       },
       "LoginRequest": {
         "properties": {
@@ -745,6 +1107,33 @@
           "items"
         ],
         "title": "Page[AssetResponse]",
+        "type": "object"
+      },
+      "Page_JobResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[JobResponse]",
         "type": "object"
       },
       "Page_ProjectSummary_": {
@@ -1048,6 +1437,27 @@
         "title": "ProjectSummary",
         "type": "object"
       },
+      "RangeMs": {
+        "description": "A window inside the asset, in **asset** time \u2014 never timeline time.\n\nThe distinction is the one that makes captions land in the wrong place when\nit is got wrong: a clip trimmed to start at 4 s and played at 2x has a\ndifferent clock from the timeline it sits on (contract \u00a76.2).",
+        "properties": {
+          "endMs": {
+            "exclusiveMinimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs"
+        ],
+        "title": "RangeMs",
+        "type": "object"
+      },
       "RefreshResponse": {
         "properties": {
           "accessToken": {
@@ -1099,6 +1509,28 @@
         "title": "RegisterRequest",
         "type": "object"
       },
+      "ReservedFrom": {
+        "description": "Which buckets a job drew from. A job can span two \u2014 contract \u00a76.",
+        "properties": {
+          "facemapSeconds": {
+            "default": 0,
+            "title": "Facemapseconds",
+            "type": "integer"
+          },
+          "plan": {
+            "default": 0,
+            "title": "Plan",
+            "type": "integer"
+          },
+          "topup": {
+            "default": 0,
+            "title": "Topup",
+            "type": "integer"
+          }
+        },
+        "title": "ReservedFrom",
+        "type": "object"
+      },
       "SessionResponse": {
         "description": "What register and login return.\n\n**No `refreshToken` field.** The contract's version 1.1 put it in the body;\nit is now delivered as an httpOnly cookie instead, so no script can read\nit and an XSS cannot walk away with a 30-day session. The change is\nrecorded in docs/05-api-contract.md \u00a72.",
         "properties": {
@@ -1120,6 +1552,50 @@
           "expiresIn"
         ],
         "title": "SessionResponse",
+        "type": "object"
+      },
+      "SmartTrimInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strength": {
+            "default": "medium",
+            "enum": [
+              "light",
+              "medium",
+              "aggressive"
+            ],
+            "title": "Strength",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "SmartTrimInput",
         "type": "object"
       },
       "SubscriptionSummary": {
@@ -1950,6 +2426,284 @@
         "summary": "Create an account",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "description": "*\"On reconnect the client calls this to catch up on anything it missed\nwhile disconnected.\"* \u2014 which is why `status=running` is the query that\nmatters, and why the socket is never the source of truth.",
+        "operationId": "list_jobs_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Projectid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The caller's jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "create_job_v1_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/estimate": {
+      "post": {
+        "description": "Contract \u00a76.1. Same body as `POST /jobs`, nothing created.\n\nA block is **reported, not raised**: the point of this endpoint is to put\n\"Not enough credits\" on the button instead of after a failed click, so the\nonly failures that raise here are the ones that mean the request itself is\nwrong \u2014 an asset that does not exist, or one that is not ready.",
+        "operationId": "estimate_job_v1_jobs_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What a job would cost, without creating it",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "`409` if it already finished. Cancelling refunds the reservation in full.\n\nThe refund happens here rather than in the worker: a `queued` job has no\nworker to notice, and one that is running checks the status between stages\nand stops without touching credits that have already gone back.",
+        "operationId": "cancel_job_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel a job",
+        "tags": [
+          "jobs"
         ]
       }
     },

@@ -1,0 +1,201 @@
+"""Colour analysis — contract §6.2, `color_analysis`.
+
+**The tool M4 proves the pipeline with, because it depends on nothing.** No
+transcription engine to choose (docs/10-m4-readiness.md §1 leaves that open), no
+model to download: a handful of sampled frames through ffmpeg, a histogram, and
+a look chosen from what the numbers say. Everything the job pipeline has to get
+right — creation, reservation, the claim, progress, settling, refund on failure
+— is exercised by a tool whose own correctness is this easy to check.
+
+What it returns is a *recommendation*, and the client applies it as an ordinary
+undoable edit. Nothing here touches the media: the grade is one `effects` entry
+on a clip, applied by the browser's WebGL preview and again by the renderer at
+export from the same `.cube` file (contract §6.2, §4.4).
+"""
+
+import json
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
+
+from app.logging import get_logger
+
+log = get_logger(__name__)
+
+FFMPEG_TIMEOUT_SECONDS: Final = 120
+
+#: How many frames to look at. Enough to survive one dark shot in a bright
+#: sequence, few enough that a 60-minute file is still seconds of work —
+#: sampling is the entire reason this tool is cheap.
+SAMPLE_FRAMES: Final = 12
+
+
+class AnalysisFailedError(Exception):
+    """Bad media. A *permanent* failure: the same file analysed again gives the
+    same answer, so retrying it three times only delays the message."""
+
+
+@dataclass(frozen=True, slots=True)
+class FrameStats:
+    """Averages over the sampled frames, all normalised 0-1."""
+
+    luma: float
+    red: float
+    green: float
+    blue: float
+    spread: float
+
+
+#: The catalogue. Five looks, matching what the scope doc asks to ship, each
+#: with the scene it is *for* rather than a name and a shrug.
+#:
+#: ⚠️ **Only `cinematic_warm` has a `.cube` file today** — the one the M1 spike
+#: generated. The other four are named here and in the client's catalogue and
+#: must have real LUTs before this ships to anyone: a recommendation the browser
+#: cannot render is worse than no recommendation. See PHASE1-TASKS M4,
+#: *"ship 3 caption styles and 5 LUTs"*.
+LOOKS: Final[dict[str, dict[str, Any]]] = {
+    "cinematic_warm": {"exposure": "normal", "whiteBalance": "cool", "contrast": "flat"},
+    "vlog_clean": {"exposure": "normal", "whiteBalance": "neutral", "contrast": "normal"},
+    "cyberpunk": {"exposure": "low", "whiteBalance": "cool", "contrast": "flat"},
+    "sun_kissed": {"exposure": "high", "whiteBalance": "warm", "contrast": "normal"},
+    "mono_contrast": {"exposure": "normal", "whiteBalance": "neutral", "contrast": "punchy"},
+}
+
+
+def _run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            args, capture_output=True, timeout=FFMPEG_TIMEOUT_SECONDS, check=False
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - environment problem
+        raise AnalysisFailedError("The server is missing its media tools.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise AnalysisFailedError("This file took too long to analyse.") from exc
+
+
+def sample_frames(source: Path, duration_ms: int) -> FrameStats:
+    """Average colour and spread across `SAMPLE_FRAMES` frames.
+
+    `signalstats` gives per-frame YUV averages; reading them back through
+    `ffprobe`'s frame metadata is far cheaper than decoding into Python, and it
+    keeps the pixels inside ffmpeg where they belong.
+    """
+    if duration_ms <= 0:
+        raise AnalysisFailedError("That file has no duration we can work with.")
+
+    # One frame every N seconds, expressed as an fps filter rather than N seeks:
+    # seeking is what makes this slow on a long file.
+    every_seconds = max(1.0, (duration_ms / 1000) / SAMPLE_FRAMES)
+    result = _run(
+        [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-f",
+            "lavfi",
+            "-i",
+            f"movie={_escape(source)},fps=1/{every_seconds:.3f},signalstats",
+            "-show_entries",
+            "frame_tags=lavfi.signalstats.YAVG,lavfi.signalstats.UAVG,"
+            "lavfi.signalstats.VAVG,lavfi.signalstats.YDIF",
+            "-of",
+            "json",
+            "-read_intervals",
+            "%+#" + str(SAMPLE_FRAMES),
+        ]
+    )
+    if result.returncode != 0:
+        raise AnalysisFailedError("We could not read the picture in that file.")
+
+    try:
+        payload = json.loads(result.stdout or b"{}")
+    except json.JSONDecodeError as exc:
+        raise AnalysisFailedError("We could not read the picture in that file.") from exc
+
+    frames = [f.get("tags", {}) for f in payload.get("frames", [])]
+    readings = [
+        (
+            float(t["lavfi.signalstats.YAVG"]),
+            float(t["lavfi.signalstats.UAVG"]),
+            float(t["lavfi.signalstats.VAVG"]),
+            float(t.get("lavfi.signalstats.YDIF", 0.0)),
+        )
+        for t in frames
+        if "lavfi.signalstats.YAVG" in t
+    ]
+    if not readings:
+        raise AnalysisFailedError("That file has no video track we can analyse.")
+
+    count = len(readings)
+    y = sum(r[0] for r in readings) / count
+    u = sum(r[1] for r in readings) / count
+    v = sum(r[2] for r in readings) / count
+    ydif = sum(r[3] for r in readings) / count
+
+    # YUV to a rough RGB, only to answer "is this warm or cool" — a colour
+    # science conversion would be a false precision on an average of twelve
+    # frames.
+    luma = _clamp01(y / 255)
+    red = _clamp01((y + 1.402 * (v - 128)) / 255)
+    green = _clamp01((y - 0.344 * (u - 128) - 0.714 * (v - 128)) / 255)
+    blue = _clamp01((y + 1.772 * (u - 128)) / 255)
+    return FrameStats(luma=luma, red=red, green=green, blue=blue, spread=_clamp01(ydif / 64))
+
+
+def recommend(stats: FrameStats, *, preferred_look: str | None = None) -> dict[str, Any]:
+    """Turn the numbers into a look, a strength, and two alternatives.
+
+    `preferredLook` from the request wins outright — a user who has chosen a
+    look is not asking for an opinion, they are asking how much of it to apply.
+    """
+    scene = {
+        "exposure": "low" if stats.luma < 0.35 else "high" if stats.luma > 0.65 else "normal",
+        "whiteBalance": (
+            "warm"
+            if stats.red - stats.blue > 0.06
+            else "cool"
+            if stats.blue - stats.red > 0.06
+            else "neutral"
+        ),
+        "contrast": "flat"
+        if stats.spread < 0.18
+        else "punchy"
+        if stats.spread > 0.45
+        else "normal",
+    }
+
+    ranked = sorted(LOOKS, key=lambda name: -_score(LOOKS[name], scene))
+    chosen = preferred_look if preferred_look in LOOKS else ranked[0]
+
+    # Flat, badly balanced footage takes more of the grade; something already
+    # graded takes less. A fixed strength would blow out picture that needed
+    # nothing, which is the failure that makes people turn the feature off.
+    strength = 0.45 + 0.35 * (1 - stats.spread)
+    if scene["whiteBalance"] == "neutral":
+        strength -= 0.1
+    strength = round(min(0.95, max(0.25, strength)), 2)
+
+    alternatives = [
+        {"lut": name, "strength": round(min(0.95, strength * 0.8), 2)}
+        for name in ranked
+        if name != chosen
+    ][:2]
+
+    return {"lut": chosen, "strength": strength, "scene": scene, "alternatives": alternatives}
+
+
+def _score(look: dict[str, Any], scene: dict[str, str]) -> int:
+    return sum(1 for key, value in look.items() if scene.get(key) == value)
+
+
+def _clamp01(value: float) -> float:
+    return 0.0 if value < 0 else 1.0 if value > 1 else value
+
+
+def _escape(path: Path) -> str:
+    """`movie=` is a filter argument, so colons and backslashes in the path are
+    syntax. Scratch paths are ours and contain neither — escaping anyway costs
+    one line and removes the question."""
+    return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")

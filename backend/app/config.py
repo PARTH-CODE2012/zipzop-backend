@@ -26,9 +26,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # ------------------------------------------------------------------ api
+    # Not 8000/3000: those are the two most contested ports on a developer's
+    # machine, and another project holding one produced a stack that failed
+    # three different ways depending on which half won. `scripts/ports.sh`
+    # resolves them for the dev flow; these are the fallbacks when nothing has.
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
-    cors_origins: str = "http://localhost:3000"
+    api_port: int = 8123
+    #: Both spellings of the same origin — a browser sent to `127.0.0.1` and one
+    #: sent to `localhost` present different `Origin` headers, and a list with
+    #: only one of them rejects half the ways of opening the app.
+    cors_origins: str = "http://localhost:3123,http://127.0.0.1:3123"
 
     # ------------------------------------------------------------- database
     database_url: str = "postgresql+asyncpg://zipzop:zipzop@localhost:5432/zipzop"

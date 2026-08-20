@@ -10,7 +10,15 @@
  * found at integration.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/v1'
+/**
+ * Where the API is.
+ *
+ * `NEXT_PUBLIC_API_BASE_URL` is exported by `scripts/ports.sh` before the dev
+ * server starts, so a port that had to move is followed here rather than
+ * guessed. The fallback matches the default in `.env.example`; it is only used
+ * by a bare `pnpm dev` started outside the dev flow.
+ */
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8123/v1'
 
 /** Mirrors docs/05-api-contract.md §1. `code` is stable; `message` is not. */
 export interface ApiErrorBody {

@@ -38,12 +38,31 @@ openapi.json    the API contract — generated, and committed on purpose
 
 ```bash
 make setup      # .env, both dependency trees, and the generated API types
-make infra      # Postgres, Redis, MinIO — infrastructure only, nothing to build
-make migrate    # create the schema and seed the four plans
-make dev-all    # the API, the ingest worker and the dev server
 ```
 
-Then open **http://localhost:3000/editor/scratch**, create an account, and drop a video in.
+```bash
+make watch      # infrastructure, schema, then the API + worker + dev server
+```
+
+`make watch` is the whole thing: it checks the containers, migrates, resolves the
+ports and opens one tmux session with the three servers visible. Then open
+**http://localhost:3123/editor/scratch**, create an account, and drop a video in.
+
+> **Why 3123 and not 3000.** 3000 and 8000 are the two most contested ports on a
+> developer's machine — every Next app and every Python service wants them. When
+> another project has one, this stack used to fail in three different ways
+> depending on which half won, and the worst of them was silent: the editor
+> talked to *the other project's* API, got a 404 from `/health`, and reported
+> that it could not reach the server. `scripts/ports.sh` now resolves both ports
+> before anything binds, steps over whatever is already there, and tells the
+> frontend where the API actually landed.
+>
+> ```bash
+> make ports
+> ```
+>
+> prints what the next `make watch` will use. Override with `API_PORT` and
+> `WEB_PORT` in `.env`.
 
 Anything unexpected:
 
@@ -98,7 +117,14 @@ account — with nothing on screen but *"something went wrong"*.
 **Then one terminal each**, in the foreground, stopped with `Ctrl-C`:
 
 ```bash
-cd backend && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+make dev
+```
+
+or, spelled out — `make ports` says which number to use, and `make dev` reads it
+for you:
+
+```bash
+cd backend && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8123 --reload
 ```
 
 ```bash
@@ -106,10 +132,15 @@ cd backend && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INF
 ```
 
 ```bash
-cd frontend && pnpm dev --port 3000
+cd frontend && NEXT_PUBLIC_API_BASE_URL=http://localhost:8123/v1 pnpm dev --port 3123
 ```
 
-Then **http://localhost:3000/editor/scratch**. A route segment that is not a
+**The environment variable is not optional when you type this by hand.** Without
+it the browser bundle falls back to the default in `.env.example`, and if your
+API is on a different port the editor will quietly talk to nothing — or worse, to
+whatever else is listening. `make dev-frontend` sets it from the resolved port.
+
+Then **http://localhost:3123/editor/scratch**. A route segment that is not a
 real project id means *open a fresh project*: the app creates one and swaps its
 id into the address bar, so reloading returns to the same project rather than
 making another.
@@ -117,7 +148,7 @@ making another.
 To check the API is really up before blaming the interface:
 
 ```bash
-curl -s http://localhost:8000/health
+curl -s http://localhost:8123/health
 ```
 
 `"status": "ok"` with both dependencies `true` is the only answer that means the
@@ -160,9 +191,9 @@ PostgreSQL extension) connects the same way: `localhost:5432`, database
 | **Postgres** | accounts, media rows, the credit ledger | nothing starts |
 | **Redis** | Celery's broker, rate limits, idempotency keys | nothing starts |
 | **MinIO** | object storage — the file itself | uploads fail; it is not optional any more |
-| **API** | `:8000` | the frontend shows a sign-in form that cannot submit |
+| **API** | `:8123` | the frontend shows a sign-in form that cannot submit |
 | **ingest worker** | ffprobe, proxy, thumbnail, waveform | **an upload reaches "Preparing…" and stays there for ever** |
-| **frontend** | `:3000` | — |
+| **frontend** | `:3123` | — |
 
 The worker is the one people forget. Nothing errors when it is absent, because
 nothing failed: the job sits in the queue with no one to take it, and the media
@@ -170,13 +201,15 @@ bin spins with no message to read.
 
 | | |
 |---|---|
-| Editor | http://localhost:3000/editor/scratch |
-| API docs | http://localhost:8000/docs |
-| Health | http://localhost:8000/health |
+| Editor | http://localhost:3123/editor/scratch |
+| API docs | http://localhost:8123/docs |
+| Health | http://localhost:8123/health |
 | MinIO console | http://localhost:9001 — `zipzop` / `zipzop-dev-secret` |
 | Logs | `/tmp/zipzop-{api,worker,web}.log` |
 
-`make dev-stop` stops the three application processes; `make help` lists every target.
+`make dev-stop` stops the three application processes — **this project's only**,
+filtered on their working directory, because a `pkill -f "next dev"` also kills
+every other checkout's dev server. `make help` lists every target.
 
 **No AWS account is required to develop.** MinIO speaks the same presigned-URL protocol as S3, so uploads and ingest are built and tested entirely locally.
 
@@ -199,7 +232,9 @@ and `pnpm dev` all fail on a missing module until `make types` has run.
 | What you see | What it is | Fix |
 |---|---|---|
 | `500` on sign-up, or *"something went wrong on our side"* | The development database has no schema — `alembic` has only ever run against `zipzop_test` | `make migrate` |
-| *"Cannot reach the server…"* on the sign-in panel | The request never left the browser: the API is not running, or is on another port | Start the API, then `curl -s http://localhost:8000/health` |
+| *"Cannot reach the server…"* on the sign-in panel | The request never left the browser: the API is not running, or is on another port | `make doctor` — it names the process holding the port if it is not ours |
+| `{"detail":"Not Found"}` from `/health` | Something that is **not** this API is on that port. Another project, almost always | `make doctor`, then stop it or set `API_PORT` in `.env` |
+| `[Errno 98] address already in use` | The port was taken when the API tried to bind | `make watch` steps over it by itself; `make ports` shows what it picked |
 | `/health` says `degraded` | Postgres, Redis or MinIO is down. Containers do not restart themselves after a daemon restart | `make infra` |
 | The editor `500`s **after** a `pnpm build` | The build overwrote the `.next/` the running dev server was using | `Ctrl-C`, `rm -rf frontend/.next`, start `pnpm dev` again |
 | Uploads fail, everything else works | FFmpeg is missing, or MinIO is down | `ffmpeg -version`, then `make infra` |

@@ -32,6 +32,17 @@ celery_app.conf.update(
     result_expires=86_400,
     task_track_started=True,
     broker_connection_retry_on_startup=True,
+    # Priority bands within each queue — docs/03-backend-architecture.md §5.3.
+    # Redis has no native priority, so Celery emulates it with one sub-queue per
+    # step and drains them in order; the steps are exactly the four plans'
+    # `queue_priority` values, so `apply_async(priority=job.priority)` needs no
+    # translation. `sep` and the strategy are Celery's documented Redis
+    # settings, not a guess.
+    broker_transport_options={
+        "priority_steps": [0, 10, 20, 30],
+        "sep": ":",
+        "queue_order_strategy": "priority",
+    },
     task_routes={
         "app.workers.tasks.ingest.*": {"queue": "ingest"},
         "app.workers.tasks.analysis.*": {"queue": "analysis"},

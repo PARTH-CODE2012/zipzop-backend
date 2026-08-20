@@ -28,6 +28,7 @@ Everything needed to build this product. Start here.
 | **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
 | **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
 | **M4 prep** | [M4 readiness](10-m4-readiness.md) | starting M4 — what is already built, what the contract already specifies, and two open decisions found while checking |
+| **M4** | [The job pipeline](11-m4-notes.md) | touching jobs, credits or a worker. Two defects it found, and why the enqueue moved outside the transaction |
 
 ### If you have fifteen minutes
 
@@ -61,11 +62,15 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. M3 is done bar two deliberate omissions; M4 can start.**
+**M3 is done and audited. M4's backend half runs; its last two tools wait on one commercial decision.**
 
 Editing survives a reload, verified end to end on a running stack. The server has the five project routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency and `project_assets` rebuilt from the document. The client has a generated timeline type, undo through Immer patches, the full set of editing operations, drag with snapping, a marquee, an inspector, three lanes, virtualisation, and autosave with a real conflict path. The [UI charter](08-ui-charter.md) is applied.
 
-Left open on purpose: the text track's font, size and colour controls, and the IndexedDB mirror (💤). Both are in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the three defects M3 found — one of them a security defect in M2's auth code.
+**The job pipeline is live** — `POST /jobs` and `/jobs/estimate` sharing one cost function, credits reserved and refunded against a ledger the database keeps honest, a worker claim no two workers can win, progress on Redis, and colour analysis running through all of it on real media. Written up in [`11-m4-notes.md`](11-m4-notes.md).
+
+🟠 **One decision is now on the critical path:** *which transcription engine powers Captions* ([`10-m4-readiness.md`](10-m4-readiness.md) §1). Captions and smart trim are the only M4 work blocked on it, and it is a cost-versus-latency call rather than an implementation one. Everything around them is built and tested.
+
+Left open on purpose: the text track's font, size and colour controls, the IndexedDB mirror (💤), and transitions in the preview — all three in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the nine defects the M3 audit found, one of them a security defect in M2's auth code.
 
 Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work.
 

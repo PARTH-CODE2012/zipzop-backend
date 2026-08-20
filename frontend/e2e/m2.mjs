@@ -29,8 +29,10 @@ import { launch, openPage, waitFor } from './cdp.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = join(HERE, 'fixture.mp4')
-const APP = process.env.E2E_APP_URL ?? 'http://localhost:3000'
-const API = process.env.E2E_API_URL ?? 'http://localhost:8000'
+// `make e2e` exports both from scripts/ports.sh, so a run against a stack whose
+// ports had to move goes to the right place. The fallbacks match .env.example.
+const APP = process.env.E2E_APP_URL ?? `http://localhost:${process.env.WEB_PORT ?? 3123}`
+const API = process.env.E2E_API_URL ?? `http://localhost:${process.env.API_PORT ?? 8123}`
 
 const headful = process.argv.includes('--headful')
 const checks = []

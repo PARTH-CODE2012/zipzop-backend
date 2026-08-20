@@ -68,10 +68,33 @@ fi
 
 echo
 echo "Running services"
-curl -sf -o /dev/null --max-time 3 http://localhost:8000/health/live 2>/dev/null \
-  && green "API :8000" || warn "API :8000 not running — make dev-all"
-curl -sf -o /dev/null --max-time 3 http://localhost:3000/ 2>/dev/null \
-  && green "frontend :3000" || warn "frontend :3000 not running — make dev-all"
+# The ports the stack is configured for, without shifting them: doctor reports,
+# it does not decide. `zz_resolve_ports` is what moves a port, and it belongs to
+# the thing that is about to bind it.
+# shellcheck source=./ports.sh
+source "$(dirname "$0")/ports.sh"
+zz_load_ports
+
+if curl -sf -o /dev/null --max-time 3 "http://localhost:$API_PORT/health/live" 2>/dev/null; then
+  green "API :$API_PORT"
+elif zz_listening "$API_PORT"; then
+  # The failure that cost the most time: something else on the API's port. The
+  # frontend talks to it, gets a 404 from /health, and reports that it cannot
+  # reach the server — sending you to look at code that is fine.
+  bad "API :$API_PORT is held by $(zz_port_holder "$API_PORT") — NOT the ZipZop API.
+       Stop it, or set API_PORT in .env. 'make watch' steps over it on its own."
+else
+  warn "API :$API_PORT not running — make watch"
+fi
+
+if curl -sf -o /dev/null --max-time 3 "http://localhost:$WEB_PORT/" 2>/dev/null; then
+  green "frontend :$WEB_PORT"
+elif zz_listening "$WEB_PORT"; then
+  bad "frontend :$WEB_PORT is held by $(zz_port_holder "$WEB_PORT")
+       Stop it, or set WEB_PORT in .env."
+else
+  warn "frontend :$WEB_PORT not running — make watch"
+fi
 # `[c]elery` rather than `celery`: pgrep -f matches full command lines, and a
 # plain pattern also matches the shell running this script — which would report
 # a worker that is not there. The bracket makes the literal text differ from
@@ -79,7 +102,7 @@ curl -sf -o /dev/null --max-time 3 http://localhost:3000/ 2>/dev/null \
 if pgrep -f "[c]elery -A app.workers.celery_app" >/dev/null 2>&1; then
   green "ingest worker"
 else
-  warn "ingest worker not running — uploads will sit at 'probing' for ever. make dev-all"
+  warn "ingest worker not running — uploads will sit at 'probing' for ever. make watch"
 fi
 
 echo
