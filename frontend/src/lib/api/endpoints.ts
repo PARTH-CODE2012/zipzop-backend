@@ -154,3 +154,87 @@ export function duplicateProject(projectId: string): Promise<ProjectResponse> {
 export function deleteProject(projectId: string): Promise<void> {
   return api.delete<void>(`/projects/${projectId}`)
 }
+
+// --------------------------------------------------------------------------
+// Jobs — contract §6
+// --------------------------------------------------------------------------
+
+export type JobResponse = Schemas['JobResponse']
+export type CreateJobRequest = Schemas['CreateJobRequest']
+export type EstimateResponse = Schemas['EstimateResponse']
+export type JobStatus = Schemas['JobStatus']
+
+/**
+ * What a job would cost, without creating it — contract §6.1.
+ *
+ * Called when a tool panel opens, so the price is on the button before the user
+ * commits. `blockedBy` carries the code `POST /jobs` *would* return, which is
+ * what lets the button say "Not enough credits" instead of the click doing it.
+ */
+export function estimateJob(body: CreateJobRequest): Promise<EstimateResponse> {
+  return api.post<EstimateResponse>('/jobs/estimate', body)
+}
+
+/**
+ * Start a job.
+ *
+ * **The idempotency key is not optional.** A retry after a network timeout is
+ * indistinguishable from a second request, and the difference between the two
+ * is whether the user is charged twice (contract §1). One key per user
+ * *intention* — generated when the button is pressed, reused by every retry of
+ * that press.
+ */
+export function createJob(body: CreateJobRequest, idempotencyKey: string): Promise<JobResponse> {
+  return request<JobResponse>('/jobs', {
+    method: 'POST',
+    body,
+    headers: { 'Idempotency-Key': idempotencyKey },
+  })
+}
+
+export function getJob(jobId: string): Promise<JobResponse> {
+  return api.get<JobResponse>(`/jobs/${jobId}`)
+}
+
+/**
+ * The catch-up call.
+ *
+ * *"On reconnect the client calls this to catch up on anything it missed while
+ * disconnected."* The WebSocket is an optimisation; this is the source of
+ * truth, and a client that only listens to the socket is broken the first time
+ * a laptop sleeps.
+ */
+export function listJobs(
+  query: { projectId?: string; status?: string; limit?: number } = {},
+): Promise<{ items: JobResponse[]; nextCursor: string | null }> {
+  const search = new URLSearchParams()
+  if (query.projectId) search.set('projectId', query.projectId)
+  if (query.status) search.set('status', query.status)
+  if (query.limit) search.set('limit', String(query.limit))
+  const suffix = search.size > 0 ? `?${search}` : ''
+  return api.get<{ items: JobResponse[]; nextCursor: string | null }>(`/jobs${suffix}`)
+}
+
+/** `409 JOB_NOT_CANCELLABLE` if it already finished. Refunds in full. */
+export function cancelJob(jobId: string): Promise<JobResponse> {
+  return api.post<JobResponse>(`/jobs/${jobId}/cancel`, {})
+}
+
+/**
+ * The result, wherever it lives — contract §6.3.
+ *
+ * **Both shapes are real and a client must handle both.** Under 256 KB the
+ * result is inline; above it `result` is null and `resultUrl` is a signed link
+ * to the same JSON in S3. A caption run on anything over about twenty minutes
+ * of speech takes the second path, so this is not an edge case to skip.
+ */
+export async function readJobResult<T = unknown>(job: JobResponse): Promise<T | null> {
+  if (job.result) return job.result as T
+  if (!job.resultUrl) return null
+  // Not through `api`: the URL is pre-signed and points at object storage, so
+  // sending our Authorization header to it would leak the access token to a
+  // different origin.
+  const response = await fetch(job.resultUrl)
+  if (!response.ok) return null
+  return (await response.json()) as T
+}

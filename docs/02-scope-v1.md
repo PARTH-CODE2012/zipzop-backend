@@ -103,7 +103,7 @@ Transcribes the speech, times every word, detects emphasis. Lands as a **text tr
 
 - Ships with 3 caption styles
 - Transcription in the language spoken. **Translation is not in phase 1.**
-- Language list — blocked on the "30+ languages" question in the vision doc
+- ~~Language list~~ — **closed 21 August: English, French and Hindi.** The vision doc's "30+ languages" conflated transcribing with translating; phase 1 does only the first, so this decides what speech is accepted and nothing else. Adding a fourth is a list plus somebody who speaks it checking the fillers ([`11-m4-notes.md`](11-m4-notes.md) §3)
 - Captions are burned into the picture at export. A separate subtitle file is phase 2.
 
 #### Smart Trimming

@@ -16,6 +16,7 @@ problem, not the user's: the job goes back to `queued` with its reservation
 untouched and Celery tries again.
 """
 
+import asyncio
 import json
 import tempfile
 import uuid
@@ -27,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.logging import get_logger
 from app.models import Job, JobStatus, JobTool, User
 from app.repositories import job as job_repo
-from app.services import color_analysis, job_events, storage
+from app.services import color_analysis, job_events, smart_trim, storage, transcription
 from app.services.credits import CreditLedger
 from app.services.plans import concurrency_for
 
@@ -125,12 +126,21 @@ async def run_analysis(session: AsyncSession, job_id: uuid.UUID, *, worker_id: s
 async def _work(session: AsyncSession, job: Job) -> dict[str, Any]:
     if job.tool is JobTool.COLOR_ANALYSIS:
         return await _color_analysis(session, job)
-    # captions and smart_trim land next — see docs/10-m4-readiness.md §4 for
-    # why colour analysis is the one that proves the pipeline first.
+    if job.tool is JobTool.CAPTIONS:
+        return await _captions(session, job)
+    if job.tool is JobTool.SMART_TRIM:
+        return await _smart_trim(session, job)
     raise color_analysis.AnalysisFailedError(f"{job.tool.value} is not implemented yet")
 
 
-async def _color_analysis(session: AsyncSession, job: Job) -> dict[str, Any]:
+async def _fetch_media(session: AsyncSession, job: Job, workspace: Path) -> tuple[Path, int]:
+    """The clip's media on local disk, and how much of it this job covers.
+
+    The **proxy**, not the original, for every tool here. It is 480p with
+    normalised audio, and none of the three questions these tools answer — what
+    colour is this, what was said, where are the pauses — changes with
+    resolution. On a 4K source it is the difference between seconds and minutes.
+    """
     from app.models import MediaAsset
 
     asset_uuid = uuid.UUID(str(job.input["assetId"]).removeprefix("ast_"))
@@ -138,24 +148,135 @@ async def _color_analysis(session: AsyncSession, job: Job) -> dict[str, Any]:
     if asset is None:
         raise color_analysis.AnalysisFailedError("That file is no longer available.")
 
-    # The proxy, not the original: it is 480p, already normalised, and the
-    # answer to "what colour is this" does not change with resolution. On a 4K
-    # source it is the difference between seconds and minutes.
     key = asset.proxy_key or asset.storage_key
     duration_ms = int(job.input.get("analyzedDurationMs") or asset.duration_ms or 0)
 
-    with tempfile.TemporaryDirectory(prefix="zipzop-analysis-") as workspace:
-        source = Path(workspace) / "source"
-        try:
-            storage.download(key, str(source))
-        except Exception as exc:
-            raise TransientFailureError(f"could not fetch {key}") from exc
+    source = workspace / "source"
+    try:
+        storage.download(key, str(source))
+    except Exception as exc:
+        raise TransientFailureError(f"could not fetch {key}") from exc
+    return source, duration_ms
 
+
+def _range_of(job: Job) -> tuple[int, int] | None:
+    """The window the client asked for, if any. Asset time, as it was sent."""
+    window = job.input.get("rangeMs")
+    if not isinstance(window, dict):
+        return None
+    return int(window.get("startMs", 0)), int(window.get("endMs", 0))
+
+
+async def _color_analysis(session: AsyncSession, job: Job) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="zipzop-analysis-") as workspace:
+        source, duration_ms = await _fetch_media(session, job, Path(workspace))
         await _progress(session, job, 35)
         stats = color_analysis.sample_frames(source, duration_ms)
         await _progress(session, job, 80)
 
     return color_analysis.recommend(stats, preferred_look=job.input.get("preferredLook"))
+
+
+async def _captions(session: AsyncSession, job: Job) -> dict[str, Any]:
+    """Contract §6.2. Short keys because a 60-minute transcript is thousands of
+    these objects and the field names would outweigh the data."""
+    with tempfile.TemporaryDirectory(prefix="zipzop-captions-") as workspace:
+        source, duration_ms = await _fetch_media(session, job, Path(workspace))
+        await _progress(session, job, 15)
+
+        # Transcription is the slowest thing phase 1 runs - minutes on a long
+        # recording - so the engine reports each segment as it finishes and
+        # those are mapped onto 15-90%.
+        #
+        # **Published to Redis only, never written to the row from here.** The
+        # callback fires on the transcription thread, and a database session is
+        # not safe to use from two places at once: scheduling a write back onto
+        # the loop would have it interleave with whatever the main coroutine
+        # does next. The socket carries the fine-grained bar; the row keeps the
+        # coarse stages, which is all a client falling back to polling needs.
+        loop = asyncio.get_running_loop()
+        last = [15]
+
+        def on_progress(fraction: float) -> None:
+            percent = 15 + int(fraction * 75)
+            if percent < last[0] + 5:
+                return
+            last[0] = percent
+            asyncio.run_coroutine_threadsafe(
+                job_events.publish(
+                    user_id=job.user_id,
+                    job_id=job.id,
+                    tool=job.tool,
+                    status=JobStatus.RUNNING,
+                    progress=percent,
+                    clip_id=job.input.get("clipId"),
+                ),
+                loop,
+            )
+
+        try:
+            transcript = await asyncio.to_thread(
+                transcription.transcribe,
+                source,
+                language=str(job.input.get("language") or "auto"),
+                duration_ms=duration_ms,
+                on_progress=on_progress,
+            )
+        except transcription.TranscriptionFailedError as exc:
+            raise color_analysis.AnalysisFailedError(str(exc)) from exc
+
+        await _progress(session, job, 90)
+
+    words = transcript.words
+    window = _range_of(job)
+    if window is not None:
+        start, end = window
+        words = [w for w in words if w.start_ms >= start and w.end_ms <= end]
+
+    return {
+        "language": transcript.language,
+        "durationMs": transcript.duration_ms,
+        "wordCount": len(words),
+        "words": [
+            {
+                "w": word.text,
+                "s": word.start_ms,
+                "e": word.end_ms,
+                "c": word.confidence,
+                "em": word.emphasis,
+            }
+            for word in words
+        ],
+    }
+
+
+async def _smart_trim(session: AsyncSession, job: Job) -> dict[str, Any]:
+    """Silence needs no transcript; filler, stutter and repeat do.
+
+    A transcript that fails does **not** fail the job. Silence detection alone
+    is a useful answer, and returning nothing because the speech recogniser
+    stumbled would waste the credits on a result we could have given.
+    """
+    with tempfile.TemporaryDirectory(prefix="zipzop-trim-") as workspace:
+        source, duration_ms = await _fetch_media(session, job, Path(workspace))
+        await _progress(session, job, 20)
+
+        transcript = None
+        try:
+            transcript = await asyncio.to_thread(
+                transcription.transcribe, source, duration_ms=duration_ms
+            )
+        except transcription.TranscriptionFailedError as exc:
+            log.info("smart_trim_without_transcript", job_id=str(job.id), reason=str(exc))
+        await _progress(session, job, 75)
+
+        strength = str(job.input.get("strength") or "medium")
+        return smart_trim.analyse(
+            source,
+            transcript,
+            strength=strength,  # type: ignore[arg-type]
+            duration_ms=duration_ms,
+        )
 
 
 # --------------------------------------------------------------------------

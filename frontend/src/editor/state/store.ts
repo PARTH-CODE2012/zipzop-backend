@@ -116,6 +116,27 @@ export interface EditorState {
   duplicateSelection: () => void
   deleteSelection: () => void
   setClipProperties: (clipId: string, properties: ops.ClipProperties) => void
+
+  // --------------------------------------------------------------- tools
+  /** A captions result, as one undoable edit however many words it holds. */
+  applyCaptions: (input: {
+    clipId: string
+    words: readonly {
+      text: string
+      startMs: number
+      durationMs: number
+      emphasis: number
+      confidence: number
+    }[]
+    sourceJobId?: string | null
+  }) => void
+  /** A smart-trim result: splits, removals and the ripple, in one commit. */
+  applySmartTrim: (clipId: string, removals: readonly { startMs: number; endMs: number }[]) => void
+  /** A colour-analysis result. The picture changes immediately. */
+  applyColorGrade: (
+    clipId: string,
+    grade: { lut: string; strength: number; sourceJobId?: string | null },
+  ) => void
   setTransition: (clipId: string, side: 'in' | 'out', transition: Transition | null) => void
 
   // ------------------------------------------------------------ selection
@@ -323,6 +344,32 @@ export const useEditor = create<EditorState>((set, get) => ({
       ops.removeClips(draft, ids),
     )
     if (changed) set({ selection: NO_SELECTION })
+  },
+
+  /**
+   * **One commit, whatever the word count.** 1,800 words is 1,800 clips, and
+   * committing each would make undoing a captions run 1,800 presses of ⌘Z. The
+   * label is what the user sees in the history, so it says what happened rather
+   * than how many rows it wrote.
+   */
+  applyCaptions: ({ clipId, words, sourceJobId }) => {
+    const clip = locateClip(get().timeline, clipId)?.clip
+    if (!clip) return
+    const fromMs = clip.startMs
+    const toMs = clip.startMs + clip.durationMs
+    get().commit('Add captions', (draft) => {
+      ops.applyCaptions(draft, { words, fromMs, toMs, sourceJobId: sourceJobId ?? null })
+    })
+  },
+
+  applySmartTrim: (clipId, removals) => {
+    get().commit('Smart trim', (draft) => {
+      ops.applySmartTrim(draft, clipId, removals)
+    })
+  },
+
+  applyColorGrade: (clipId, grade) => {
+    get().commit('Colour grade', (draft) => ops.applyColorGrade(draft, clipId, grade))
   },
 
   setClipProperties: (clipId, properties) => {

@@ -495,6 +495,15 @@ export function clampTransitions(track: Draft<MediaTrack>): void {
 /** The style every typed title starts from. Captions bring their own in M4. */
 export const DEFAULT_TITLE_STYLE_ID = 'plain_bold'
 
+//: A caption is one word, and a word can be very short. 80 ms is about the
+//: shortest a viewer can read anything at all, and it keeps a fast passage from
+//: producing clips too small to click.
+export const MIN_CAPTION_MS = 80
+
+//: The caption catalogue's default. ⚠️ Only this one has been designed — the
+//: checklist asks for three (PHASE1-TASKS M4).
+export const DEFAULT_CAPTION_STYLE_ID = 'caption_bold'
+
 export function ensureTextTrack(document: Draftable): Draft<TextTrack> {
   const existing = document.tracks.find((track) => track.kind === 'text')
   if (existing) return existing as Draft<TextTrack>
@@ -547,6 +556,179 @@ export function appendTitle(
   })
   track.clips.sort((a, b) => a.startMs - b.startMs)
   return id
+}
+
+/**
+ * Lay a caption run onto the text track — **one operation for all of it**.
+ *
+ * A minute of speech is around 150 words and therefore 150 clips. Adding them
+ * one at a time would put 150 entries in the undo stack, and undoing a captions
+ * run the user did not like would mean 150 presses of ⌘Z. The store commits
+ * this once, so it is one entry (PHASE1-TASKS M4: *"one undo step for 1,800
+ * clips"*).
+ *
+ * Existing captions in the same span are replaced rather than added to. Running
+ * the tool twice is what a user does after correcting the audio or picking a
+ * different language, and doubling every word is never what they meant.
+ */
+export function applyCaptions(
+  document: Draftable,
+  input: {
+    words: readonly {
+      text: string
+      startMs: number
+      durationMs: number
+      emphasis: number
+      confidence: number
+    }[]
+    /** The span the run covers, so a re-run replaces rather than duplicates. */
+    fromMs: number
+    toMs: number
+    styleId?: string
+    /** Which job produced these — contract §4.2's `sourceJobId`. It is what
+     * lets the interface say "from Captions" and offer to re-run, and what a
+     * later session uses to find the confidences again. */
+    sourceJobId?: string | null
+  },
+): string[] {
+  const track = ensureTextTrack(document)
+  const styleId = input.styleId ?? DEFAULT_CAPTION_STYLE_ID
+
+  // Only captions are cleared. A title the user typed is theirs, and a tool
+  // silently deleting hand-written text would be unforgivable.
+  track.clips = track.clips.filter(
+    (clip) =>
+      clip.kind !== 'caption' ||
+      clip.startMs + clip.durationMs <= input.fromMs ||
+      clip.startMs >= input.toMs,
+  ) as typeof track.clips
+
+  const ids: string[] = []
+  for (const word of input.words) {
+    const id = newClipId()
+    ids.push(id)
+    track.clips.push({
+      id,
+      kind: 'caption',
+      startMs: Math.max(0, Math.round(word.startMs)),
+      durationMs: Math.max(MIN_CAPTION_MS, Math.round(word.durationMs)),
+      text: word.text,
+      styleId,
+      position: { x: 0.5, y: 0.82, anchor: 'center' },
+      emphasis: word.emphasis,
+      sourceJobId: input.sourceJobId ?? null,
+    })
+  }
+
+  track.clips.sort((a, b) => a.startMs - b.startMs)
+  return ids
+}
+
+/**
+ * Apply a smart-trim result: split the clip and close the gaps.
+ *
+ * The removals arrive as ranges; what the user expects is the clip shortened
+ * with the remaining pieces butted together, so everything after them moves
+ * left by what was cut. That ripple is confined to **this clip's own track** —
+ * phase 1 has no magnetic timeline, and shifting every track would move a music
+ * bed that was never in sync with the dialogue anyway.
+ *
+ * ⚠️ Captions already on the text track do **not** follow. Trim first, caption
+ * second; the interface says so before it runs.
+ */
+export function applySmartTrim(
+  document: Draftable,
+  clipId: string,
+  removals: readonly { startMs: number; endMs: number }[],
+): string[] {
+  const found = findMedia(document, clipId)
+  if (!found || removals.length === 0) return []
+  const { track, index, clip } = found
+
+  const clipStart = clip.startMs
+  const clipEnd = clip.startMs + clip.durationMs
+
+  // What survives, in timeline time, before anything moves.
+  const kept: { startMs: number; endMs: number }[] = []
+  let cursor = clipStart
+  for (const range of [...removals].sort((a, b) => a.startMs - b.startMs)) {
+    const from = Math.max(clipStart, Math.round(range.startMs))
+    const to = Math.min(clipEnd, Math.round(range.endMs))
+    if (to <= from) continue
+    if (from - cursor >= MIN_CLIP_MS) kept.push({ startMs: cursor, endMs: from })
+    cursor = Math.max(cursor, to)
+  }
+  if (clipEnd - cursor >= MIN_CLIP_MS) kept.push({ startMs: cursor, endMs: clipEnd })
+
+  // Everything removed would leave no clip at all. Deleting it outright is a
+  // worse surprise than leaving the shortest legal piece.
+  if (kept.length === 0) return []
+
+  const pieces: Draft<MediaClip>[] = []
+  const ids: string[] = []
+  let placedAt = clipStart
+  for (const [pieceIndex, segment] of kept.entries()) {
+    const durationMs = segment.endMs - segment.startMs
+    // Each piece keeps reading from where it was: the source offset is the
+    // elapsed *timeline* time it started at, times speed.
+    const sourceInMs =
+      clip.sourceInMs + Math.round((segment.startMs - clipStart) * clip.speed)
+    const id = pieceIndex === 0 ? clip.id : newClipId()
+    ids.push(id)
+    pieces.push({
+      ...clip,
+      id,
+      startMs: placedAt,
+      durationMs,
+      sourceInMs,
+      // Only the outside edges keep their transitions: an internal cut is a
+      // cut, and a dissolve there would be a dissolve to the same footage.
+      transitionIn: pieceIndex === 0 ? clip.transitionIn : null,
+      transitionOut: pieceIndex === kept.length - 1 ? clip.transitionOut : null,
+    } as Draft<MediaClip>)
+    placedAt += durationMs
+  }
+
+  const shiftMs = clipEnd - placedAt
+  const after = track.clips.slice(index + 1).map((later) => ({
+    ...later,
+    startMs: Math.max(0, later.startMs - shiftMs),
+  })) as typeof track.clips
+
+  track.clips = [...track.clips.slice(0, index), ...pieces, ...after] as typeof track.clips
+  reorder(track)
+  clampTransitions(track)
+  return ids
+}
+
+/**
+ * Write a colour-analysis result onto a clip.
+ *
+ * One `effects` entry, replacing any grade already there — a clip has one look,
+ * and stacking two LUTs produces a picture neither of them describes. The
+ * browser applies it immediately from the same `.cube` file the renderer will
+ * use at export, which is what makes the preview and the output agree
+ * (contract §4.4).
+ */
+export function applyColorGrade(
+  document: Draftable,
+  clipId: string,
+  grade: { lut: string; strength: number; sourceJobId?: string | null },
+): void {
+  const found = findMedia(document, clipId)
+  if (!found) return
+  const { clip } = found
+
+  const others = clip.effects.filter((effect) => effect.type !== 'color_grade')
+  clip.effects = [
+    ...others,
+    {
+      type: 'color_grade',
+      lut: grade.lut,
+      strength: clamp(grade.strength, 0, 1),
+      sourceJobId: grade.sourceJobId ?? null,
+    },
+  ] as typeof clip.effects
 }
 
 /** Edit a title's words. The whole reason captions are clips and not a burn-in. */

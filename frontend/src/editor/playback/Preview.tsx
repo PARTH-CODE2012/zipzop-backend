@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import { isKnownLut, loadLut } from '@/editor/playback/lut-catalogue'
 import { selectClips, useEditor } from '@/editor/state/store'
 import { identityLut } from '@/editor/playback/cube'
 import { CompositorEngine, type CompositorStats } from '@/editor/playback/engine'
@@ -61,7 +62,8 @@ export function Preview({ assets }: PreviewProps) {
       glCanvas: gl,
       textCanvas: text,
       videoHost: host,
-      // No LUT catalogue until M4. Identity means the picture is untouched.
+      // Identity until a graded clip needs something else — see the effect
+      // below, which loads the named LUT the moment one appears.
       lut: identityLut(),
       onStats: setStats,
       timeline: { mode: 'cut', transitionMs: 0, durationMs: 0, video: [], text: [] },
@@ -107,6 +109,38 @@ export function Preview({ assets }: PreviewProps) {
       if (stats.positionMs >= stats.durationMs && stats.durationMs > 0) setPlaying(false)
     }
   }, [stats, setPlayhead, setPlaying])
+
+  /**
+   * Load whichever grade the timeline is asking for.
+   *
+   * ⚠️ **One LUT is loaded at a time**, so a project mixing two graded clips
+   * shows the first one's look on both. The renderer holds a single 3D texture,
+   * and giving it one per clip is a real change to the shader and the pool
+   * rather than a change here. Colour analysis grades one clip at a time, so
+   * this is right until it is not — and it is written down rather than
+   * discovered.
+   */
+  useEffect(() => {
+    const engine = engineRef.current
+    if (!engine) return
+    const graded = clips.find((clip) =>
+      clip.effects.some((effect) => effect.type === 'color_grade'),
+    )
+    const grade = graded?.effects.find((effect) => effect.type === 'color_grade')
+    if (!grade || !isKnownLut(grade.lut)) {
+      engine.setLut(identityLut())
+      return
+    }
+    let cancelled = false
+    void loadLut(grade.lut).then((lut) => {
+      // The clip may have been deleted or regraded while the file was in
+      // flight; applying a stale table would show a look nothing asked for.
+      if (!cancelled && lut) engineRef.current?.setLut(lut)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [clips])
 
   // ---- a deliberate seek, only while paused ------------------------------
   useEffect(() => {

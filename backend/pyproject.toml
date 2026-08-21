@@ -32,6 +32,15 @@ dependencies = [
     # one endpoint.
     "email-validator>=2.2",
 
+    # Speech to text. Self-hosted rather than a paid API — decided 20 August,
+    # see docs/11-m4-notes.md §1. Pulls ctranslate2 and onnxruntime, which is
+    # why the install is noticeably larger than everything above it.
+    #
+    # The model itself is NOT bundled: it downloads on first use into
+    # ~/.cache/huggingface. Warm that cache when deploying rather than letting
+    # the first customer pay for it.
+    "faster-whisper>=1.1",
+
     # Observability
     "structlog>=24.4",
 ]

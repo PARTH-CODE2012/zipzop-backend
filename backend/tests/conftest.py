@@ -307,6 +307,57 @@ def silent_video(media_dir: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.fixture(scope="session")
+def spoken_audio(media_dir: pathlib.Path) -> pathlib.Path:
+    """Real speech, synthesised by ffmpeg's `flite` filter.
+
+    Captions cannot be tested against a sine tone: the whole point of the tool
+    is words with timings, and a tone has none. `flite` ships with ffmpeg here
+    and produces genuinely recognisable speech, so the transcript can be
+    asserted against sentences this file chose.
+
+    Skipped rather than failed where ffmpeg has no `flite` — it is an optional
+    filter, and its absence says nothing about the code under test.
+    """
+    path = media_dir / "speech.wav"
+    if not path.exists():
+        available = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True, check=False
+        ).stdout
+        if "flite" not in available:
+            pytest.skip("this ffmpeg has no flite filter, so there is no speech to transcribe")
+        _ffmpeg(
+            "-f",
+            "lavfi",
+            "-i",
+            "flite=text='Hello everyone, welcome back to the channel. "
+            "Today we are testing the caption system.':voice=slt",
+            "-ar",
+            "16000",
+            str(path),
+        )
+    return path
+
+
+@pytest.fixture(scope="session")
+def whisper_available() -> bool:
+    """Whether the transcription model is already on disk.
+
+    The model is ~150 MB and downloads on first use. A test suite that pulls it
+    turns a thirty-second CI run into a several-minute one on every cold
+    runner, so the tests that need a real transcript skip unless somebody has
+    already warmed the cache.
+    """
+    from pathlib import Path
+
+    from app.config import settings
+
+    cache = Path.home() / ".cache" / "huggingface" / "hub"
+    if not cache.exists():
+        return False
+    return any(settings.whisper_model in p.name for p in cache.iterdir())
+
+
+@pytest.fixture(scope="session")
 def not_a_video(media_dir: pathlib.Path) -> pathlib.Path:
     """Bytes that are not media. ffprobe must fail and the API must say why."""
     path = media_dir / "broken.mp4"

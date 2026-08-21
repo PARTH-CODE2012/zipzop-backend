@@ -28,7 +28,7 @@ Everything needed to build this product. Start here.
 | **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
 | **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
 | **M4 prep** | [M4 readiness](10-m4-readiness.md) | starting M4 — what is already built, what the contract already specifies, and two open decisions found while checking |
-| **M4** | [The job pipeline](11-m4-notes.md) | touching jobs, credits or a worker. Two defects it found, and why the enqueue moved outside the transaction |
+| **M4** | [The job pipeline and the three tools](11-m4-notes.md) | touching jobs, credits, a worker or a tool result. Why the enqueue moved outside the transaction, and the asset-time conversion that makes a caption land in the right place |
 
 ### If you have fifteen minutes
 
@@ -62,13 +62,17 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**M3 is done and audited. M4's backend half runs; its last two tools wait on one commercial decision.**
+**M4 is done: the pipeline, all three tools, and the interface over them.**
 
 Editing survives a reload, verified end to end on a running stack. The server has the five project routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency and `project_assets` rebuilt from the document. The client has a generated timeline type, undo through Immer patches, the full set of editing operations, drag with snapping, a marquee, an inspector, three lanes, virtualisation, and autosave with a real conflict path. The [UI charter](08-ui-charter.md) is applied.
 
 **The job pipeline is live** — `POST /jobs` and `/jobs/estimate` sharing one cost function, credits reserved and refunded against a ledger the database keeps honest, a worker claim no two workers can win, progress on Redis, and colour analysis running through all of it on real media. Written up in [`11-m4-notes.md`](11-m4-notes.md).
 
-🟠 **One decision is now on the critical path:** *which transcription engine powers Captions* ([`10-m4-readiness.md`](10-m4-readiness.md) §1). Captions and smart trim are the only M4 work blocked on it, and it is a cost-versus-latency call rather than an implementation one. Everything around them is built and tested.
+**Proven in a browser, not only in tests**: add a clip, run Captions, watch it work, see sixteen words land on the text track, correct one, and find the correction still there after a reload. Both open decisions were closed on 21 August — the transcription engine (self-hosted `faster-whisper`, behind one function) and the language list (**English, French, Hindi**).
+
+That browser run also found what no unit test could: a machine without WebGL2 took the *whole editor* down rather than losing the picture. The compositor having no fallback is deliberate; the editor going with it was not. Both are in [`11-m4-notes.md`](11-m4-notes.md) §4.
+
+Left for M4: the mock fixtures, and two of the three caption styles — design work rather than engineering. M5 is unblocked.
 
 Left open on purpose: the text track's font, size and colour controls, the IndexedDB mirror (💤), and transitions in the preview — all three in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the nine defects the M3 audit found, one of them a security defect in M2's auth code.
 

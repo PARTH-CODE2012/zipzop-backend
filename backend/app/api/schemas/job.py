@@ -12,10 +12,11 @@ wrong member.
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.schemas.common import ApiModel
 from app.models import JobFamily, JobStatus, JobTool
+from app.services import languages
 
 #: The tools `POST /jobs` accepts today. `export` is M5 and the phase-2 tools
 #: are phase 2 — listing them here would put endpoints in the contract that
@@ -54,10 +55,23 @@ class _AssetInput(ApiModel):
 
 
 class CaptionsInput(_AssetInput):
-    #: `auto` detects. The accepted list is still open — see
-    #: docs/10-m4-readiness.md §1, "the language list" — and `auto` is enough to
-    #: ship the pipeline without pre-empting that decision.
-    language: str = "auto"
+    #: `auto` detects; otherwise one of `app.services.languages.SUPPORTED` —
+    #: English, French or Hindi, decided 21 August.
+    #:
+    #: Rejected rather than silently detected, because a user who names a
+    #: language is telling us something they know and we do not: which one is
+    #: being spoken under the music, or which of two in the same recording they
+    #: want. Falling back to `auto` would throw that away and be right often
+    #: enough that nobody would notice it was ignored.
+    language: str = languages.AUTO
+
+    @field_validator("language")
+    @classmethod
+    def _known_language(cls, value: str) -> str:
+        if not languages.is_supported(value):
+            offered = ", ".join(sorted(languages.SUPPORTED))
+            raise ValueError(f"we do not caption {value!r} yet; try one of {offered}, or 'auto'")
+        return languages.normalise(value)
 
 
 class SmartTrimInput(_AssetInput):

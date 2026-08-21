@@ -214,6 +214,10 @@ doctor: ## Check a fresh clone has everything it needs, and say what is missing
 spike-media: ## Generate the M1 compositor spike's test clips and LUT (needs ffmpeg)
 	./scripts/make-spike-media.sh
 
+.PHONY: luts
+luts: ## Generate the five shared .cube grades the browser and the renderer both read
+	python3 scripts/make_luts.py $(FRONTEND)/public/luts
+
 # --------------------------------------------------------------------- e2e ---
 # M2's closing condition, checked in a real browser. See frontend/e2e/README.md
 # for what the 29 checks cover and for the three bugs this found that the unit

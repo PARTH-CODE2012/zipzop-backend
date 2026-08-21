@@ -17,6 +17,7 @@ import { useState } from 'react'
 
 import { IconCrop, IconTransition, IconVolume } from '@/editor/icons'
 import { selectSelectedAnyClip, useEditor } from '@/editor/state/store'
+import { useTools } from '@/editor/tools/jobs-store'
 import type { AnyClip, MediaClip, TextClip } from '@/editor/state/timeline-document'
 
 export function Inspector() {
@@ -199,28 +200,62 @@ function TransitionRow({ clip, side }: { clip: MediaClip; side: 'in' | 'out' }) 
 
 function TextProperties({ clip }: { clip: TextClip }) {
   const store = useEditor.getState
+  // Contract §6.2: a word the recogniser was unsure about is worth checking,
+  // and a misheard name is the single most likely thing to be wrong — which is
+  // the whole reason captions are editable clips rather than a burn-in.
+  const uncertain = useTools((state) => state.uncertain.has(clip.id))
+
   return (
     <>
       <Header title={clip.kind === 'caption' ? 'Caption' : 'Title'} subtitle={clip.styleId} />
       <label className="flex flex-col gap-1">
-        <span style={{ color: 'var(--color-ink-3)' }}>Text</span>
+        <span className="flex items-center gap-1.5" style={{ color: 'var(--color-ink-3)' }}>
+          Text
+          {uncertain && (
+            <span
+              title="The recogniser was not confident about this word"
+              style={{ color: 'var(--color-warning, #fbbf24)' }}
+              data-testid="low-confidence"
+            >
+              ● check
+            </span>
+          )}
+        </span>
         <input
           value={clip.text}
           onChange={(event) => store().setText(clip.id, event.target.value)}
           className="px-2 py-1"
           style={{
             background: 'var(--color-surface-3)',
-            border: '1px solid var(--color-rule)',
+            border: uncertain
+              ? '1px solid var(--color-warning, #fbbf24)'
+              : '1px solid var(--color-rule)',
             borderRadius: 'var(--radius-sm)',
             color: 'var(--color-ink)',
           }}
           data-testid="text-input"
         />
       </label>
+
+      {clip.kind === 'caption' && (
+        <Slider
+          label="Start"
+          value={clip.startMs}
+          min={0}
+          max={Math.max(clip.startMs + 5_000, 10_000)}
+          step={10}
+          format={(v) => `${(v / 1000).toFixed(2)}s`}
+          onChange={(startMs) => store().moveClip(clip.id, startMs)}
+        />
+      )}
+
       <p style={{ color: 'var(--color-ink-3)' }}>
         Position {clip.position?.x.toFixed(2) ?? '0.50'} / {clip.position?.y.toFixed(2) ?? '0.82'} —
         normalised to the canvas, so the preview and the export agree.
       </p>
+      {clip.sourceJobId && (
+        <p style={{ color: 'var(--color-ink-faint)' }}>From Captions</p>
+      )}
     </>
   )
 }

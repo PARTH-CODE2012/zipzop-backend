@@ -25,6 +25,7 @@ import { AuthPanel } from '@/account/AuthPanel'
 import { useSession } from '@/account/session'
 import { actionFor, isTypingTarget, NUDGE_MS } from '@/editor/keyboard'
 import { Preview } from '@/editor/playback/Preview'
+import { PreviewBoundary } from '@/editor/playback/PreviewBoundary'
 import type { ResolvedAsset } from '@/editor/playback/timeline-adapter'
 import {
   selectCanRedo,
@@ -36,8 +37,6 @@ import {
 import {
   IconCopy,
   IconLogout,
-  IconMessage,
-  IconPalette,
   IconPause,
   IconPlay,
   IconRedo,
@@ -46,9 +45,9 @@ import {
   IconTrash,
   IconTypography,
   IconUndo,
-  IconWand,
 } from '@/editor/icons'
 import { Inspector } from '@/editor/inspector/Inspector'
+import { ToolsPanel } from '@/editor/tools/ToolsPanel'
 import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
 import { Timeline } from '@/editor/timeline/Timeline'
 import { formatTimecode } from '@/editor/timeline/scale'
@@ -209,6 +208,9 @@ function Workspace({
   }, [persistence])
 
   const readyCount = useMemo(() => assets.size, [assets])
+  // Subscribed rather than read once: the project id arrives asynchronously,
+  // and `getState()` in a render would capture the null it had at mount.
+  const openProjectId = useEditor((state) => state.projectId)
   const save = SAVE_LABEL[persistence.status]
 
   return (
@@ -246,8 +248,7 @@ function Workspace({
           className="ml-auto uppercase tracking-widest"
           style={{ color: 'var(--color-ink-3)' }}
         >
-          {/* AI tools land in M4. Named, not mocked. */}
-          Captions · Smart trim · Colour — M4
+          Captions · Smart trim · Colour
         </span>
 
         <span
@@ -298,12 +299,20 @@ function Workspace({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            <Preview assets={assets} />
+            {/* A browser without WebGL2 loses the picture and nothing else.
+                Without this the renderer's throw unmounts the whole editor. */}
+            <PreviewBoundary>
+              <Preview assets={assets} />
+            </PreviewBoundary>
           </div>
           <div className="h-44 shrink-0 overflow-hidden">
             <Inspector />
           </div>
         </div>
+
+        {/* The tools sit next to the clip they act on, and never block it:
+            editing carries on while a job runs. */}
+        <ToolsPanel projectId={openProjectId} />
       </div>
 
       <div className="h-48 shrink-0">
@@ -361,18 +370,13 @@ function Toolbar() {
         Redo
       </Tool>
       <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
-      <Tool ai disabled icon={<IconMessage size={15} />}>
-        Captions
-      </Tool>
-      <Tool ai disabled icon={<IconWand size={15} />}>
-        Smart trim
-      </Tool>
-      <Tool ai disabled icon={<IconPalette size={15} />}>
-        Colour
-      </Tool>
+      {/* The tools live in the panel on the right, where they can show a price
+          and a progress bar. These were placeholders while they did not exist;
+          leaving them as dead buttons next to working ones would be worse than
+          the honest "M4" label they used to carry. */}
       <span className="ml-1 flex items-center gap-1" style={{ color: 'var(--color-ink-faint)' }}>
         <IconSparkles size={12} aria-hidden="true" />
-        AI tools land in M4
+        AI tools are in the panel on the right
       </span>
     </div>
   )

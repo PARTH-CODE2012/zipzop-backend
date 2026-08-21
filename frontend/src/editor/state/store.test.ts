@@ -422,6 +422,147 @@ describe('the audio and text tracks', () => {
   })
 })
 
+/**
+ * The AI tools land their results as ordinary edits. That is the whole design:
+ * an undoable commit, not a special mode, so a suggestion the user dislikes
+ * costs one press of ⌘Z rather than a dialog asking whether they are sure.
+ */
+describe('applying a tool result', () => {
+  it('adds a whole caption run as ONE undo step', () => {
+    // 1,800 clips at one commit each would be 1,800 presses of ⌘Z to undo a
+    // captions run somebody did not want.
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 60_000 })
+    state().markSaved(4)
+    const steps = state().history.past.length
+
+    state().applyCaptions({
+      clipId,
+      words: Array.from({ length: 200 }, (_, index) => ({
+        text: `word${index}`,
+        startMs: index * 200,
+        durationMs: 180,
+        emphasis: 0,
+        confidence: 0.9,
+      })),
+    })
+
+    expect(state().history.past).toHaveLength(steps + 1)
+    const text = selectLanes(state()).find((track) => track.kind === 'text')
+    expect(text?.clips).toHaveLength(200)
+
+    state().undo()
+    const afterUndo = selectLanes(state()).find((track) => track.kind === 'text')
+    expect(afterUndo?.clips ?? []).toHaveLength(0)
+  })
+
+  it('re-running captions replaces the previous words rather than doubling them', () => {
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+    const words = [
+      { text: 'first', startMs: 0, durationMs: 400, emphasis: 0, confidence: 0.9 },
+    ]
+
+    state().applyCaptions({ clipId, words })
+    state().applyCaptions({
+      clipId,
+      words: [{ text: 'second', startMs: 0, durationMs: 400, emphasis: 0, confidence: 0.9 }],
+    })
+
+    const text = selectLanes(state()).find((track) => track.kind === 'text')
+    expect(text?.clips).toHaveLength(1)
+    expect((text?.clips[0] as { text: string }).text).toBe('second')
+  })
+
+  it('leaves a hand-typed title alone when captions land on top of it', () => {
+    // A tool silently deleting text somebody wrote would be unforgivable.
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+    state().addTitle('Chapter one')
+
+    state().applyCaptions({
+      clipId,
+      words: [{ text: 'hello', startMs: 0, durationMs: 400, emphasis: 0, confidence: 0.9 }],
+    })
+
+    const text = selectLanes(state()).find((track) => track.kind === 'text')
+    const kinds = (text?.clips ?? []).map((clip) => (clip as { kind: string }).kind)
+    expect(kinds).toContain('title')
+    expect(kinds).toContain('caption')
+  })
+
+  it('a smart trim shortens the clip and closes the gap behind it', () => {
+    loaded()
+    const first = state().addClip({ assetId: 'ast_1', durationMs: 10_000 })
+    const second = state().addClip({ assetId: 'ast_1', durationMs: 5_000 })
+    state().markSaved(4)
+
+    // Cut one second out of the middle of the first clip.
+    state().applySmartTrim(first, [{ startMs: 4_000, endMs: 5_000 }])
+
+    const clips = selectClips(state())
+    // Two pieces from the first clip, then the second clip pulled left.
+    expect(clips).toHaveLength(3)
+    expect(clips[0]?.startMs).toBe(0)
+    expect(clips[0]?.durationMs).toBe(4_000)
+    expect(clips[1]?.startMs).toBe(4_000)
+    expect(clips[1]?.durationMs).toBe(5_000)
+    // The second piece reads from *after* the removed second.
+    expect(clips[1]?.sourceInMs).toBe(5_000)
+    // The following clip moved left by exactly what was cut - no gap.
+    expect(clips[2]?.id).toBe(second)
+    expect(clips[2]?.startMs).toBe(9_000)
+  })
+
+  it('a smart trim is one undo step for every cut it makes', () => {
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 20_000 })
+    state().markSaved(4)
+    const steps = state().history.past.length
+
+    state().applySmartTrim(clipId, [
+      { startMs: 2_000, endMs: 3_000 },
+      { startMs: 6_000, endMs: 6_500 },
+      { startMs: 11_000, endMs: 12_000 },
+    ])
+
+    expect(state().history.past).toHaveLength(steps + 1)
+    expect(selectClips(state())).toHaveLength(4)
+
+    state().undo()
+    expect(selectClips(state())).toHaveLength(1)
+    expect(selectClips(state())[0]?.durationMs).toBe(20_000)
+  })
+
+  it('refuses to remove a clip entirely', () => {
+    // Deleting the clip is a worse surprise than leaving a short piece.
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 5_000 })
+    state().applySmartTrim(clipId, [{ startMs: 0, endMs: 5_000 }])
+
+    expect(selectClips(state())).toHaveLength(1)
+  })
+
+  it('a colour grade is one effects entry, replacing any grade already there', () => {
+    // A clip has one look; stacking two LUTs produces a picture neither of them
+    // describes.
+    loaded()
+    const clipId = state().addClip({ assetId: 'ast_1', durationMs: 5_000 })
+
+    state().applyColorGrade(clipId, { lut: 'cinematic_warm', strength: 0.75 })
+    state().applyColorGrade(clipId, { lut: 'cyberpunk', strength: 0.9, sourceJobId: 'job_1' })
+
+    const effects = selectClips(state())[0]?.effects ?? []
+    expect(effects).toHaveLength(1)
+    expect(effects[0]).toMatchObject({
+      type: 'color_grade',
+      lut: 'cyberpunk',
+      strength: 0.9,
+      sourceJobId: 'job_1',
+    })
+  })
+})
+
 describe('splitAtPlayhead', () => {
   it('splits whatever the playhead is inside and selects the new piece', () => {
     loaded()

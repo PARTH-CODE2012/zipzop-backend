@@ -260,6 +260,20 @@ export class CompositorEngine {
     this.overlay.resize(width, height)
   }
 
+  /**
+   * Swap the loaded grade.
+   *
+   * The spike only ever had one LUT, so this did not exist. M4's colour
+   * analysis recommends one of five by name, and the picture is expected to
+   * change the moment the result lands — which means the table has to be
+   * replaceable without rebuilding the engine and losing every decoded frame
+   * with it.
+   */
+  setLut(lut: CubeLut): void {
+    if (this.disposed) return
+    this.renderer.setLut(lut)
+  }
+
   setLutStrength(strength: number): void {
     this.lutStrength = clamp01(strength)
   }

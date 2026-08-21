@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = 900
     refresh_token_ttl_days: int = 30
 
+    # --------------------------------------------------------------- speech
+    # Self-hosted faster-whisper, decided 20 August over a paid API: no
+    # per-call cost that scales with usage, and the accuracy at this model size
+    # is the same order as a cheap third-party service
+    # (docs/11-m4-notes.md §1).
+    #
+    # `base` is the working default — roughly 150 MB, and about 20 s of CPU per
+    # minute of media. `small` is noticeably better on accented speech and about
+    # twice as slow. Both are a config change, not a deploy.
+    whisper_model: str = "base"
+    whisper_device: str = "cpu"
+    #: int8 on CPU is about twice the speed of float32, for a difference in
+    #: word error rate that is lost in the noise at this size.
+    whisper_compute_type: str = "int8"
+
     # -------------------------------------------------------------- storage
     s3_endpoint_url: str = "http://localhost:9000"
     s3_region: str = "eu-west-1"
