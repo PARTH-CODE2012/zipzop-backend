@@ -6,11 +6,13 @@ app/models/__init__.py so Alembic's autogenerate can see it.
 """
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -54,6 +56,38 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+@asynccontextmanager
+async def worker_session() -> AsyncGenerator[AsyncSession, None]:
+    """A session for a Celery task, on an engine that lives and dies with it.
+
+    The module-level `engine` above is built at import time and pools its
+    connections. That is right for the API, which runs one event loop for the
+    life of the process — and wrong for a worker, where every task calls
+    `asyncio.run()` and gets a **new** loop.
+
+    A pooled asyncpg connection remembers the loop it was created on. The first
+    task therefore succeeds and leaves a connection in the pool; the second
+    picks it up on a different loop and fails with
+
+        RuntimeError: got Future attached to a different loop
+
+    which reads like an application bug and is really a lifetime mismatch. A
+    fresh engine with `NullPool`, disposed at the end of the task, cannot
+    outlive its loop. The cost is one connection setup per job, which against
+    a job that runs ffmpeg for several seconds is nothing.
+
+    Found by the end-to-end run: a single-job test never reaches the second
+    task, so nothing before it could have caught this.
+    """
+    task_engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    maker = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            yield session
+    finally:
+        await task_engine.dispose()
 
 
 async def check_database() -> dict[str, Any]:

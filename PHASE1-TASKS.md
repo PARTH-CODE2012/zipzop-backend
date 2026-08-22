@@ -23,10 +23,9 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 
 ### Repositories
 
-- [ ] Merge `docs/` from `dev` into `main`
 - [x] Decide repo layout — **monorepo**: `backend/` and `frontend/` inside the existing repository. Shared `openapi.json` and one commit per contract change; splitting later is straightforward
 - [x] `.gitignore`, root `README` pointing at `docs/`, `.env.example` with every variable named
-- [ ] Branch protection on `main`  *(GitHub setting — needs repo admin)*
+- [x] **`dev` is the working branch and stays it.** Merging `docs/` into `main` is dropped outright — nobody builds against `main`, so keeping it in sync is ceremony. **Branch protection on `main` is not dropped, it moves to M7**, which already claims it and is right to: it is a supply-chain control ([`docs/07-security.md`](docs/07-security.md) §5.3). It buys nothing while one person pushes to `dev`, and it matters before anything deploys from `main`
 
 ### Backend skeleton — done, verified running
 
@@ -55,8 +54,8 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 - [x] FastAPI generating `openapi.json`, committed at the repository root
 - [x] `make openapi` / `make types` / `make contract-check`, and CI failing on a stale schema
 - [x] Frontend types generated from it into `src/lib/api/generated.ts`
-- [ ] Mock server (Prism or MSW) serving fixtures from the same schema
-- [ ] Fixtures written early: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
+
+> **The mock server and its fixtures moved to M4**, where they are first used. They were listed here on the principle of writing fixtures early, and the principle is right, but the schema they would be written against still has no jobs, no timeline and no projects in it. Writing them now means writing them twice.
 
 ### Local infrastructure
 
@@ -70,7 +69,7 @@ Built for **one full-stack developer**, not parallel teams. That changes the ord
 - [x] `make migrate` applied `0001_baseline` against the real database — `citext` and `pgcrypto` installed
 - [x] Celery `ingest.ping` dispatched and returned `SUCCESS` end to end, queues declared in Redis
 - [x] `/health` returning **`ok`** with both dependencies live (was `degraded`/503 with them down — both paths verified)
-- [ ] MinIO presigned URL flow — **deferred to M2**, when uploads first need object storage. Nothing before then touches S3
+- [x] MinIO presigned URL flow — **done in M2.** Presigned PUT and GET verified against the real server, including that the signature covers `Content-Type` (a mismatch is a 403) and that the bucket is private without one
 
 > **M0 is complete and verified.** Both quality gates green, contract fresh, infrastructure live, queue proven. The only unexercised piece is object storage, which nothing needs yet.
 
@@ -80,8 +79,8 @@ Pulling four images at once timed out — one Docker Hub address answers in 4.4 
 
 Not worth fighting now, because **M0 needs nothing Docker provides that apt does not**. Revisit before M2, when MinIO becomes necessary.
 
-- [ ] `sudo usermod -aG docker maxime` is done and recorded; still needs **a new login session** to take effect
-- [ ] `make pull` on a better connection, or overnight
+- [x] ~~`sudo usermod -aG docker maxime` is done and recorded; still needs **a new login session** to take effect~~ — the group is in `/etc/group`; a shell that has not picked it up can use `sg docker -c '…'` without logging out
+- [x] ~~`make pull` on a better connection, or overnight~~ — **the connection is no longer the problem.** Measured 17 August: `alpine` in 5 s, `minio/minio` + `minio/mc` in 56 s. MinIO is up, the bucket is bootstrapped, and the presigned upload flow is exercised by the test suite and the end-to-end run
 
 ---
 
@@ -91,7 +90,7 @@ Not worth fighting now, because **M0 needs nothing Docker provides that apt does
 
 **Throwaway code. No state management, no UI, no cleanliness.** The only question is whether the browser can do this. Do it before anything else in the frontend.
 
-Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and the two bugs it caught are written up in [`frontend/src/spike/compositor/README.md`](frontend/src/spike/compositor/README.md).
+Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and the two bugs it caught are written up in [`frontend/src/editor/playback/README.md`](frontend/src/editor/playback/README.md).
 
 - [x] Two hidden `<video>` elements on hardcoded proxy files
 - [x] WebGL2 canvas drawing the current frame
@@ -101,7 +100,13 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 - [x] LUT applied as a `TEXTURE_3D` in the fragment shader, with a strength uniform — returns the `.cube` table **exactly** at every grid point (worst delta 0/255)
 - [x] Text overlay on a 2D canvas layered above, redrawn only when the visible words change
 - [x] Crossfade between the two clips — both on screen at the midpoint, equal-power audio, no discontinuity
-- [ ] **Test on Safari** — different codec support, autoplay rules, WebGL quirks. *Not testable from Linux. The code is written for it — H.264 only, `playsinline`, muted priming, rAF fallback — but that is not the same as tested. **Open the page on a Mac and an iPhone before M2 starts.*** ⚠️
+- [~] **Test on Safari** — **iPhone verified 2026-08-16**, from a screen recording and a HUD capture:
+  - `driver rvfc` · `clock video` · **29.5 fps** · frame cost **8.18 ms** (against 8.42 ms on desktop AMD) · **0 / 89 dropped** · **0 draws skipped** · `primed A✓ B✓` · `play errors none` · GPU `Apple GPU` · canvas 1920×1080
+  - **No black frame at the cut**, confirmed across 841 recorded frames of the canvas: minimum luminance **106.6/255**, nothing below 30. The only two picture changes are the cut (117.0 → 107.7) and the loop wrap (106.8 → 117.6), each a single clean step
+  - In-point arithmetic exact on device — after the loop wrap the playhead reads 766 ms and the burnt-in timecode reads 1267 ms, against 500 + 766 = **1266 ms**
+  - So the three iOS unknowns are answered: `requestVideoFrameCallback` exists, muted priming is not refused, and autoplay does not block
+- [x] **Crossfade on iOS** — **verified 2026-08-16.** The engine really is in crossfade mode, not just the button: total duration reads `0:11.100`, which is 12 000 − 900 ms of overlap. Playhead 10 000 ms against a burnt-in `00:00:05.233` on clip B, where 300 + (10 000 − 5 100) = 5 200 ms — one frame. **No black frame across 519 recorded frames**, minimum luminance 63.3/255 and that is the first frame replacing the loading state; steady playback stays above 100. **iOS's cap on simultaneous video playback did not bite** — the risk that could have forced crossfades off mobile entirely
+- [ ] **Safari on macOS** 💤 — **blocked on hardware, not on time.** Nobody on the project has a Mac; this waits on borrowing one. Low risk now that iOS, the harder case, passes — but "low risk" is a prediction, and iOS passing is evidence about a different build of the engine, so it stays open rather than being closed on inference
 - [x] Measure: does it hold 60 fps at 1080p preview? — **yes, 85 fps**, ~40 % headroom on integrated graphics. 1 dropped frame in 454 at source rate. The cost is the video→texture upload, not the shader: 720p, 1080p and 4K are within a millisecond of each other
 
 ### Also landed with it
@@ -120,49 +125,73 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 
 *Ends when: you can register, upload a real video, and see it as a clip with a waveform, and scrub it smoothly.*
 
+**Done and proven, 17 August 2026.** 92 backend tests, 96 frontend tests, and a 29-check end-to-end run driving a real Chromium from an empty database to a clip playing back — three times, no flake. Write-up in [`frontend/e2e/README.md`](frontend/e2e/README.md).
+
 ### Backend — schema 🔗
 
-- [ ] Migration: `users`, `refresh_tokens`
-- [ ] Migration: `media_assets` (including `derived_from_asset_id`, `derived_by_job_id`)
-- [ ] Migration: `projects`, `project_assets`
-- [ ] Migration: `jobs` (including `priority`)
-- [ ] Migration: `plans`, `subscriptions`, `payments`, `provider_events`
-- [ ] Migration: `credit_ledger` with `bucket`, and the unique index on `(job_id, reason, bucket)`
-- [ ] Seed the four plans with the values from [`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §5.5
-- [ ] Repository layer where **every query filters on `user_id`** — a route that forgets is a data leak
+- [x] Migration: `users`, `refresh_tokens`
+- [x] Migration: `media_assets` (including `derived_from_asset_id`, `derived_by_job_id`)
+- [x] Migration: `projects`, `project_assets`
+- [x] Migration: `jobs` (including `priority`)
+- [x] Migration: `plans`, `subscriptions`, `payments`, `provider_events`
+- [x] Migration: `credit_ledger` with `bucket`, and the unique index on `(job_id, reason, bucket)`
+- [x] Seed the four plans with the values from [`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §5.5
+- [x] Repository layer where **every query filters on `user_id`** — enforced structurally: a `ScopedRepository` cannot be built without a user and every query starts from `_select()`, which already carries the filter. Proved from the outside with two accounts against every media endpoint
+- [x] `0002_m2_schema` written by hand, not autogenerated — autogenerate silently re-creates native enum types, drops `postgresql_where` from partial indexes, and cannot order the circular FK between `media_assets` and `jobs`. All twelve partial indexes verified present in the live schema
+- [x] `alembic check` added to CI — the guard that catches a model and a migration drifting apart. It found two real drifts on the first run: check constraints taking a double `ck_` prefix, and `postgresql_ops` being used for sort order when it carries operator classes
 
 ### Backend — auth
 
-- [ ] `POST /auth/register` — bcrypt cost 12, free plan + signup allowance granted in the same transaction
-- [ ] `POST /auth/login` — identical response for wrong password and unknown email
-- [ ] `POST /auth/refresh` — rotating tokens; reuse of a rotated token revokes the whole chain
-- [ ] `POST /auth/logout`, `GET /me` with three balances and plan limits
-- [ ] JWT middleware, 15-minute access tokens
-- [ ] Rate limiting: 100/min general, 20/min on auth per IP
+- [x] `POST /auth/register` — bcrypt cost 12, free plan + signup allowance granted in the same transaction
+- [x] `POST /auth/login` — identical status, code **and message** for wrong password and unknown email, plus a dummy verify so the two take the same time
+- [x] `POST /auth/refresh` — rotating tokens; reuse of a rotated token revokes the whole chain
+- [x] `POST /auth/logout`, `GET /me` with three balances and plan limits
+- [x] JWT middleware, 15-minute access tokens
+- [x] Rate limiting: 100/min general, 20/min on auth per IP, with `Retry-After`
+- [x] **Contract change:** the refresh token is now an httpOnly cookie rather than a body field — [`docs/05-api-contract.md`](docs/05-api-contract.md) §2, version 1.2. The frontend client written in M0 already assumed a cookie, so the two could not both be right
+- [x] Passwords are SHA-256'd before bcrypt, so a passphrase over 72 bytes is neither truncated nor rejected
 
 ### Backend — media 🔗
 
-- [ ] `POST /media/uploads` — quota check, presigned PUT, 15-minute expiry
-- [ ] Multipart for files over 100 MB
-- [ ] `POST /media/{id}/complete` — verify object exists and size matches, enqueue ingest
-- [ ] Ingest worker: `ffprobe` → duration, dimensions, fps, codecs
-- [ ] Ingest worker: 480p H.264 faststart **proxy** ⚠️ — the whole editor depends on this
-- [ ] Ingest worker: thumbnail at ~10%
-- [ ] Ingest worker: waveform peaks JSON, 100 buckets/second
-- [ ] Asset only becomes `ready` when all four exist
-- [ ] `GET /media/{id}` with signed CDN URLs, 1-hour expiry
-- [ ] `GET /media`, `DELETE /media/{id}` with `ASSET_IN_USE` guard
-- [ ] Reject unreadable media with a reason a person can read
+- [x] `POST /media/uploads` — quota check, presigned PUT, 15-minute expiry, idempotency key honoured
+- [x] Multipart for files over 100 MB *(server side; the browser still refuses over 100 MB — see "Deliberately not done" below)*
+- [x] `POST /media/{id}/complete` — verify object exists and size matches, enqueue ingest
+- [x] Ingest worker: `ffprobe` → duration, dimensions, fps, codecs — with display dimensions, so a portrait phone recording does not land on the timeline on its side
+- [x] Ingest worker: 480p H.264 faststart **proxy** ⚠️ — and it never upscales: `scale=-2:'min(480,ih)'`
+- [x] Ingest worker: thumbnail at ~10%, with a fallback to frame zero for files too short to seek
+- [x] Ingest worker: waveform peaks JSON, 100 buckets/second, cross-checked against ffmpeg's own `volumedetect`
+- [x] Asset only becomes `ready` when all four exist — and kind-aware, so an audio upload is not held forever waiting for a thumbnail it can never have
+- [x] `GET /media/{id}` with signed URLs, 1-hour expiry
+- [x] `GET /media` (cursor-paged), `DELETE /media/{id}` with `ASSET_IN_USE` guard
+- [x] Reject unreadable media with a reason a person can read
+- [x] **`docker-compose.yml` corrected**: it made `proxies/`, `thumbs/` and `peaks/` anonymously readable, against [`docs/03`](docs/03-backend-architecture.md) §6.3 — *"Everything is private."* Verified: anonymous GET now 403, signed GET 200
 
 ### Frontend
 
-- [ ] Register / login / logout, token refresh on 401 with one retry
-- [ ] Upload with real progress from the browser's own events
-- [ ] Media bin showing ingest status, thumbnails, durations
-- [ ] Timeline shell: ruler, playhead, zoom, one video track
-- [ ] Waveform drawn to `<canvas>` from peaks — **never one DOM node per peak**
-- [ ] Clip rendered on the track, scrubbable
-- [ ] Compositor from M1 cleaned up and wired to the real proxy
+- [x] Register / login / logout, token refresh on 401 with one retry
+- [x] Upload with real progress from the browser's own events (`XMLHttpRequest` — `fetch` has no upload progress event)
+- [x] Media bin showing ingest status, thumbnails, durations; polls only while something is unfinished
+- [x] Timeline shell: ruler, playhead, zoom, one video track
+- [x] Waveform drawn to `<canvas>` from peaks — **never one DOM node per peak**. Measured in the browser: 3 DOM nodes for 600 peaks, 1679 lit pixels across 239 of 240 columns
+- [x] Clip rendered on the track, scrubbable
+- [x] Compositor from M1 lifted into `src/editor/playback/` and wired to the real proxy. The 45 M1 tests moved with it and still pass
+- [x] **The timeline has no visual identity, deliberately.** No palette, typography or visual states have been delivered, so every colour goes through a token in `globals.css` and every token is a neutral grey. Applying the charter means editing that one block
+
+### What the browser found that nothing else did
+
+Three defects survived a green unit suite, a strict type-check and a clean lint. Each is recorded where it was fixed:
+
+1. **Infinite render loop** — `selectClips` returned a fresh `[]` when there was no video track, so Zustand saw a new reference on every read. Correct in isolation; broken the moment React subscribes, which is the editor's first paint.
+2. **The compositor could not draw a real proxy** ⚠️ — `texImage2D` threw `SecurityError: the video element contains cross-origin data`. The proxy comes from storage on another origin and `crossOrigin` was never set on the `<video>`. The element loads, plays and reports `readyState 4`; only the texture upload fails. **Preview against real ingest output is the whole point of M2's frontend, and it was completely broken while every other signal was green.**
+3. **The ingest worker died on its second job** — the Celery task calls `asyncio.run()` per job while sharing the module-level pooled engine, so job two got a connection bound to job one's dead loop. A test that ingests one file never reaches the second.
+
+### Deliberately not done in M2
+
+- **No project persistence.** `POST/GET/PATCH /projects` stay in M3, which is titled *"Editing that survives a reload"*. M2's timeline lives in the browser and is gone on reload — the end-to-end run asserts that, so the boundary is checked rather than assumed.
+- **Multi-part upload in the browser.** The server issues the per-part URLs; the client refuses over 100 MB with a clear message rather than failing silently at 101 MB.
+  ⚠️ **The 17 August plan limits invalidated the assumption this rested on.** When it was written no tier had a stated per-file size, so a 100 MB client ceiling was a safe placeholder. Pro is now 1 GB and Studio 5 GB ([`docs/02-scope-v1.md`](docs/02-scope-v1.md) §3.2), which means **a paying user cannot upload a file their own plan permits.** The server side is already done — this is the browser half of the same feature, and it now has a deadline it did not have before. It is not M3 work by title, but it must not reach launch unlogged.
+- **Storage quota values.** 🟠 The enforcement path is built and tested, but no document states the limit for any tier. The numbers in `app/services/plans.py` are marked `PLACEHOLDER` and must not ship. Same commercial question as the retention policy, and the same owner.
+- **The peaks disagreement.** [`docs/03`](docs/03-backend-architecture.md) §6.2 says "min/max amplitude pairs"; the contract §3 says one value per bucket, and its own arithmetic only works that way. The contract is what both sides build against, so one value per bucket ships. §6.2's wording is the one to correct.
 
 ---
 
@@ -170,43 +199,71 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 
 *Ends when: you can cut, arrange, undo, close the tab, and come back to exactly what you left.*
 
+> **Visual baseline settled 17 August 2026: A2 Studio** — [`docs/ui-directions/ui-directions-modern/`](docs/ui-directions/ui-directions-modern/index.html), written up as [`docs/08-ui-charter.md`](docs/08-ui-charter.md). Dark surfaces, neon yellow accents, rounded translucent chrome, and a deliberately technical grid timeline. The blocker recorded against M3 in `docs/README.md` is cleared.
+
+> 🟢 **Backend projects shipped 18 August. The frontend half is unblocked.** `openapi.json` now carries the five project routes and the whole timeline document — `TimelineDocument`, `MediaTrack`, `TextTrack`, `MediaClip`, `TextClip`, `Transform`, `Crop`, `Transition`, `ColorGradeEffect` — and `make types` has regenerated `frontend/src/lib/api/generated.ts` from it. `tracks` comes out as `MediaTrack | TextTrack`, which a `switch (track.kind)` narrows, so the first task below is generation rather than authorship. **Do not hand-write the timeline type.**
+
+### Frontend — visual charter 🟢
+
+- [x] [`docs/08-ui-charter.md`](docs/08-ui-charter.md) written from A2 — palette, type scale, spacing, radii, the six component states, motion durations and curves. §13 is the block that replaces `@theme`
+- [x] `frontend/src/styles/globals.css` `@theme` block replaced with the charter tokens — **no component file touched**. The property held: applying a whole visual identity was one file
+- [x] The four states the timeline needs proven against the charter: clip at rest, hover, selected, dragging, plus the muted lane — none distinguished by hue alone. Selected also changes weight, dragging also lifts and rings, a muted lane also shows an `M` in its header
+- [x] Blur and translucency confined to the chrome ⚠️ — nothing in the timeline carries a `backdrop-filter`, and the rule and its reason are written into `globals.css` where the next person to add one will read it
+
 ### Frontend — the document
 
-- [ ] Timeline document type generated from the OpenAPI schema — **same shape as the API**, no client variant
-- [ ] Zustand store: `timeline`, `selection`, `playhead`, `zoom`, `version`, `isDirty`
-- [ ] `commit(label, recipe)` using `produceWithPatches` — undo/redo from Immer patches, not hand-written inverses
-- [ ] Undo/redo stacks capped at 200, keyboard bound
-- [ ] Memoised selectors for anything derived — nothing derived stored in the document
+- [x] Timeline document type generated from the OpenAPI schema — **same shape as the API**, no client variant. The hand-written M2 subset is gone and swapping it touched no caller, which is what it was written for
+- [x] Zustand store: `timeline`, `selection`, `playhead`, `zoom`, `version`, `isDirty`
+- [x] `commit(label, recipe)` using `produceWithPatches` — undo/redo from Immer patches, not hand-written inverses. A commit is one undo step however much it changed, which is what M4 needs for 1,800 caption clips
+- [x] Undo/redo stacks capped at 200, keyboard bound. The keyboard map is a pure function in `editor/keyboard.ts`, so it is tested without a DOM
+- [x] Memoised selectors for anything derived — nothing derived stored in the document. **Memoised on the document's identity, not merely written as functions**: a selector that builds a fresh array each call is an infinite render loop, which this project has now shipped twice. `selector stability` in `store.test.ts` is the test that fails instead of the browser
 
 ### Frontend — editing
 
-- [ ] Split at playhead, trim both ends, move, reorder, duplicate, delete
-- [ ] **Drags use local state and commit once on drop** — never per pointer move
-- [ ] Snapping to clip edges, playhead and zero, with a modifier to suppress
-- [ ] Selection: click, shift-click, marquee
-- [ ] Keyboard: space, `S`, arrow nudge by one frame
-- [ ] Clip properties: volume, speed, rotate, flip, crop and reframe
-- [ ] Audio track: music clip, per-clip volume, fades — Web Audio gain automation
-- [ ] Text track: add a title, font, size, colour, position
-- [ ] Transitions: cut, fade to black, cross dissolve
-- [ ] Timeline virtualised by time window ⚠️ — must stay smooth at 500 clips
+- [x] Split at playhead, trim both ends, move, reorder, duplicate, delete — pure recipes in `editor/state/operations.ts`, each leaving §4.3 satisfied. **Speed is what makes split and trim non-obvious** and it has its own tests
+- [x] **Drags use local state and commit once on drop** — never per pointer move. Proven by a test that fires eleven moves and asserts the history is unchanged until the drop
+- [x] Snapping to clip edges, playhead and zero, `alt` to suppress. **The tolerance is in pixels, not milliseconds** — 100 ms is a fifth of a pixel when zoomed out and half the screen when zoomed in, and what the hand judges is distance on screen
+- [x] Selection: click, shift-click, marquee. The marquee catches what it *touches* rather than what it encloses — a lasso that only took fully-enclosed clips would miss the long one you dragged across, which is usually the one you meant
+- [x] Keyboard: space, `S`, arrow nudge by one frame, plus undo/redo, duplicate, delete, save and escape. Nothing fires while focus is in a text field
+- [x] Clip properties: volume, speed, fades, rotate, flip, and reframe — in `editor/inspector/`. ⚠️ **Reframe is two presets (full frame / centre 9:16), not a drag-to-crop.** The operation takes any normalised rectangle; only the handle to draw one is missing
+- [x] Audio track: music clip, per-clip volume, fades. An audio-only asset routes to the music lane from the media bin — sending it to the video track would put a soundtrack on the picture track. ⚠️ **Web Audio gain automation is not wired**: the values are in the document and the renderer will honour them, the browser preview does not yet
+- [ ] Text track — **add, edit and position a title are done**; font, size and colour are not. The `style` override object is in the document and generated into the client types, so each is a control rather than a change of shape
+- [x] Transitions: cut, fade to black, cross dissolve, per side, clamped to invariant 7 — and **re-clamped after any edit that changes a duration or a neighbour**, because the bound is a property of two clips and trimming one of them breaks it without touching the transition. A cut is stored as *no* transition rather than a zero-length one, so the renderer never has to ask what a zero-length dissolve means. ⚠️ **The preview draws every join as a cut**: the engine derives a crossfade from overlapping clips and the document forbids overlap, so rendering one needs a contract decision about which side gives up the frames — see [`docs/09-m3-notes.md`](docs/09-m3-notes.md) §5
+- [x] Timeline virtualised by time window ⚠️ — clips outside the window plus half a screen of overscan are not rendered at all, and the grid is a repeating background rather than one element per line. Tested at 500 clips
 
 ### Backend — projects
 
-- [ ] `POST /projects`, `GET /projects`, `GET /projects/{id}` with assets and fresh signed URLs
-- [ ] `PATCH /projects/{id}` — timeline + version, `409` on stale version
-- [ ] **Timeline validation on every write** — all eight invariants from [`docs/05-api-contract.md`](docs/05-api-contract.md) §4.3, rejecting with the offending clip named
-- [ ] `project_assets` rebuilt from the document on each save
-- [ ] `duration_ms` derived on save
-- [ ] Duplicate, soft delete
+- [x] `POST /projects`, `GET /projects`, `GET /projects/{id}` with assets and fresh signed URLs
+- [x] `PATCH /projects/{id}` — timeline + version, `409` on stale version. **The check and the bump are one `UPDATE … WHERE version = :expected`** — reading, comparing in Python and then writing leaves a window where two tabs both read 12 and both write 13, which is the exact failure the 409 exists to make visible
+- [x] **Timeline validation on every write** — all eight invariants from [`docs/05-api-contract.md`](docs/05-api-contract.md) §4.3, rejecting with the offending clip named. Structure first and with no query at all, then one batched asset lookup for invariants 4 and 5
+- [x] `project_assets` rebuilt from the document on each save — diffed rather than deleted-and-reinserted, because autosave runs every two seconds
+- [x] `duration_ms` derived on save, never sent by the client
+- [x] Duplicate, soft delete. `project_assets` survives a soft delete, so a restore inside the retention window still finds its footage
 
 ### Frontend — persistence
 
-- [ ] Autosave debounced 2 s, plus on blur and `visibilitychange`
-- [ ] One save in flight at a time; never mid-drag
-- [ ] `409` → dialog: "Keep mine" / "Load the other version". **No automatic merge**
+- [x] Autosave debounced 2 s, plus on blur and `visibilitychange`
+- [x] One save in flight at a time; never mid-drag. Both are tested on fake timers — neither would show up in a click-through
+- [x] `409` → a bar with "Keep mine" and "Load the other version", and autosave goes quiet until one is chosen. **No automatic merge**
 - [ ] IndexedDB mirror on every commit, restore offer on open 💤
-- [ ] `sendBeacon` flush on `pagehide`
+- [x] Last-chance flush on `pagehide` — **`fetch` with `keepalive`, not `sendBeacon`**, which only issues POST and cannot send a PATCH. Correction recorded in [`docs/04-frontend-architecture.md`](docs/04-frontend-architecture.md) §6, including the 64 KB body cap that makes it best-effort
+
+> **M3 is complete bar three things, 18 August — audited and repaired 20 August.** The
+> document, the history, the editing operations, persistence and the whole interface over
+> them are done, covered by 201 frontend tests and exercised end to end: register, create a
+> project, edit, reload, and the edit is still there.
+>
+> Left open: **the text track's font, size and colour controls** (the style object is in the
+> document, so each is a control rather than a change of shape); the **IndexedDB mirror**,
+> which the checklist already marked 💤 and which is also the proper answer to the 64 KB cap
+> on the unload flush; and **transitions in the preview**, which is not an omission anyone
+> chose — it needs a contract decision first.
+>
+> The audit that followed found nine defects, two of which silently lost the user's work: a
+> trim past the end of its media, and a transition left over its bound by a later trim. Both
+> were rejected by the server on the next autosave, with the editor then stuck on "Could not
+> save". All nine are fixed and written up in [`docs/09-m3-notes.md`](docs/09-m3-notes.md)
+> §6, with a test each that fails on the old code.
 
 ---
 
@@ -214,42 +271,53 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 
 *Ends when: you run captions on a real clip, watch progress, see the words appear in time, and fix a misspelled name.*
 
+> **Read [`docs/10-m4-readiness.md`](docs/10-m4-readiness.md) first.** Written 19 August
+> from a full read of the schema, the workers and the contract — what M4 inherits already
+> built (the tables, the enums, the queues, the concurrency limits, the seeded plan
+> catalogue), what the contract already specifies in full so it does not need re-deciding
+> (every per-tool payload, the large-result split, the WebSocket's fallback contract), and
+> **two real open decisions found while preparing this** — which transcription engine
+> powers Captions, and the still-blocked language list — with a recommendation for the
+> first rather than a decision made without you.
+
 ### Backend — job pipeline 🔗
 
-- [ ] `POST /jobs` — validate, resolve assets, price, reserve credits, insert, enqueue, **all in one transaction**
-- [ ] `allocate()` — plan credits first, then top-up. Two ledger rows when it spans both
-- [ ] Idempotency key handling, replay returns the original job
-- [ ] Per-plan concurrency caps
-- [ ] Priority bands, queues split per family
-- [ ] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
-- [ ] Progress published to Redis at real checkpoints, not on a timer
-- [ ] Retry transient failures 3× with backoff; permanent failures go straight to `failed`
-- [ ] Refund on failure, **to the buckets it took from**, read back from the reservation rows
-- [ ] Period-rollover edge case: refund to `topup` instead
-- [ ] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
-- [ ] Results over 256 KB go to S3, `result_key` instead of `result`
-- [ ] WebSocket `/ws` + Redis pub/sub fan-out
-- [ ] Nightly ledger reconciliation, alerting on drift
+- [x] `POST /jobs` — validate, resolve assets, price, reserve credits, insert, **all in one transaction**. ⚠️ The enqueue is deliberately **after** the commit: sending the task inside the transaction hands a worker an id no other connection can see yet, and the job fails before the user is told it exists
+- [x] `allocate()` — plan credits first, then top-up. Two ledger rows when it spans both. Both of the documented examples are tests
+- [x] Idempotency key handling, replay returns the original job and charges once
+- [x] Per-plan concurrency caps — applied **at the claim**, not at creation: the contract promises the request still succeeds and the job waits for a slot
+- [x] Priority bands, queues split per family. Redis has no native priority, so Celery's `priority_steps` are set to the four plans' `queue_priority` values and `apply_async(priority=…)` needs no translation
+- [x] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
+- [x] Progress published to Redis at real checkpoints, not on a timer
+- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times
+- [x] Refund on failure, **to the buckets it took from**, read back from the reservation rows
+- [x] Period-rollover edge case: refund to `topup` instead — with a tolerance, because `jobs.created_at` is the database's clock and `current_period_start` is written by whatever granted it
+- [x] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
+- [x] Results over 256 KB go to S3, `result_key` instead of `result`
+- [x] WebSocket `/ws` + Redis pub/sub fan-out. Each socket takes its **own** Redis connection — a `SUBSCRIBE` held for the life of a browser tab would otherwise starve the shared pool that every rate-limit and idempotency call uses
+- [x] Nightly ledger reconciliation, alerting on drift. **Reports; does not repair** — silently correcting a balance would hide the bug that caused the drift and destroy the evidence of how much was lost and to whom
 
 ### Backend — the three tools
 
-- [ ] **Captions** — transcribe, word-level timings, emphasis detection. Language list confirmed
-- [ ] **Smart trim** — silence, filler, stutter, repeat detection. Three strengths. Ranges in **asset time**
-- [ ] **Colour analysis** — returns LUT name + strength + alternatives
-- [ ] Ship 3 caption styles and 5 LUTs, with the `.cube` files **shared with the frontend** ⚠️
+- [x] **Captions** — transcribe, word-level timings, emphasis detection. Engine decided 21 August: **self-hosted `faster-whisper`**, behind one function so a swap is a function body. Emphasis is measured from per-word loudness against the speaker's own baseline, not an absolute level. **Languages confirmed 21 August: English, French and Hindi** — a language accepted is a language we are claiming works, which is why the list is three and not thirty
+- [x] **Smart trim** — silence, filler, stutter, repeat detection. Three strengths. Ranges in **asset time**. A transcript that fails does not fail the job: silence detection alone is a useful answer. A filler list per accepted language, Hindi in **both scripts** because real Indian speech is often Hinglish and comes back in Latin
+- [x] **Colour analysis** — returns LUT name + strength + alternatives. Sampled frames through `signalstats`, no external dependency, which is why the readiness doc put it first
+- [x] Ship 5 LUTs, with the `.cube` files **shared with the frontend** — generated by `make luts`, and a test asserts the server's catalogue and the browser's agree, because a look the server recommends and the browser cannot draw reads as a broken tool rather than a missing file. ⚠️ **One caption style, not three**: `caption_bold`. The other two are design work, not engineering
 
 ### Frontend — tools
 
-- [ ] Estimate on panel open, price on the button
-- [ ] Invoke with idempotency key, badge on the clip, editing continues
-- [ ] WebSocket progress, polling fallback every 3 s
-- [ ] Re-sync via `GET /jobs?status=running` on reconnect
-- [ ] **Captions → one text clip per word, in a single `commit`** — one undo step for 1,800 clips
-- [ ] Smart trim → splits and removals, one `commit`
-- [ ] Colour grade → one `effects` entry, picture changes instantly
-- [ ] ⚠️ **Asset time → timeline time conversion**, unit-tested on a trimmed, sped-up clip
-- [ ] Caption editing: correct a word, retime, restyle, delete
-- [ ] Low-confidence words flagged visually
+- [ ] Mock server (Prism or MSW) serving fixtures from the same schema *(moved from M0 — still open)*
+- [ ] Fixtures: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
+- [x] Estimate on panel open, price on the button — including `blockedBy`, so "Not enough credits" is on the button rather than behind a failed click
+- [x] Invoke with idempotency key, editing continues while it runs
+- [x] WebSocket progress, polling fallback every 3 s. **The socket only ever makes the poll happen sooner** — every event is a hint to re-read the job, never the job's new state, so a missed event costs latency and nothing else
+- [x] Re-sync via `GET /jobs?status=running` on reconnect
+- [x] **Captions → one text clip per word, in a single `commit`** — one undo step for 1,800 clips. Re-running replaces the previous run rather than doubling it, and a hand-typed title is never touched
+- [x] Smart trim → splits and removals, one `commit`, with the ripple that closes the gaps behind them
+- [x] Colour grade → one `effects` entry, replacing any grade already there
+- [x] ⚠️ **Asset time → timeline time conversion**, unit-tested on a clip that is both trimmed *and* sped up — the only clip where the two clocks differ enough for a mistake to show
+- [x] Caption editing: correct a word, retime and delete. ⚠️ Restyling is the missing caption styles, above
+- [x] Low-confidence words flagged visually. **Session state, not document state**: the contract's `TextClip` has no confidence field, because confidence describes how a word was produced rather than what it is
 - [ ] Failure states mapped from `errorCode`, with retry, saying the credits came back
 
 ---
@@ -293,6 +361,72 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 
 ---
 
+## M7 · Cybersecurity ⚠️
+
+*Ends when: no critical or high finding is open, every fix has a regression test, and the scanners run on every pull request.*
+
+**The last milestone before launch, and the only one whose job is to break what the previous seven built.** Full plan — scope, rules of engagement, threat model, severity scale — in [`docs/07-security.md`](docs/07-security.md). This is the checklist; that document says why each line is here.
+
+**Runs on staging, deployed from the release commit, with synthetic data only.** Never production, never real footage, never real cards. Stripe and Razorpay are not targets — their sandboxes are.
+
+### Rules of engagement 🔗
+
+- [ ] Staging stack deployed from the release commit, seeded with synthetic accounts and generated media
+- [ ] Scope and dates agreed in writing with the project lead, including who can call a stop
+- [ ] AWS testing policy re-read **the week the test runs** — it changes, and the DoS carve-out is the part that bites
+- [ ] Private findings register created at `security/findings.md` — never a public issue
+
+### Part A — code review
+
+- [ ] **Every route**: authenticated, ownership enforced at the repository, no cross-user identifier accepted
+- [ ] **The `ScopedRepository` claim re-proved** for every repository added in M3–M6, not just media
+- [ ] Auth: rotation, reuse-revokes-chain, logout revoking, equal-time login, bcrypt cost, the SHA-256 pre-hash
+- [ ] **The timeline validator read as a security control** — it parses attacker-controlled JSON that M5 turns into a filter graph. All eight §4.3 invariants, plus bounds on every numeric field
+- [ ] No f-string SQL, no `text()` with interpolation, no `dict[str, Any]` reaching a query
+- [ ] `gitleaks` over the **full history**; `assert_production_safe()` verified to actually refuse dev defaults
+- [ ] Logs carry no password, token or **presigned URL** — a signed URL in a log is a credential with an hour to live
+- [ ] Frontend: httpOnly + `Secure` + `SameSite` on the refresh cookie, a decided CSRF story, no `dangerouslySetInnerHTML` near user or model text
+- [ ] Frontend: CSP, `frame-ancestors`, `Referrer-Policy`; bucket CORS an origin list and **not** `*`; user media not served from the app origin
+- [ ] Infra: Redis authenticated and private, containers non-root with no Docker socket, **IMDSv2 required with hop limit 1**, OIDC instead of long-lived AWS keys in CI
+- [ ] **Branch protection on `main`** — moved here from M0 on 17 August, where it protected a branch nobody pushes to. Owned here because it is a supply-chain control
+- [ ] Dependencies: lockfiles installed from in CI, `pip-audit` / `pnpm audit` clean or every exception dated, **FFmpeg pinned and current**, Actions pinned by SHA
+
+### Part B — penetration test
+
+- [ ] **Cross-account isolation, every resource type** — project, asset, job, ledger, subscription, payment, socket. The most damaging finding available in this product, so it gets the most time
+- [ ] Auth: rotated-token reuse, post-logout refresh, `alg: none`, key-confusion, user enumeration by timing
+- [ ] Storage: anonymous GET on all four derivative kinds, expired PUT, PUT for another key, **5 GB through a URL issued for 5 MB**, content-type mismatch, key traversal via filename
+- [ ] ⚠️ **Ingest worker — the sharp boundary.** HLS / `concat` / external-reference containers pointed at `169.254.169.254` and `file:///`, decode bombs, 50 at once from one free account, traversal filenames, a script named `.mp4`, temp-file cleanup after repeated kills, egress from inside the container
+- [ ] ⚠️ **Fuzz `ffprobe`** on mutated MP4/MOV/MKV/WAV headers — timeboxed, crash triage only. The output is a decision about upgrading or sandboxing, not an exploit
+- [ ] ⚠️ **Export filter graph**: caption text containing `:` `\` `'` `%` and newlines, a font path from user input, speed `0`, negative crop, NaN. Escaping must live in one builder, never in string concatenation
+- [ ] ⚠️ **Credits** — 20 concurrent jobs against a balance of 1; the same with one idempotency key; cancel at the instant of success; the period-rollover refund; a client-sent price. **The ledger must never go negative**, and reserved = settled + refunded per bucket across the whole run
+- [ ] Webhooks: unsigned, tampered, replayed, another user's subscription, out of order, oversized, a plan that does not exist
+- [ ] Jobs and WebSocket: subscribe to someone else's job, connect with an expiring token, cancel a job that is not yours
+- [ ] Browser: stored and reflected XSS in names, filenames and caption text; CSRF on `/auth/refresh`; open redirect on the checkout return; **and, with script running on our origin, can the refresh token be extracted?** If yes, contract 1.2's justification is wrong
+- [ ] Rate limits: `X-Forwarded-For` spoofing behind the ALB, account rotation, the socket, the presigned PUT. Then **measure the cost of an abusive free account** — that number decides whether email verification ships at launch
+
+### Automated gates — these stay after M7
+
+- [ ] `semgrep` (python · fastapi · react · owasp) on every pull request
+- [ ] `bandit` / ruff `S` rules on every pull request
+- [ ] `pip-audit` · `pnpm audit` · `osv-scanner` daily
+- [ ] `gitleaks` on every pull request
+- [ ] `trivy` on every image build
+- [ ] `make security` running the lot locally, and a ZAP baseline before each release
+
+### Fix, retest, hand over
+
+- [ ] Every critical and high fixed — **launch is blocked while one is open**
+- [ ] Every fix carries a test that fails without it
+- [ ] Retest from the register; the finding closes on evidence, not on a commit message
+- [ ] Any accepted risk written down, time-boxed and signed by the project lead
+- [ ] `docs/08-m7-notes.md` written, in the shape of [`docs/06-m2-notes.md`](docs/06-m2-notes.md)
+- [ ] `security.txt` published with a disclosure address, and a named person who answers it
+
+> **Not in M7, on purpose:** facial data and consent (phase 2 — none of it exists yet), GDPR/DPA paperwork, any certification, a bug bounty, and DDoS resilience beyond rate limits. An external penetration test is **recommended once there is revenue** and is the only real correction for M7 being a review of one's own code. Reasoning in [`docs/07-security.md`](docs/07-security.md) §11.
+
+---
+
 ## Before calling it done
 
 Walk [`docs/02-scope-v1.md`](docs/02-scope-v1.md) §6 end to end, as someone who has never seen the product. All fourteen steps, no explanations allowed.
@@ -302,6 +436,7 @@ Walk [`docs/02-scope-v1.md`](docs/02-scope-v1.md) §6 end to end, as someone who
 - [ ] A project with 500 clips
 - [ ] Slow network, dropped socket, closed tab mid-job
 - [ ] An account that runs out of credits halfway through
+- [ ] **No critical or high finding open in `security/findings.md`** — M7's gate, and the one that cannot be waived quietly
 
 ---
 
@@ -320,5 +455,8 @@ If one of these starts feeling necessary, it is a scope conversation, not a task
 3. **M2 backend before M2 frontend** — the frontend needs real proxies to be worth building against
 4. **M3 is the long one.** It is most of the frontend, and it is where a schedule slips quietly
 5. **M4, M5, M6** are each self-contained and can be reordered if something external forces it
+6. **M7 runs last and cannot move**, because it reviews the whole system and the whole system only exists at the end
 
 Start the Stripe and Razorpay applications during M0 — they take calendar time nobody here controls, and M6 stalls without them.
+
+M7 runs last, but the scanners in its "automated gates" block are cheap to switch on during M0 and expensive to switch on at the end, when the first run returns two hundred findings across six milestones of code. Same for [`docs/07-security.md`](docs/07-security.md) §2 and §8 — the rules and the severity gate are worth agreeing early, because agreeing them after a finding appears is a negotiation.

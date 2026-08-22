@@ -1,13 +1,132 @@
 @import 'tailwindcss';
 
-/* The editor is a dark tool. Marketing pages can opt out with a wrapper. */
+/* ==========================================================================
+   Design tokens — docs/08-ui-charter.md, applied 18 August 2026.
+
+   The baseline is A2 Studio, approved by the project lead on 17 August. This
+   block is §13 of the charter and nothing else: every value here is defended
+   there, with the failure it prevents written next to it.
+
+   THE PROPERTY THIS FILE EXISTS TO PRESERVE: no component contains a literal
+   colour, radius, duration or font stack. M2 built the timeline structurally
+   for exactly this moment, so applying the charter was one file rather than a
+   sweep — and re-theming it later stays one file. A one-off literal in a
+   component is how that property dies, and it dies quietly.
+
+   Three rules from the charter that constrain what may be added here:
+
+   1. Neon yellow is never body text. It is an active state, a live data value,
+      or a fill you read `--color-accent-ink` on top of. Sentences are
+      `--color-ink`.
+   2. Blur and translucency stop at the chrome — five elements, five compositor
+      layers. Timeline clips are opaque and flat, because the timeline has to
+      stay smooth at 500 clips (docs/04-frontend-architecture.md §9).
+   3. No state is carried by hue alone. Every state changes at least two of:
+      fill, edge, weight, position, icon.
+   ========================================================================== */
+
 @theme {
-  --color-surface: #0e1214;
-  --color-surface-2: #161b1e;
-  --color-rule: #293134;
-  --color-ink: #e4e9ea;
-  --color-ink-2: #b4bec0;
-  --color-accent: #63becd;
+  /* --- Surfaces ---------------------------------------------------------
+     The chrome is translucent white over near-black; these solids are the
+     composite of that translucency, and they are what the timeline uses,
+     where blur is forbidden. */
+  --color-surface: #0a0a0c;
+  --color-surface-2: #151517;
+  --color-surface-3: #202022;
+  --color-rule: #26262b;
+  /* The one place pure black is correct: the picture is the subject. */
+  --color-canvas: #000000;
+
+  /* --- Ink ---------------------------------------------------------------
+     Contrast against --color-surface. `--color-ink-3` at 4.6:1 is the floor
+     for anything a user has to read; `--color-ink-faint` is never text. */
+  --color-ink: #f0f0f4;
+  --color-ink-2: #9a9aa6;
+  --color-ink-3: #7a7a87;
+  --color-ink-faint: #4e4e58;
+
+  /* --- Accent ------------------------------------------------------------
+     One accent, one hex, no secondary brand colour. */
+  --color-accent: #ffe81f;
+  --color-accent-ink: #0a0a0c;
+  --color-accent-soft: rgba(255, 232, 31, 0.14);
+  --color-accent-line: rgba(255, 232, 31, 0.5);
+  --color-accent-glow: rgba(255, 232, 31, 0.22);
+
+  /* --- Semantic ----------------------------------------------------------
+     Warning is orange and not yellow, deliberately: yellow already means
+     *active*, and a yellow "you are running out of credits" is unreadable
+     next to a yellow "this tool is selected". The one screen that collision
+     lands on is the paywall. */
+  --color-danger: #ff5c5c;
+  --color-warning: #ff9a2e;
+  --color-success: #3ddc97;
+
+  /* --- Timeline ----------------------------------------------------------
+     Opaque, flat, minimal radius. Read by CSS and, for the waveform and the
+     grid, by canvas code. */
+  --color-track: #121214;
+  --color-track-header: #151517;
+  --color-clip: #252527;
+  --color-clip-hover: #343435;
+  /* Drawn only under ~6px wide, where fill alone stops separating neighbours. */
+  --color-clip-border: #33333a;
+  --color-clip-selected: #ffe81f;
+  --color-clip-selected-border: rgba(255, 232, 31, 0.5);
+  /* The opaque equivalent of the accent at 16% — computed, not eyeballed, so
+     it matches the chrome's tint without costing a compositor layer. */
+  --color-clip-dragging: #312e0f;
+  --color-track-muted-opacity: 0.32;
+
+  --color-ruler: #0f0f11;
+  --color-ruler-tick: #2a2a30;
+  --color-ruler-label: #7a7a87;
+  --color-playhead: #ffe81f;
+  --color-grid-major: rgba(255, 255, 255, 0.09);
+  --color-grid-minor: rgba(255, 255, 255, 0.035);
+  --color-snap-guide: rgba(255, 232, 31, 0.55);
+
+  --color-waveform: #8a8a96;
+  /* Required, not decorative: a #8a8a96 waveform on a selected (yellow) clip
+     is invisible, and the canvas cannot inherit a colour from CSS. */
+  --color-waveform-selected: #3d3806;
+
+  /* --- Chrome ------------------------------------------------------------
+     Budget: five blurred elements per screen. Rail, media panel, contextual
+     bar, transport, timeline container. A sixth uses --color-surface-2 solid
+     and nobody notices. */
+  --chrome-fill: rgba(255, 255, 255, 0.045);
+  --chrome-edge: rgba(255, 255, 255, 0.09);
+  --chrome-blur: 14px;
+
+  /* --- Radius ------------------------------------------------------------
+     Shrinks as density rises: a 13px radius on a 19px clip eats a quarter of
+     its height and it stops reading as something you can trim to a frame. */
+  --radius-pill: 999px;
+  --radius-lg: 16px;
+  --radius-md: 13px;
+  --radius-sm: 10px;
+  --radius-xs: 5px;
+
+  /* --- Motion ------------------------------------------------------------
+     Nothing driven by the clock or the pointer is animated. The playhead, a
+     clip mid-drag, a scrub and the waveform follow input at 60fps, and a
+     transition on any of them reads as lag. */
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-standard: 200ms;
+  --duration-micro: 160ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-spring: 240ms;
+
+  /* --- Type --------------------------------------------------------------
+     ⚠️ The webfonts are not loaded yet. Plus Jakarta Sans and IBM Plex Mono
+     are named first and the stacks fall back to system faces, so the interface
+     is correct but not yet in its own voice. Subsetting and self-hosting them
+     from public/fonts/ is its own task — charter §13 rules out a CDN. */
+  --font-sans:
+    'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    'IBM Plex Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
 }
 
 html,
@@ -15,6 +134,24 @@ body {
   height: 100%;
   background: var(--color-surface);
   color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* The single ambient wash the charter allows, and the only gradient in the
+     product. It is what gives the translucent panels something to lift off. */
+  background-image: radial-gradient(
+    440px 240px at 20% 6%,
+    rgba(255, 232, 31, 0.055),
+    transparent 70%
+  );
+  background-attachment: fixed;
+}
+
+/* Every number that changes while the user watches it: timecodes, durations,
+   credit balances, percentages. Tabular figures because a proportional `1` is
+   narrower than a `0`, so a playing timecode jitters — which users report and
+   cannot describe. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* A timeline is dragged constantly; accidental text selection makes it feel
@@ -22,4 +159,25 @@ body {
 .no-select {
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Charter §6: one focus ring, never removed. `:focus-visible` and not
+   `:focus`, or a ring appears on every mouse click and reads as stuck. */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 232, 31, 0.6);
+  border-radius: inherit;
+}
+
+/* Charter §7. Transforms are dropped entirely — including the drag lift,
+   which falls back to its ring alone. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

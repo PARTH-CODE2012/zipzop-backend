@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · 5 · Velocity</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Barlow+Semi+Condensed:ital,wght@0,500;0,600;1,500;1,600&display=swap">
+<style>
+:root{--text-secondary:#8B8B94;--border:#33333A}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px 60px;background:#131315;color:#E8E8EC;font:14px/1.6 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+.meta{margin:0 0 20px}
+.meta h1{font:600 17px/1.3 system-ui;margin:0 0 6px}
+.meta p{margin:0;color:#8B8B94;font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.k5{--y:#FFD400;--ln:#24242A;--tx:#8E8E99;--br:#E9E9EE;background:#0A0A0B;border:1px solid #24242A;border-radius:10px;overflow:hidden;color:var(--tx);font:12px/1.3 'Barlow Semi Condensed','Arial Narrow',system-ui}
+.k5 .r{display:flex}
+.k5 .i{font-style:italic}
+.k5 .u{text-transform:uppercase;letter-spacing:.1em;font-size:11px;font-weight:600}
+.k5 .hd{align-items:center;gap:11px;height:36px;padding:0 12px;border-bottom:1px solid var(--ln);background:#0D0D0F}
+.k5 .mk{font-family:'Archivo',system-ui;font-weight:800;font-style:italic;font-size:16px;letter-spacing:-.03em;color:var(--br)}
+.k5 .mk em{font-style:italic;color:var(--y)}
+.k5 .haz{width:5px;align-self:stretch;background:repeating-linear-gradient(45deg,var(--y) 0 4px,#0A0A0B 4px 8px)}
+.k5 .sk{transform:skewX(-12deg);padding:4px 13px;background:var(--y);color:#0A0A0B;font-weight:600;font-size:12px}
+.k5 .sk span{display:block;transform:skewX(12deg)}
+.k5 .bin{width:118px;border-right:1px solid var(--ln);padding:9px 8px;background:#0C0C0E}
+.k5 .it{display:flex;align-items:center;gap:7px;height:25px;color:#7C7C87;border-left:2px solid #2A2A32;padding-left:7px;margin-bottom:4px;background:#111114}
+.k5 .it.on{border-left-color:var(--y);color:var(--br)}
+.k5 .pv{flex:1;min-width:0;display:flex;flex-direction:column;background:#000}
+.k5 .stage{flex:1;display:flex;align-items:center;justify-content:center;min-height:164px;position:relative}
+.k5 .fr{width:110px;height:138px;background:#0E0E11;border:1px solid #1D1D22}
+.k5 .chev{position:absolute;left:10px;bottom:10px;color:#1E1E24;font-family:'Archivo';font-weight:800;font-size:26px;font-style:italic;letter-spacing:-6px}
+.k5 .tr{height:30px;border-top:1px solid var(--ln);display:flex;align-items:center;gap:11px;padding:0 10px;background:#0D0D0F}
+.k5 .rail{width:104px;border-left:1px solid var(--ln);background:#0C0C0E;padding:8px 0}
+.k5 .tb{display:flex;align-items:center;gap:8px;height:32px;padding-left:11px;margin-bottom:2px;color:#7C7C87;clip-path:polygon(9px 0,100% 0,100% 100%,0 100%);transition:transform .22s cubic-bezier(.22,1,.36,1),color .2s}
+.k5 .tb:hover{transform:translateX(-4px);color:var(--br)}
+.k5 .tb i{font-size:15px}
+.k5 .tb.on{background:var(--y);color:#0A0A0B;font-weight:600}
+.k5 .tb.ai{background:#151509;color:var(--y)}
+.k5 .seg{display:flex;gap:2px;margin:7px 9px 0}
+.k5 .seg i{flex:1;height:7px;background:#26262E;transform:skewX(-12deg)}
+.k5 .seg i.f{background:var(--y)}
+.k5 .tl{border-top:1px solid var(--ln);background:#08080A}
+.k5 .rule{height:16px;display:flex;align-items:center;padding-left:80px;color:#4A4A55;font-size:11px}
+.k5 .rule span{width:72px;border-left:1px solid #1B1B21;padding-left:4px}
+.k5 .lane{display:flex;height:27px;border-top:1px solid #131317}
+.k5 .lh{width:80px;border-right:1px solid var(--ln);display:flex;align-items:center;gap:6px;padding-left:9px;color:#4A4A55;background:#0C0C0E}
+.k5 .cl{flex:1;display:flex;gap:3px;padding:3px;position:relative}
+.k5 .c{background:#17171C;display:flex;align-items:center;padding:0 8px;color:#8E8E99;font-size:11px;white-space:nowrap;overflow:hidden;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}
+.k5 .c.sel{background:var(--y);color:#0A0A0B;font-weight:600}
+.k5 .c.drag{background:#202027;color:var(--y);border-bottom:2px solid var(--y)}
+.k5 .mut{opacity:.34}
+.k5 .ph{position:absolute;left:43%;top:0;bottom:0;width:2px;background:var(--y);z-index:2}
+.spc5{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)}
+.sw5{width:15px;height:15px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="meta">
+  <h1>5 · Velocity — motorsport</h1>
+  <p>Bevelled geometry, condensed italic type, a warmer racing yellow. The tool rail moves to the right as angled tabs, credits become a circular gauge, and progress a segmented bar. Black and yellow hazard stripes act as the brand motif.</p>
+</div>
+<h2 class="sr-only">Mockup of the ZipZop editor, motorsport direction: bevelled shapes, condensed italic type, tool rail on the right, dashboard gauges.</h2>
+<div class="k5">
+  <div class="r hd">
+    <span class="mk">ZIP<em>ZOP</em></span>
+    <span class="haz" style="height:20px"></span>
+    <span class="u i" style="color:#5C5C66">beach_day_v3</span>
+    <span style="flex:1"></span>
+    <svg width="26" height="26" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="#24242A" stroke-width="4"></circle><circle cx="18" cy="18" r="15" fill="none" stroke="#FFD400" stroke-width="4" stroke-dasharray="66 94" stroke-linecap="butt" transform="rotate(-90 18 18)"></circle></svg>
+    <span class="u" style="color:var(--br)">1240<span style="color:#5C5C66"> CR</span></span>
+    <span class="sk"><span>EXPORT</span></span>
+  </div>
+  <div class="r">
+    <div class="bin">
+      <p class="u i" style="color:#4A4A55;margin:0 0 8px">Media</p>
+      <div class="it on"><i class="ti ti-movie" aria-hidden="true"></i>gopro_01</div>
+      <div class="it"><i class="ti ti-movie" aria-hidden="true"></i>gopro_02</div>
+      <div class="it"><i class="ti ti-music" aria-hidden="true"></i>track.wav</div>
+      <div class="it"><i class="ti ti-photo" aria-hidden="true"></i>logo.png</div>
+      <div class="it" style="background:none;border-left-color:#1D1D22;color:#4A4A55"><i class="ti ti-plus" aria-hidden="true"></i>Import</div>
+      <p class="u i" style="color:#4A4A55;margin:12px 0 5px">Storage</p>
+      <div class="seg" style="margin:0">
+        <i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+    <div class="pv">
+      <div class="stage"><div class="fr"></div><span class="chev">&raquo;&raquo;&raquo;</span></div>
+      <div class="tr">
+        <i class="ti ti-player-skip-back" aria-hidden="true" style="font-size:15px"></i>
+        <i class="ti ti-player-play" aria-hidden="true" style="font-size:17px;color:var(--y)"></i>
+        <span class="u" style="color:var(--br);font-size:13px">00:04.120</span>
+        <span class="u i" style="color:#4A4A55">/ 00:41.900</span>
+        <span style="flex:1"></span>
+        <span class="u i" style="color:#5C5C66">9:16 &middot; 1080p</span>
+      </div>
+    </div>
+    <div class="rail">
+      <div class="tb on"><i class="ti ti-pointer" aria-hidden="true"></i>Select</div>
+      <div class="tb"><i class="ti ti-scissors" aria-hidden="true"></i>Split</div>
+      <div class="tb"><i class="ti ti-typography" aria-hidden="true"></i>Text</div>
+      <div class="tb"><i class="ti ti-volume" aria-hidden="true"></i>Audio</div>
+      <div class="tb"><i class="ti ti-transition-right" aria-hidden="true"></i>Fade</div>
+      <div class="haz" style="width:auto;height:4px;margin:7px 0"></div>
+      <div class="tb ai"><i class="ti ti-message-2" aria-hidden="true"></i>Captions</div>
+      <div class="tb ai"><i class="ti ti-wand" aria-hidden="true"></i>Trim</div>
+      <div class="tb ai"><i class="ti ti-palette" aria-hidden="true"></i>Grade</div>
+      <p class="u i" style="color:var(--y);margin:11px 9px 0">Running 62%</p>
+      <div class="seg"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+  <div class="tl">
+    <div class="rule"><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span></div>
+    <div class="lane">
+      <div class="lh"><i class="ti ti-movie" aria-hidden="true"></i><span class="u">V1</span></div>
+      <div class="cl">
+        <div class="c" style="flex:2">gopro_01</div>
+        <div class="c sel" style="flex:3">gopro_02 &mdash; selected</div>
+        <div class="c drag" style="flex:2">dragging</div>
+        <div class="c" style="flex:2">gopro_04</div>
+        <div class="ph"></div>
+      </div>
+    </div>
+    <div class="lane mut">
+      <div class="lh"><i class="ti ti-volume-off" aria-hidden="true"></i><span class="u">A1</span></div>
+      <div class="cl"><div class="c" style="flex:1">track.wav &mdash; muted lane</div></div>
+    </div>
+    <div class="lane">
+      <div class="lh"><i class="ti ti-typography" aria-hidden="true"></i><span class="u">T1</span></div>
+      <div class="cl" style="gap:2px">
+        <div class="c" style="flex:1">we</div><div class="c" style="flex:1">just</div><div class="c" style="flex:2">arrived</div><div class="c" style="flex:1">at</div><div class="c" style="flex:2">camp</div><div class="c" style="flex:3;opacity:.3">&hellip;</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="spc5">
+  <span><span class="sw5" style="background:#0A0A0B;border:0.5px solid var(--border)"></span> <span class="sw5" style="background:#0D0D0F"></span> <span class="sw5" style="background:#24242A"></span> <span class="sw5" style="background:#FFD400"></span> <code style="font-size:12px">#FFD400</code></span>
+  <span>Archivo italic + Barlow Semi Condensed</span>
+  <span>Motion: enters from the right, 220 ms with overshoot</span>
+</div>
+</div>
+</body>
+</html>

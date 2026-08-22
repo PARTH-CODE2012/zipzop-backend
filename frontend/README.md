@@ -59,16 +59,70 @@ Never hand-write a request or response shape. A drift between the two sides shou
 
 ```
 src/
+  account/        sign in, register, the session
   app/            routes — App Router
-  editor/         timeline state, playback engine, timeline UI, tools   (M2–M4)
-  lib/api/        client, generated types, WebSocket
+  editor/
+    state/        the timeline document and the editor store
+    playback/     the compositor, lifted from the M1 spike
+    timeline/     ruler, playhead, zoom, track, waveform canvas
+  lib/api/        client, generated types, typed endpoints
+  media/          upload with progress, media bin
   styles/         Tailwind v4 + theme tokens
+e2e/              the end-to-end proof — see its README
 ```
+
+`src/lib/api/` rather than `src/api/` as [`../docs/04-frontend-architecture.md`](../docs/04-frontend-architecture.md) §2 sketches: the client landed there in M0 and `package.json`'s `generate:types` and `.gitignore` both point at it. Not worth the churn; noted so the difference is deliberate rather than an oversight.
 
 ---
 
-## Next up
+## The timeline has no visual identity yet
 
-The **compositor spike** (M1 in [`../PHASE1-TASKS.md`](../PHASE1-TASKS.md)) comes before any of this is built out. Two clips, a cut, a LUT, a text overlay — hardcoded, throwaway, no state management. It is the one part of the project with no library to fall back on, and if it resists, everything after it changes.
+**Nothing in `editor/timeline/` expresses a design decision.** No palette,
+typeface or visual states have been delivered by the project lead, so every
+colour goes through a token declared in `src/styles/globals.css`, and every one
+of those tokens is a neutral grey or a system font.
 
-Do not build the editor layout out before that spike lands.
+Applying the real charter means editing that one block. No component holds a
+literal colour, so a reskin cannot break the behaviour — and the three states a
+charter has to answer (**clip selected**, **clip dragging**, **track muted**)
+are already named there, distinguishable today by lightness alone.
+
+That is the minimum that makes the interface usable and the maximum that can be
+justified without a designer. Do not add colour here; add it to the tokens.
+
+---
+
+## Playback
+
+`editor/playback/` is the M1 spike's engine, moved rather than rewritten — its
+45 tests came with it. `README.md` in that directory is the M1 write-up:
+measurements, method, and **two bugs it must not reintroduce**. Read it before
+touching the renderer or the clock.
+
+`timeline-adapter.ts` is the join between the document and the engine. The
+document names an `assetId`; the engine wants a URL and the asset's own
+duration. The URL is signed and expires in an hour, so it is never stored
+beside the clip — the adapter resolves it at playback time.
+
+A clip whose asset is missing or still ingesting is **left out rather than
+faked**. An empty `src` makes the element fail to load and the playhead hold
+forever waiting for a frame that is never coming, which is M1's second fix
+working correctly on bad input.
+
+**`crossOrigin` must be set before `src`** on every playback element. Without
+it the video loads and plays perfectly and then `texImage2D` throws
+`SecurityError` — the picture is simply never drawn. Storage is on another
+origin in every environment, so this is the normal case.
+
+---
+
+## Proving it
+
+```bash
+make e2e         # from the repository root
+```
+
+29 checks driving a real Chromium from an empty database to a clip playing
+back. [`e2e/README.md`](e2e/README.md) covers what they check and the three
+defects the browser found that a green unit suite, a strict type-check and a
+clean lint all missed.

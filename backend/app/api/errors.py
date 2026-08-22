@@ -7,6 +7,7 @@ English written to be shown to a person and may be reworded at any time.
 See docs/05-api-contract.md §1 and §9.
 """
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import FastAPI, Request, status
@@ -34,16 +35,22 @@ class APIError(Exception):
         self,
         message: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.message
         self.details = details or {}
+        self.headers = headers or {}
         super().__init__(self.message)
 
     def to_response(self) -> JSONResponse:
         body: dict[str, Any] = {"code": self.code, "message": self.message}
         if self.details:
             body["details"] = self.details
-        return JSONResponse(status_code=self.status_code, content={"error": body})
+        return JSONResponse(
+            status_code=self.status_code,
+            content={"error": body},
+            headers=self.headers or None,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -173,6 +180,43 @@ class RateLimitedError(APIError):
     message = "Too many requests. Try again shortly."
 
 
+def _jsonable(errors: Sequence[Any]) -> list[dict[str, Any]]:
+    """Make Pydantic's error list safe to serialise.
+
+    **A validator that raises `ValueError` puts the exception *object* in
+    `ctx`**, and `JSONResponse` cannot encode it: the handler that exists to
+    turn a bad request into a readable 422 raises inside itself, and the caller
+    gets a 500 — or, under the test client, the original exception. Every
+    `field_validator` and `model_validator` in the codebase is one line away
+    from this, so it is fixed here rather than by never raising `ValueError`.
+
+    Found by M4's first request-level test: `POST /jobs` with a tool that does
+    not ship yet is refused by a model validator, and the refusal itself was
+    the thing that broke.
+    """
+    safe: list[dict[str, Any]] = []
+    for error in errors:
+        entry = {k: v for k, v in dict(error).items() if k != "ctx"}
+        entry["loc"] = [str(part) for part in entry.get("loc", ())]
+        # `input` is whatever the client sent, which can be any shape at all.
+        entry["input"] = _plain(entry.get("input"))
+        ctx = error.get("ctx") if isinstance(error, dict) else None
+        if ctx:
+            entry["ctx"] = {key: _plain(value) for key, value in ctx.items()}
+        safe.append(entry)
+    return safe
+
+
+def _plain(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain(v) for v in value]
+    return str(value)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIError)
     async def _api_error(_request: Request, exc: APIError) -> JSONResponse:
@@ -186,7 +230,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "Some fields are missing or malformed.",
-                    "details": {"fields": exc.errors()},
+                    "details": {"fields": _jsonable(exc.errors())},
                 }
             },
         )

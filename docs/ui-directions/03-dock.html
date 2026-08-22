@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · 3 · Dock</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+:root{--text-secondary:#8B8B94;--border:#33333A}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px 60px;background:#131315;color:#E8E8EC;font:14px/1.6 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+.meta{margin:0 0 20px}
+.meta h1{font:600 17px/1.3 system-ui;margin:0 0 6px}
+.meta p{margin:0;color:#8B8B94;font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.k3{--y:#FFE800;--cd:#151517;--ln:#26262B;--tx:#A5A5AE;--br:#EDEDF0;background:#0B0B0C;border:1px solid #1B1B1F;border-radius:14px;overflow:hidden;color:var(--tx);font:12px/1.4 'Space Grotesk',system-ui;padding:10px}
+.k3 .r{display:flex}
+.k3 .mo{font-family:'DM Mono',ui-monospace,monospace;font-size:11px}
+.k3 .cap{background:var(--cd);border-radius:999px;padding:5px 12px;display:flex;align-items:center;gap:9px}
+.k3 .mk{font-weight:700;font-size:15px;color:var(--br);letter-spacing:-.02em}
+.k3 .mk em{font-style:normal;color:var(--y)}
+.k3 .pill{background:var(--y);color:#0B0B0C;border-radius:999px;padding:5px 14px;font-weight:500;font-size:12px}
+.k3 .card{background:var(--cd);border-radius:14px;padding:11px}
+.k3 .h{font-size:11px;color:#5E5E68;margin:0 0 9px;font-weight:500}
+.k3 .it{display:flex;align-items:center;gap:8px;padding:6px;border-radius:9px;color:#8D8D97}
+.k3 .it.on{background:#212125;color:var(--br)}
+.k3 .it.on i{color:var(--y)}
+.k3 .stage{flex:1;min-width:0;background:#000;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:172px;position:relative}
+.k3 .fr{width:104px;height:132px;background:#121214;border-radius:8px}
+.k3 .tr{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#141416;border-radius:999px;padding:5px 8px 5px 5px}
+.k3 .rnd{width:26px;height:26px;border-radius:50%;background:var(--y);color:#0B0B0C;display:flex;align-items:center;justify-content:center;font-size:14px}
+.k3 .dock{display:flex;justify-content:center;gap:7px;margin:10px 0}
+.k3 .d{width:52px;height:50px;background:var(--cd);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#8D8D97;font-size:11px;position:relative;transition:transform .22s cubic-bezier(.34,1.56,.64,1),background .18s}
+.k3 .d:hover{transform:translateY(-3px) scale(1.04);background:#1D1D21}
+.k3 .d i{font-size:17px}
+.k3 .d.on{background:var(--y);color:#0B0B0C}
+.k3 .d.ai{background:#1C1C0B;color:var(--y)}
+.k3 .d b{position:absolute;top:3px;right:5px;font-size:11px;font-weight:400;opacity:.45}
+.k3 .tl{background:var(--cd);border-radius:14px;padding:9px 11px}
+.k3 .rule{display:flex;padding-left:70px;color:#4B4B54;margin-bottom:6px}
+.k3 .rule span{width:72px}
+.k3 .lane{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.k3 .lh{width:62px;display:flex;align-items:center;gap:6px;color:#5E5E68;font-size:11px}
+.k3 .cl{flex:1;display:flex;gap:4px;position:relative}
+.k3 .c{height:26px;background:#232329;border-radius:7px;display:flex;align-items:center;padding:0 9px;color:#A5A5AE;font-size:11px;white-space:nowrap;overflow:hidden}
+.k3 .c.sel{background:var(--y);color:#0B0B0C;font-weight:500}
+.k3 .c.drag{background:#2E2E36;color:#EDEDF0;transform:translateY(-3px) rotate(-.6deg);box-shadow:0 4px 0 rgba(255,232,0,.18)}
+.k3 .mut{opacity:.35}
+.k3 .ph{position:absolute;left:42%;top:-22px;bottom:-4px;width:2px;background:var(--y);border-radius:2px;z-index:3}
+.spc3{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)}
+.sw3{width:15px;height:15px;border-radius:4px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="meta">
+  <h1>3 · Dock — living-room console / action bar</h1>
+  <p>The gaming feel comes from the ergonomics rather than the texture: the tools sit in a centred hotbar along the bottom, with keys 1 to 9 printed on them. Yellow is used as solid pills with black text, for maximum contrast. Spring on press.</p>
+</div>
+<h2 class="sr-only">Mockup of the ZipZop editor, living-room console direction: rounded floating cards, centred bottom action bar with numbered shortcuts.</h2>
+<div class="k3">
+  <div class="r" style="align-items:center;gap:9px;margin-bottom:10px">
+    <span class="mk">zip<em>zop</em></span>
+    <span class="cap" style="color:#8D8D97">beach_day_v3 <i class="ti ti-chevron-down" aria-hidden="true"></i></span>
+    <span style="flex:1"></span>
+    <span class="cap"><i class="ti ti-coins" aria-hidden="true" style="color:var(--y)"></i><span class="mo" style="color:var(--br)">1 240</span></span>
+    <span class="pill">Export</span>
+  </div>
+  <div class="r" style="gap:10px">
+    <div class="card" style="width:126px">
+      <p class="h">Media</p>
+      <div class="it on"><i class="ti ti-movie" aria-hidden="true"></i>gopro_01</div>
+      <div class="it"><i class="ti ti-movie" aria-hidden="true"></i>gopro_02</div>
+      <div class="it"><i class="ti ti-music" aria-hidden="true"></i>track.wav</div>
+      <div class="it"><i class="ti ti-photo" aria-hidden="true"></i>logo.png</div>
+      <div class="it" style="color:#5E5E68"><i class="ti ti-plus" aria-hidden="true"></i>Import</div>
+    </div>
+    <div class="stage">
+      <div class="fr"></div>
+      <div class="tr">
+        <span class="rnd"><i class="ti ti-player-play" aria-hidden="true"></i></span>
+        <span class="mo" style="color:var(--br)">00:04.12</span>
+        <span class="mo" style="color:#4B4B54">41.90</span>
+      </div>
+    </div>
+    <div class="card" style="width:148px">
+      <p class="h">Clip 03</p>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>Volume</span><span class="mo" style="color:var(--br)">-3 dB</span></div>
+      <div style="height:4px;background:#2A2A30;border-radius:3px;margin-bottom:11px"><i style="display:block;height:100%;width:64%;background:var(--y);border-radius:3px"></i></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>Grade</span><span class="mo" style="color:var(--br)">72 %</span></div>
+      <div style="height:4px;background:#2A2A30;border-radius:3px;margin-bottom:12px"><i style="display:block;height:100%;width:72%;background:var(--y);border-radius:3px"></i></div>
+      <div style="background:#1C1C0B;border-radius:10px;padding:8px">
+        <p style="margin:0 0 6px;color:var(--y);font-size:11px">Captions &middot; 62 %</p>
+        <div style="height:4px;background:#332F0D;border-radius:3px"><i style="display:block;height:100%;width:62%;background:var(--y);border-radius:3px"></i></div>
+      </div>
+    </div>
+  </div>
+  <div class="dock">
+    <div class="d on"><b>1</b><i class="ti ti-pointer" aria-hidden="true"></i>Select</div>
+    <div class="d"><b>2</b><i class="ti ti-scissors" aria-hidden="true"></i>Split</div>
+    <div class="d"><b>3</b><i class="ti ti-typography" aria-hidden="true"></i>Text</div>
+    <div class="d"><b>4</b><i class="ti ti-volume" aria-hidden="true"></i>Audio</div>
+    <div class="d"><b>5</b><i class="ti ti-transition-right" aria-hidden="true"></i>Fade</div>
+    <div class="d ai"><b>6</b><i class="ti ti-message-2" aria-hidden="true"></i>Capt.</div>
+    <div class="d ai"><b>7</b><i class="ti ti-wand" aria-hidden="true"></i>Trim</div>
+    <div class="d ai"><b>8</b><i class="ti ti-palette" aria-hidden="true"></i>Grade</div>
+  </div>
+  <div class="tl">
+    <div class="rule mo"><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span></div>
+    <div class="lane">
+      <div class="lh"><i class="ti ti-movie" aria-hidden="true"></i>Video</div>
+      <div class="cl">
+        <div class="c" style="flex:2">gopro_01</div>
+        <div class="c sel" style="flex:3">gopro_02 &mdash; selected</div>
+        <div class="c drag" style="flex:2">dragging</div>
+        <div class="c" style="flex:2">gopro_04</div>
+        <div class="ph"></div>
+      </div>
+    </div>
+    <div class="lane mut">
+      <div class="lh"><i class="ti ti-volume-off" aria-hidden="true"></i>Audio</div>
+      <div class="cl"><div class="c" style="flex:1">track.wav &mdash; muted lane</div></div>
+    </div>
+    <div class="lane" style="margin:0">
+      <div class="lh"><i class="ti ti-typography" aria-hidden="true"></i>Text</div>
+      <div class="cl" style="gap:3px">
+        <div class="c" style="flex:1">we</div><div class="c" style="flex:1">just</div><div class="c" style="flex:2">arrived</div><div class="c" style="flex:1">at</div><div class="c" style="flex:2">camp</div><div class="c" style="flex:3;opacity:.3">&hellip;</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="spc3">
+  <span><span class="sw3" style="background:#0B0B0C;border:0.5px solid var(--border)"></span> <span class="sw3" style="background:#151517"></span> <span class="sw3" style="background:#26262B"></span> <span class="sw3" style="background:#FFE800"></span> <code style="font-size:12px">#FFE800</code></span>
+  <span>Space Grotesk + DM Mono</span>
+  <span>Motion: spring, press 0.96 then 1.02</span>
+</div>
+</div>
+</body>
+</html>

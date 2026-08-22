@@ -1,6 +1,503 @@
 {
   "components": {
     "schemas": {
+      "AssetResponse": {
+        "description": "contract \u00a73.\n\n**The three URLs are signed and expire in one hour.** Re-fetch the asset to\nrenew them; never persist one in the timeline document or in client\nstorage, or a saved project will come back with dead links.",
+        "properties": {
+          "audioChannels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audiochannels"
+          },
+          "audioCodec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audiocodec"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "derivedFromAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derivedfromassetid"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "failureReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failurereason"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "originalFilename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Originalfilename"
+          },
+          "peaksUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peaksurl"
+          },
+          "proxyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxyurl"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sizebytes"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "videoCodec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Videocodec"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "createdAt"
+        ],
+        "title": "AssetResponse",
+        "type": "object"
+      },
+      "CaptionsInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "language": {
+            "default": "auto",
+            "title": "Language",
+            "type": "string"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "CaptionsInput",
+        "type": "object"
+      },
+      "ColorAnalysisInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "preferredLook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferredlook"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "ColorAnalysisInput",
+        "type": "object"
+      },
+      "ColorGradeEffect": {
+        "description": "contract \u00a74.4. Phase 1 defines exactly one effect type.\n\nWhen a second arrives this becomes a discriminated union on `type`, which is\nwhy `type` is a Literal rather than absent \u2014 the field is already carrying\nthe discriminator's weight before there is anything to discriminate.",
+        "properties": {
+          "lut": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Lut",
+            "type": "string"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "strength": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Strength",
+            "type": "number"
+          },
+          "type": {
+            "const": "color_grade",
+            "default": "color_grade",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lut",
+          "strength"
+        ],
+        "title": "ColorGradeEffect",
+        "type": "object"
+      },
+      "CompleteUploadRequest": {
+        "properties": {
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CompletedPart"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          }
+        },
+        "title": "CompleteUploadRequest",
+        "type": "object"
+      },
+      "CompletedPart": {
+        "properties": {
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "partNumber": {
+            "title": "Partnumber",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "partNumber",
+          "etag"
+        ],
+        "title": "CompletedPart",
+        "type": "object"
+      },
+      "CreateJobRequest": {
+        "properties": {
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptionsInput"
+              },
+              {
+                "$ref": "#/components/schemas/SmartTrimInput"
+              },
+              {
+                "$ref": "#/components/schemas/ColorAnalysisInput"
+              }
+            ],
+            "title": "Input"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectid"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/JobTool"
+          }
+        },
+        "required": [
+          "tool",
+          "input"
+        ],
+        "title": "CreateJobRequest",
+        "type": "object"
+      },
+      "CreateProjectRequest": {
+        "properties": {
+          "aspectRatio": {
+            "default": "9:16",
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1"
+            ],
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "title": {
+            "default": "Untitled project",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "CreateProjectRequest",
+        "type": "object"
+      },
+      "CreditBalances": {
+        "description": "Three balances, not one.\n\n`plan` expires at `planCreditsExpireAt`; `topup` never does;\n`facemapSeconds` is a separate meter only face mapping and lip sync can\nspend. `total` is what the user can spend right now and is the number to\nshow most prominently.",
+        "properties": {
+          "facemapSeconds": {
+            "title": "Facemapseconds",
+            "type": "integer"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "integer"
+          },
+          "planCreditsExpireAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plancreditsexpireat"
+          },
+          "topup": {
+            "title": "Topup",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan",
+          "topup",
+          "total",
+          "facemapSeconds"
+        ],
+        "title": "CreditBalances",
+        "type": "object"
+      },
+      "Crop": {
+        "description": "A normalised rectangle of the source frame to keep.\n\ncontract \u00a74.3: *\"All spatial values are normalised 0-1 relative to the\ncanvas, never pixels.\"* This is what lets a 480p preview and a 1080p export\nagree; pixels would put every reframe in the wrong place at export, and\nnobody would notice until they watched the file.",
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Width",
+            "type": "number"
+          },
+          "x": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "Crop",
+        "type": "object"
+      },
       "DependencyStatus": {
         "properties": {
           "error": {
@@ -23,6 +520,58 @@
           "ok"
         ],
         "title": "DependencyStatus",
+        "type": "object"
+      },
+      "EstimateResponse": {
+        "description": "What `POST /jobs` would charge, without creating anything.\n\n`blockedBy` carries the error code the real call would return, so the client\ncan put \"Not enough credits\" on the button itself rather than after a failed\nclick (contract \u00a76.1).",
+        "properties": {
+          "blockedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockedby"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "estimatedSeconds": {
+            "title": "Estimatedseconds",
+            "type": "integer"
+          },
+          "sufficientBalance": {
+            "title": "Sufficientbalance",
+            "type": "boolean"
+          },
+          "wouldReserveFrom": {
+            "$ref": "#/components/schemas/ReservedFrom"
+          }
+        },
+        "required": [
+          "credits",
+          "wouldReserveFrom",
+          "estimatedSeconds",
+          "sufficientBalance"
+        ],
+        "title": "EstimateResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "HealthResponse": {
@@ -58,6 +607,1598 @@
           "dependencies"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "JobError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "JobError",
+        "type": "object"
+      },
+      "JobFamily": {
+        "enum": [
+          "analysis",
+          "render",
+          "inference"
+        ],
+        "title": "JobFamily",
+        "type": "string"
+      },
+      "JobResponse": {
+        "properties": {
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "creditsReserved": {
+            "title": "Creditsreserved",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimatedSeconds": {
+            "title": "Estimatedseconds",
+            "type": "integer"
+          },
+          "family": {
+            "$ref": "#/components/schemas/JobFamily"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outputAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputassetid"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectid"
+          },
+          "reservedFrom": {
+            "$ref": "#/components/schemas/ReservedFrom"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "resultUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resulturl"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/JobTool"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "family",
+          "status",
+          "progress",
+          "priority",
+          "creditsReserved",
+          "reservedFrom",
+          "estimatedSeconds",
+          "createdAt"
+        ],
+        "title": "JobResponse",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "JobTool": {
+        "enum": [
+          "captions",
+          "smart_trim",
+          "color_analysis",
+          "export",
+          "face_map",
+          "lip_sync",
+          "denoise",
+          "dereverb",
+          "clip_finder",
+          "template_suggest",
+          "upscale",
+          "stabilize"
+        ],
+        "title": "JobTool",
+        "type": "string"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MeResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "credits": {
+            "$ref": "#/components/schemas/CreditBalances"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "storageBytesUsed": {
+            "title": "Storagebytesused",
+            "type": "integer"
+          },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubscriptionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "storageBytesUsed",
+          "createdAt",
+          "credits"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "MediaClip": {
+        "description": "A clip on a video or audio track \u2014 contract \u00a74.2.\n\nThere is deliberately **no `sourceOutMs`**: it is\n`sourceInMs + durationMs * speed`. Storing a derivable value invites the two\nto disagree, and the renderer would have no way to know which is right.",
+        "properties": {
+          "assetId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Assetid",
+            "type": "string"
+          },
+          "audioFadeInMs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Audiofadeinms",
+            "type": "integer"
+          },
+          "audioFadeOutMs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Audiofadeoutms",
+            "type": "integer"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "effects": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ColorGradeEffect"
+            },
+            "maxItems": 8,
+            "title": "Effects",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "sourceInMs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sourceinms",
+            "type": "integer"
+          },
+          "speed": {
+            "default": 1.0,
+            "maximum": 4.0,
+            "minimum": 0.25,
+            "title": "Speed",
+            "type": "number"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "transform": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Transform"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transitionIn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Transition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transitionOut": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Transition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "volume": {
+            "default": 1.0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "assetId",
+          "startMs",
+          "durationMs"
+        ],
+        "title": "MediaClip",
+        "type": "object"
+      },
+      "MediaTrack": {
+        "properties": {
+          "clips": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MediaClip"
+            },
+            "maxItems": 20000,
+            "title": "Clips",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "index": {
+            "default": 0,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "video",
+              "audio"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "muted": {
+            "default": false,
+            "title": "Muted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "MediaTrack",
+        "type": "object"
+      },
+      "MultipartPart": {
+        "properties": {
+          "partNumber": {
+            "title": "Partnumber",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "partNumber",
+          "url"
+        ],
+        "title": "MultipartPart",
+        "type": "object"
+      },
+      "MultipartPlan": {
+        "properties": {
+          "partSizeBytes": {
+            "title": "Partsizebytes",
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/MultipartPart"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "uploadId": {
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId",
+          "partSizeBytes",
+          "parts"
+        ],
+        "title": "MultipartPlan",
+        "type": "object"
+      },
+      "Page_AssetResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AssetResponse]",
+        "type": "object"
+      },
+      "Page_JobResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[JobResponse]",
+        "type": "object"
+      },
+      "Page_ProjectSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[ProjectSummary]",
+        "type": "object"
+      },
+      "PeaksResponse": {
+        "properties": {
+          "bucketsPerSecond": {
+            "title": "Bucketspersecond",
+            "type": "integer"
+          },
+          "channels": {
+            "title": "Channels",
+            "type": "integer"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "peaks": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Peaks",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "bucketsPerSecond",
+          "channels",
+          "durationMs",
+          "peaks"
+        ],
+        "title": "PeaksResponse",
+        "type": "object"
+      },
+      "PlanLimits": {
+        "description": "A copy of the plan's row, sent so the client can grey out what it cannot\ndo. The server enforces the same limits regardless \u2014 this is presentation\nonly (contract \u00a72).",
+        "properties": {
+          "concurrentJobs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Concurrentjobs",
+            "type": "object"
+          },
+          "facemapSeconds": {
+            "title": "Facemapseconds",
+            "type": "integer"
+          },
+          "maxExportHeight": {
+            "title": "Maxexportheight",
+            "type": "integer"
+          },
+          "monthlyCredits": {
+            "title": "Monthlycredits",
+            "type": "integer"
+          },
+          "watermark": {
+            "title": "Watermark",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxExportHeight",
+          "watermark",
+          "monthlyCredits",
+          "facemapSeconds",
+          "concurrentJobs"
+        ],
+        "title": "PlanLimits",
+        "type": "object"
+      },
+      "ProjectAssetRef": {
+        "description": "One asset the timeline references, with URLs signed for an hour.\n\n*\"`assets` is a convenience: every asset the timeline references, with fresh\nsigned URLs, so opening a project is one request rather than one per clip.\"*\n\n`thumbnailUrl` is an addition to the contract's example, which lists `id`,\n`proxyUrl`, `peaksUrl` and `durationMs`. Without it the media bin has to\ncall `/media` immediately after opening a project, which is the second\nrequest this field exists to avoid. Additive, so no client breaks.",
+        "properties": {
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "peaksUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peaksurl"
+          },
+          "proxyUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxyurl"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ProjectAssetRef",
+        "type": "object"
+      },
+      "ProjectResponse": {
+        "properties": {
+          "aspectRatio": {
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectAssetRef"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "fps": {
+            "title": "Fps",
+            "type": "integer"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "timeline": {
+            "$ref": "#/components/schemas/TimelineDocument"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "aspectRatio",
+          "width",
+          "height",
+          "fps",
+          "durationMs",
+          "version",
+          "timeline",
+          "assets",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectResponse",
+        "type": "object"
+      },
+      "ProjectSaveResponse": {
+        "description": "What a PATCH returns \u2014 contract \u00a75. Deliberately small: the client\nalready has the timeline it just sent, and echoing it back doubles the\nbytes of every two-second autosave.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "durationMs",
+          "updatedAt"
+        ],
+        "title": "ProjectSaveResponse",
+        "type": "object"
+      },
+      "ProjectSummary": {
+        "description": "What the projects list returns \u2014 **no timeline**.\n\nA list of twenty projects carrying twenty timelines would be megabytes to\nrender a page of titles.",
+        "properties": {
+          "aspectRatio": {
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "aspectRatio",
+          "durationMs",
+          "updatedAt"
+        ],
+        "title": "ProjectSummary",
+        "type": "object"
+      },
+      "RangeMs": {
+        "description": "A window inside the asset, in **asset** time \u2014 never timeline time.\n\nThe distinction is the one that makes captions land in the wrong place when\nit is got wrong: a clip trimmed to start at 4 s and played at 2x has a\ndifferent clock from the timeline it sits on (contract \u00a76.2).",
+        "properties": {
+          "endMs": {
+            "exclusiveMinimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs"
+        ],
+        "title": "RangeMs",
+        "type": "object"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accessToken",
+          "expiresIn"
+        ],
+        "title": "RefreshResponse",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "displayName": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ReservedFrom": {
+        "description": "Which buckets a job drew from. A job can span two \u2014 contract \u00a76.",
+        "properties": {
+          "facemapSeconds": {
+            "default": 0,
+            "title": "Facemapseconds",
+            "type": "integer"
+          },
+          "plan": {
+            "default": 0,
+            "title": "Plan",
+            "type": "integer"
+          },
+          "topup": {
+            "default": 0,
+            "title": "Topup",
+            "type": "integer"
+          }
+        },
+        "title": "ReservedFrom",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "description": "What register and login return.\n\n**No `refreshToken` field.** The contract's version 1.1 put it in the body;\nit is now delivered as an httpOnly cookie instead, so no script can read\nit and an XSS cannot walk away with a 30-day session. The change is\nrecorded in docs/05-api-contract.md \u00a72.",
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserSummary"
+          }
+        },
+        "required": [
+          "user",
+          "accessToken",
+          "expiresIn"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "SmartTrimInput": {
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "clipId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipid"
+          },
+          "rangeMs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RangeMs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strength": {
+            "default": "medium",
+            "enum": [
+              "light",
+              "medium",
+              "aggressive"
+            ],
+            "title": "Strength",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "title": "SmartTrimInput",
+        "type": "object"
+      },
+      "SubscriptionSummary": {
+        "properties": {
+          "cancelAtPeriodEnd": {
+            "title": "Cancelatperiodend",
+            "type": "boolean"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "currentPeriodEnd": {
+            "format": "date-time",
+            "title": "Currentperiodend",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/PlanLimits"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan",
+          "displayName",
+          "status",
+          "currentPeriodEnd",
+          "cancelAtPeriodEnd",
+          "limits"
+        ],
+        "title": "SubscriptionSummary",
+        "type": "object"
+      },
+      "TextClip": {
+        "description": "A caption word or a typed title \u2014 contract \u00a74.2.\n\n`text` is editable and that is the whole point of the editor model: a\nmisheard name is corrected here, not by re-running the tool.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "emphasis": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Emphasis",
+            "type": "number"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "caption",
+              "title"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "styleId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Styleid",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 2000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "startMs",
+          "durationMs",
+          "text",
+          "styleId"
+        ],
+        "title": "TextClip",
+        "type": "object"
+      },
+      "TextPosition": {
+        "properties": {
+          "anchor": {
+            "default": "center",
+            "enum": [
+              "center",
+              "left",
+              "right"
+            ],
+            "title": "Anchor",
+            "type": "string"
+          },
+          "x": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "TextPosition",
+        "type": "object"
+      },
+      "TextStyle": {
+        "description": "Overrides on top of `styleId`. Every field optional: the catalogue entry\nsupplies the rest, so a caption that only changes colour carries one key.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "fontSize": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fontsize"
+          },
+          "strokeColor": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strokecolor"
+          },
+          "strokeWidth": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strokewidth"
+          }
+        },
+        "title": "TextStyle",
+        "type": "object"
+      },
+      "TextTrack": {
+        "properties": {
+          "clips": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TextClip"
+            },
+            "maxItems": 20000,
+            "title": "Clips",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "index": {
+            "default": 0,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "muted": {
+            "default": false,
+            "title": "Muted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "TextTrack",
+        "type": "object"
+      },
+      "TimelineDocument": {
+        "properties": {
+          "schemaVersion": {
+            "const": 1,
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "tracks": {
+            "default": [],
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "audio": "#/components/schemas/MediaTrack",
+                  "text": "#/components/schemas/TextTrack",
+                  "video": "#/components/schemas/MediaTrack"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MediaTrack"
+                },
+                {
+                  "$ref": "#/components/schemas/TextTrack"
+                }
+              ]
+            },
+            "maxItems": 3,
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "title": "TimelineDocument",
+        "type": "object"
+      },
+      "Transform": {
+        "properties": {
+          "crop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Crop"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flipH": {
+            "default": false,
+            "title": "Fliph",
+            "type": "boolean"
+          },
+          "flipV": {
+            "default": false,
+            "title": "Flipv",
+            "type": "boolean"
+          },
+          "offsetX": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Offsetx",
+            "type": "number"
+          },
+          "offsetY": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Offsety",
+            "type": "number"
+          },
+          "rotation": {
+            "default": 0,
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotation",
+            "type": "integer"
+          },
+          "scale": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Scale",
+            "type": "number"
+          }
+        },
+        "title": "Transform",
+        "type": "object"
+      },
+      "Transition": {
+        "properties": {
+          "durationMs": {
+            "minimum": 0.0,
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "cut",
+              "fade",
+              "dissolve"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "durationMs"
+        ],
+        "title": "Transition",
+        "type": "object"
+      },
+      "UpdateProjectRequest": {
+        "description": "PATCH \u2014 contract \u00a75.\n\nTwo different edits share this shape, and they must not be confused:\n\n- `{timeline, version}` is the autosave. It validates, bumps `version` and\n  rebuilds `project_assets`.\n- `{title}` or `{aspectRatio}` is a metadata edit. It **does not touch the\n  timeline and does not bump `version`**, because bumping it would make\n  every other tab's next autosave a spurious 409.",
+        "properties": {
+          "aspectRatio": {
+            "anyOf": [
+              {
+                "enum": [
+                  "9:16",
+                  "16:9",
+                  "1:1"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspectratio"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "UpdateProjectRequest",
+        "type": "object"
+      },
+      "UploadRequest": {
+        "properties": {
+          "contentType": {
+            "title": "Contenttype",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sizebytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "sizeBytes",
+          "contentType"
+        ],
+        "title": "UploadRequest",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "description": "*\"The file itself never passes through this API.\"*",
+        "properties": {
+          "assetId": {
+            "title": "Assetid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "multipart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultipartPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uploadUrl": {
+            "title": "Uploadurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "uploadUrl",
+          "method",
+          "headers",
+          "expiresAt"
+        ],
+        "title": "UploadResponse",
+        "type": "object"
+      },
+      "UserSummary": {
+        "properties": {
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "UserSummary",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
         "type": "object"
       }
     }
@@ -112,6 +2253,1054 @@
         "summary": "Liveness \u2014 is the process up",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_v1_auth_logout_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "zipzop_refresh",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Zipzop Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End this session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "refresh_v1_auth_refresh_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "zipzop_refresh",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Zipzop Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange the refresh cookie for a new access token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "operationId": "register_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create an account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "description": "*\"On reconnect the client calls this to catch up on anything it missed\nwhile disconnected.\"* \u2014 which is why `status=running` is the query that\nmatters, and why the socket is never the source of truth.",
+        "operationId": "list_jobs_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Projectid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The caller's jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "create_job_v1_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/estimate": {
+      "post": {
+        "description": "Contract \u00a76.1. Same body as `POST /jobs`, nothing created.\n\nA block is **reported, not raised**: the point of this endpoint is to put\n\"Not enough credits\" on the button instead of after a failed click, so the\nonly failures that raise here are the ones that mean the request itself is\nwrong \u2014 an asset that does not exist, or one that is not ready.",
+        "operationId": "estimate_job_v1_jobs_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What a job would cost, without creating it",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "`409` if it already finished. Cancelling refunds the reservation in full.\n\nThe refund happens here rather than in the worker: a `queued` job has no\nworker to notice, and one that is running checks the status between stages\nand stops without touching credits that have already gone back.",
+        "operationId": "cancel_job_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel a job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "operationId": "me_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The signed-in account, its balances and its plan limits",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/media": {
+      "get": {
+        "operationId": "list_media_v1_media_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AssetResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The caller's media",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/v1/media/uploads": {
+      "post": {
+        "operationId": "create_upload_v1_media_uploads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask for somewhere to put a file",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/v1/media/{asset_id}": {
+      "delete": {
+        "operationId": "delete_media_v1_media__asset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete an asset",
+        "tags": [
+          "media"
+        ]
+      },
+      "get": {
+        "operationId": "get_media_v1_media__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One asset, with signed URLs",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/v1/media/{asset_id}/complete": {
+      "post": {
+        "operationId": "complete_upload_v1_media__asset_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tell us the upload finished",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/v1/media/{asset_id}/peaks": {
+      "get": {
+        "operationId": "get_peaks_v1_media__asset_id__peaks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeaksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The waveform",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/v1/projects": {
+      "get": {
+        "description": "Summaries only \u2014 **no timelines**. Twenty projects carrying twenty\ndocuments would be megabytes to draw a page of titles.",
+        "operationId": "list_projects_v1_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ProjectSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The caller's projects",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "description": "contract \u00a75: an empty timeline at `version: 0`.\n\nCanvas dimensions are derived from the aspect ratio here and never accepted\nfrom the client \u2014 a client that could name its own width could ask for 4K\non a plan that does not include it simply by writing the numbers.",
+        "operationId": "create_project_v1_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}": {
+      "delete": {
+        "operationId": "delete_project_v1_projects__project_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a project",
+        "tags": [
+          "projects"
+        ]
+      },
+      "get": {
+        "description": "*\"`assets` is a convenience [\u2026] so opening a project is one request\nrather than one per clip.\"*",
+        "operationId": "get_project_v1_projects__project_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One project, with its assets and fresh signed URLs",
+        "tags": [
+          "projects"
+        ]
+      },
+      "patch": {
+        "operationId": "update_project_v1_projects__project_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Autosave the timeline, or rename the project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/duplicate": {
+      "post": {
+        "description": "The timeline and the asset references, never the media \u2014 contract \u00a75.",
+        "operationId": "duplicate_project_v1_projects__project_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy a project",
+        "tags": [
+          "projects"
         ]
       }
     }

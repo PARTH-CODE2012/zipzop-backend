@@ -4,6 +4,7 @@ Real work arrives in M6. The scheduled entries exist now so beat has something
 to bind to and the schedule itself can be verified early.
 """
 
+import asyncio
 from typing import Any
 
 from app.logging import get_logger
@@ -30,12 +31,46 @@ def sweep_renewals() -> dict[str, Any]:
 
 @celery_app.task(name="app.workers.tasks.billing.reconcile_ledger")
 def reconcile_ledger() -> dict[str, Any]:
-    """Re-sum credit_ledger per user per bucket and compare to the cached
-    balances on users.
+    """Re-sum `credit_ledger` per user per bucket, against the cached balances.
 
-    If this ever reports drift, a transaction boundary is wrong somewhere —
-    a balance was written without its ledger row, or vice versa. It should
-    alert, not just log.
+    **If this reports drift, a transaction boundary is wrong** — a balance was
+    written without its ledger row, or a row without its balance. It reports and
+    does not repair: correcting silently would hide the bug that caused the
+    drift and destroy the evidence of how much was lost and to whom.
+
+    Logged at `error` with the accounts named, because this is a page for a
+    person rather than a line in a dashboard nobody reads.
     """
-    log.info("ledger reconciliation — not implemented yet")
-    return {"checked": 0, "drift": 0}
+    result = asyncio.run(_reconcile())
+    if result["drift"]:
+        log.error(
+            "ledger_drift",
+            drift=result["drift"],
+            checked=result["checked"],
+            accounts=result["accounts"][:20],
+        )
+    else:
+        log.info("ledger_reconciled", checked=result["checked"])
+    return result
+
+
+async def _reconcile() -> dict[str, Any]:
+    from app.db import worker_session
+    from app.services.reconciliation import reconcile
+
+    async with worker_session() as session:
+        outcome = await reconcile(session)
+        return {
+            "checked": outcome.users_checked,
+            "drift": len(outcome.drifts),
+            "accounts": [
+                {
+                    "userId": str(d.user_id),
+                    "bucket": d.bucket.value,
+                    "cached": d.cached,
+                    "ledger": d.from_ledger,
+                    "difference": d.difference,
+                }
+                for d in outcome.drifts
+            ],
+        }

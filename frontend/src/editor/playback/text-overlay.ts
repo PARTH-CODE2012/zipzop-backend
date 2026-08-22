@@ -1,0 +1,109 @@
+/**
+ * Captions on a 2D canvas layered over the WebGL one.
+ *
+ * Text does not belong in the shader. It changes rarely, it needs font
+ * shaping and stroking that Canvas 2D already does well, and putting it in the
+ * fragment shader buys nothing (docs/04-frontend-architecture.md §4.4).
+ *
+ * The one thing that matters for the frame budget: **only redraw when the
+ * visible words change.** Clearing and re-filling a 1920×1080 2D canvas every
+ * frame costs more than the entire WebGL pass, and at one text clip per word a
+ * caption track changes roughly twice a second, not sixty times.
+ */
+
+import { isActive, type SpikeTextClip } from './timeline'
+
+const NEVER_RENDERED = '\u0000'
+
+export class TextOverlay {
+  private readonly canvas: HTMLCanvasElement
+  private ctx: CanvasRenderingContext2D | null
+  /**
+   * A key no list of visible clips can produce, so the first render is never
+   * skipped. Written as an escape, **not as a literal NUL byte** — it was one,
+   * and a single NUL anywhere in the first 8 kB makes git classify the whole
+   * file as binary: no diff, no blame, no review of anything in it, silently.
+   */
+  private lastKey = NEVER_RENDERED
+  private redraws = 0
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas
+    this.ctx = canvas.getContext('2d')
+  }
+
+  get redrawCount(): number {
+    return this.redraws
+  }
+
+  get available(): boolean {
+    return this.ctx !== null
+  }
+
+  resize(width: number, height: number): void {
+    if (this.canvas.width === width && this.canvas.height === height) return
+    this.canvas.width = width
+    this.canvas.height = height
+    // A resize clears the backing store, so the next render must not be
+    // skipped by the dirty check.
+    this.lastKey = NEVER_RENDERED
+  }
+
+  /** Returns true when it actually redrew. */
+  render(clips: readonly SpikeTextClip[], timeMs: number): boolean {
+    const ctx = this.ctx
+    if (ctx === null) return false
+
+    const visible = clips.filter((c) => isActive(c, timeMs))
+    // **The words are part of the key, not just the ids.** Keying on identity
+    // alone is right for captions, which are generated once and never edited —
+    // and wrong for a title, whose whole purpose is to be retyped. Editing one
+    // would leave the previous text on the canvas until some other clip came or
+    // went. Position and size are in for the same reason.
+    const key = visible
+      .map((c) => `${c.id}:${c.text}:${c.position.x},${c.position.y}:${c.fontSize}:${c.emphasis}`)
+      .join('|')
+    if (key === this.lastKey) return false
+    this.lastKey = key
+    this.redraws++
+
+    const { width, height } = this.canvas
+    ctx.clearRect(0, 0, width, height)
+    if (visible.length === 0) return true
+
+    ctx.textBaseline = 'middle'
+    ctx.lineJoin = 'round'
+    ctx.miterLimit = 2
+
+    for (const clip of visible) {
+      ctx.textAlign = clip.anchor ?? 'center'
+      // Emphasis makes the word bigger; everything spatial is a fraction of
+      // the canvas, never a pixel count, so 480p preview and 1080p export put
+      // the caption in the same place.
+      const size = height * clip.fontSize * (1 + clip.emphasis * 0.45)
+      const x = width * clip.position.x
+      const y = height * clip.position.y
+
+      ctx.font = `800 ${size.toFixed(1)}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
+      ctx.lineWidth = Math.max(2, size * 0.14)
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)'
+      ctx.strokeText(clip.text, x, y)
+      ctx.fillStyle = clip.emphasis >= 0.7 ? '#ffe27a' : '#ffffff'
+      ctx.fillText(clip.text, x, y)
+    }
+
+    return true
+  }
+
+  clear(): void {
+    const ctx = this.ctx
+    if (ctx === null) return
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    this.lastKey = NEVER_RENDERED
+  }
+
+  dispose(): void {
+    this.clear()
+    this.ctx = null
+  }
+}

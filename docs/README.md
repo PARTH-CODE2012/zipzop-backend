@@ -15,8 +15,20 @@ Everything needed to build this product. Start here.
 | **3** | [API Contract](05-api-contract.md) | Both teams | The interface both sides build against |
 | **4** | [Backend Architecture](03-backend-architecture.md) | Backend | Data model, job pipeline, media, rendering, infrastructure |
 | **5** | [Frontend Architecture](04-frontend-architecture.md) | Frontend | Timeline state, playback engine, undo, tool integration |
+| **6** | [Security & Penetration Testing](07-security.md) | Everyone, before launch | What M7 reviews, what it attacks, and what blocks the release |
+| **7** | [UI Charter](08-ui-charter.md) | Frontend, before writing any component | The palette, typeface, spacing, component states and motion — and the five rules that settle arguments |
 
 **Diagrams:** [system overview](diagrams/system-overview.md) · [data model](diagrams/data-model.md) · [job lifecycle](diagrams/job-lifecycle.md)
+
+**Build notes**, written as milestones land — decisions made, documents changed, and traps the next milestone would otherwise rediscover:
+
+| | Milestone | Read it before |
+|---|---|---|
+| **M1** | [Compositor spike](../frontend/src/editor/playback/README.md) | touching the renderer or the playback clock |
+| **M2** | [Accounts, upload, ingest](06-m2-notes.md) | starting M3 |
+| **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
+| **M4 prep** | [M4 readiness](10-m4-readiness.md) | starting M4 — what is already built, what the contract already specifies, and two open decisions found while checking |
+| **M4** | [The job pipeline and the three tools](11-m4-notes.md) | touching jobs, credits, a worker or a tool result. Why the enqueue moved outside the transaction, and the asset-time conversion that makes a caption land in the right place |
 
 ### If you have fifteen minutes
 
@@ -50,11 +62,27 @@ Tiers are advertised as "≈30 videos/month" because that is what a creator unde
 
 ## Status
 
-**Nothing blocking. Building can start.**
+**M4 is done: the pipeline, all three tools, and the interface over them.**
+
+Editing survives a reload, verified end to end on a running stack. The server has the five project routes of [§5](05-api-contract.md), timeline validation against all eight invariants on every write, optimistic concurrency and `project_assets` rebuilt from the document. The client has a generated timeline type, undo through Immer patches, the full set of editing operations, drag with snapping, a marquee, an inspector, three lanes, virtualisation, and autosave with a real conflict path. The [UI charter](08-ui-charter.md) is applied.
+
+**The job pipeline is live** — `POST /jobs` and `/jobs/estimate` sharing one cost function, credits reserved and refunded against a ledger the database keeps honest, a worker claim no two workers can win, progress on Redis, and colour analysis running through all of it on real media. Written up in [`11-m4-notes.md`](11-m4-notes.md).
+
+**Proven in a browser, not only in tests**: add a clip, run Captions, watch it work, see sixteen words land on the text track, correct one, and find the correction still there after a reload. Both open decisions were closed on 21 August — the transcription engine (self-hosted `faster-whisper`, behind one function) and the language list (**English, French, Hindi**).
+
+That browser run also found what no unit test could: a machine without WebGL2 took the *whole editor* down rather than losing the picture. The compositor having no fallback is deliberate; the editor going with it was not. Both are in [`11-m4-notes.md`](11-m4-notes.md) §4.
+
+Left for M4: the mock fixtures, and two of the three caption styles — design work rather than engineering. M5 is unblocked.
+
+Left open on purpose: the text track's font, size and colour controls, the IndexedDB mirror (💤), and transitions in the preview — all three in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the nine defects the M3 audit found, one of them a security defect in M2's auth code.
+
+Everything before M3 is closed except desktop Safari, which is blocked on borrowing a Mac rather than on work.
 
 Approved by the project lead **12 August**: it is an editor · phased release · face mapping works on both own and imported footage · web first · lip sync is in.
 
 Approved **13 August**: phase 1 tools are captions, smart trim and colour grading · four tiers with credits underneath · monthly allowance expires, purchased credits do not · face mapping gets its own meter · Stripe **and** Razorpay both live at launch · AWS on a company account · fair-use ceiling on Unlimited · "dedicated server" reworded to dedicated priority queue.
+
+Approved **17 August**: **A2 Studio** is the visual baseline for the design charter ([the mockups](ui-directions/ui-directions-modern/index.html)) · **per-file upload size is set per plan** — 100 MB Free, 1 GB Pro, 5 GB on the unlimited tier ([scope §3.2](02-scope-v1.md)) · the httpOnly refresh cookie introduced in [contract v1.2](05-api-contract.md) is ratified, so it stops being an implementation decision made under M2 and becomes the agreed position.
 
 ### Not blocking, but needed soon
 
@@ -63,6 +91,9 @@ Approved **13 August**: phase 1 tools are captions, smart trim and colour gradin
 | **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end — external lead time, start now | Project lead |
 | **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
 | **3** | Storage retention policy | Before launch. Largest recurring cost, and it only grows. | Project lead |
+| **3b** | **Storage quota per tier** 🟠 | **Still now.** The 17 August answer set the size of a *single upload*; this is the *total* a tier may hold, which is a different number and still unstated. The values in `backend/app/services/plans.py` are marked `PLACEHOLDER` and must not ship. | Project lead |
+| **3c** | **A palette, a typeface, and the visual states** (clip selected, clip dragging, track muted) | 🟢 **Closed 17 August** — A2 Studio approved, and [`08-ui-charter.md`](08-ui-charter.md) written from it. All four timeline states answered in §9. Applying the tokens to `frontend/src/styles/globals.css` is an M3 task, not a question for the lead. | Done |
+| **3d** | Per-file upload limit for Business ⚪ | **Not urgent, not being chased.** The 17 August limits name three plans against four tiers, so we set Business to 2 GB ourselves and carried on. Decision **P** — mention it next time it comes up. | Project lead, eventually |
 | **4** | Who owns tax — Indian GST, EU VAT | Before launch. Not a development task. | Project lead |
 
 Credit values per tier are proposals derived from estimated costs. They live in one table and one module, and cost-per-job is instrumented from the first deploy, so re-pricing on real measurements is a data change. Full register in [the vision, §12](01-product-vision.md#12-decision-register).
@@ -81,6 +112,7 @@ Consent, watermarking and misuse policy for face mapping. Phase 1 stores **no fa
 | **AI** | Captions · Smart Trim · Colour Grading | Face Mapping + Lip Sync · Noise removal | Clip Finder · Templates · Upscaling |
 | **Commerce** | Four tiers, credits, Stripe + Razorpay, paywall | Face-mapping meter starts being spent | — |
 | **New infra** | Job queue, credit ledger, ingest, export renderer, billing | GPU cluster, face profiles, consent flow | Speaker tracking, music licensing |
+| **Security** | M7 — full review and penetration test before launch, then standing CI gates | The same pass again: facial data changes the risk picture more than anything else planned | — |
 | **Platform** | Web | Web | Web + iOS/Android |
 
 Later phases add **workers, not architecture**. That is the design's main claim, and the reason for the shape of the `jobs` table.
@@ -120,10 +152,10 @@ These are the documents this set was built from. Kept for reference; **supersede
 - **Money is integer minor units** — cents, paise — with its currency beside it. Never floats.
 - **Spatial values are normalised 0–1** relative to the canvas, never pixels. This is what makes a 480p preview and a 1080p export agree.
 - API fields are `camelCase`; database columns are `snake_case`; translation happens in the serialisation layer.
-- Identifiers are prefixed UUIDs: `ast_`, `prj_`, `job_`, `clp_`, `trk_`, `pay_`.
+- Identifiers are prefixed UUIDs: `usr_`, `ast_`, `prj_`, `job_`, `clp_`, `trk_`, `pay_`. The format is the prefix, an underscore, then the canonical lowercase UUID — `usr_9b1d0c4e-3f2a-4c81-9d77-2e6b5a1f0c34`. Fixed during M2 in `backend/app/api/ids.py`; the contract's examples are truncated and never pinned it down.
 - Error `code` is stable and machine-readable. Branch on it, never on `message`.
 - Plan limits are enforced **server-side**. Client-side gating exists so the interface can grey a button, never as the only check.
 
 ---
 
-*Documentation set v1.1 · 13 August 2026 · maintained by MMaxouB*
+*Documentation set v1.2 · 17 August 2026 · maintained by MMaxouB*

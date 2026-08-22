@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · A2 · Studio, larger preview</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--text-secondary:#8B8B94;--border:#33333A}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px 60px;background:#131315;color:#E8E8EC;font:14px/1.6 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+.meta{margin:0 0 20px}
+.meta h1{font:600 17px/1.3 system-ui;margin:0 0 6px}
+.meta p{margin:0;color:#8B8B94;font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.m4{--y:#FFE81F;--g1:rgba(255,255,255,.045);--g2:rgba(255,255,255,.09);--tx:#9A9AA6;--br:#F0F0F4;background:#0A0A0C;border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;color:var(--tx);font:12px/1.4 'Plus Jakarta Sans',system-ui;padding:9px;background-image:radial-gradient(440px 240px at 20% 6%,rgba(255,232,31,.055),transparent 70%)}
+.m4 .r{display:flex}
+.m4 .mo{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px}
+.m4 .glass{background:var(--g1);border:1px solid var(--g2);backdrop-filter:blur(14px);border-radius:13px}
+.m4 .pill{background:var(--y);color:#0A0A0C;border-radius:999px;padding:5px 14px;font-weight:600;font-size:12px;transition:transform .2s cubic-bezier(.22,1,.36,1),filter .2s}
+.m4 .pill:hover{transform:translateY(-1px);filter:brightness(1.08)}
+.m4 .chip{border-radius:999px;padding:4px 10px;display:flex;align-items:center;gap:6px;background:var(--g1);border:1px solid var(--g2);font-size:11px}
+.m4 .mk{font-weight:700;font-size:14px;color:var(--br);letter-spacing:-.03em}
+.m4 .mk em{font-style:normal;color:var(--y)}
+.m4 .rail{width:46px;display:flex;flex-direction:column;gap:4px;padding:5px;margin-right:8px}
+.m4 .tile{height:36px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:10px;font-weight:500;color:#71717F;transition:background .18s,color .18s,transform .18s}
+.m4 .tile i{font-size:15px}
+.m4 .tile:hover{background:var(--g1);color:var(--br);transform:translateY(-1px)}
+.m4 .tile.on{background:rgba(255,232,31,.14);color:var(--y)}
+.m4 .tile.ai{color:var(--y)}
+.m4 .pan{width:110px;padding:9px;margin-right:8px}
+.m4 .h{font-size:10px;color:#61616E;margin:0 0 8px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
+.m4 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.m4 .th{aspect-ratio:1;border-radius:8px;background:rgba(255,255,255,.06);display:flex;align-items:flex-end;padding:4px;font-size:10px;color:#8A8A96;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s}
+.m4 .th:hover{transform:scale(1.06)}
+.m4 .th.on{box-shadow:0 0 0 2px var(--y)}
+.m4 .stage{flex:1;min-width:0}
+.m4 .cv{height:100%;min-height:302px;border-radius:14px;background:#000;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+.m4 .fr{height:74%;aspect-ratio:9/16;border-radius:9px;background:#131318;box-shadow:0 0 0 1px rgba(255,232,31,.22)}
+.m4 .ctx{position:absolute;top:9px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:4px 5px;border-radius:999px;z-index:2}
+.m4 .cb{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#8A8A96;font-size:14px;transition:background .16s,color .16s}
+.m4 .cb:hover{background:rgba(255,255,255,.1);color:var(--br)}
+.m4 .cb.on{background:var(--y);color:#0A0A0C}
+.m4 .vs{width:1px;height:15px;background:var(--g2);margin:0 4px}
+.m4 .mag{border-radius:999px;padding:4px 11px;background:rgba(255,232,31,.15);color:var(--y);font-weight:600;font-size:11px;display:flex;align-items:center;gap:5px;transition:background .2s}
+.m4 .mag:hover{background:rgba(255,232,31,.26)}
+.m4 .tr{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:9px;padding:4px 11px 4px 4px;border-radius:999px;z-index:2}
+.m4 .rnd{width:25px;height:25px;border-radius:50%;background:var(--y);color:#0A0A0C;display:flex;align-items:center;justify-content:center;font-size:13px}
+.m4 .ar{position:absolute;right:9px;bottom:9px;padding:4px 9px;border-radius:999px;font-size:11px;z-index:2}
+.m4 .tl{margin-top:8px;padding:8px 9px 9px;border-radius:13px}
+.m4 .tlh{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:10px}
+.m4 .gz{position:relative;background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.09) 0 1px,transparent 1px 61px),repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,transparent 1px 12.2px);border-top:1px solid var(--g2);border-bottom:1px solid var(--g2)}
+.m4 .rule{display:flex;padding-left:54px;color:#5A5A66;margin-bottom:4px;font-size:10px}
+.m4 .rule span{width:61px}
+.m4 .lane{display:flex;align-items:center;height:24px;border-bottom:1px solid rgba(255,255,255,.05)}
+.m4 .lh{width:54px;display:flex;align-items:center;gap:5px;color:#5A5A66;font-size:10px;font-weight:500}
+.m4 .cl{flex:1;display:flex;gap:3px;position:relative;height:100%;align-items:center}
+.m4 .c{height:19px;border-radius:5px;background:rgba(255,255,255,.11);display:flex;align-items:center;padding:0 7px;color:#B4B4C0;font-size:11px;white-space:nowrap;overflow:hidden;transition:background .16s,transform .16s}
+.m4 .c:hover{background:rgba(255,255,255,.17)}
+.m4 .c.sel{background:var(--y);color:#0A0A0C;font-weight:600;box-shadow:0 0 0 1px rgba(255,232,31,.5),0 0 14px rgba(255,232,31,.22)}
+.m4 .c.drag{background:rgba(255,232,31,.16);color:var(--y);box-shadow:0 0 0 1px var(--y);transform:translateY(-2px)}
+.m4 .mut{opacity:.32}
+.m4 .ph{position:absolute;left:41%;top:-14px;bottom:0;width:2px;background:var(--y);border-radius:2px;z-index:3;animation:m4p 2.4s ease-in-out infinite}
+@keyframes m4p{0%,100%{opacity:.75}50%{opacity:1}}
+.m4 .ph b{position:absolute;top:-4px;left:-4px;width:10px;height:10px;border-radius:3px;background:var(--y)}
+.m4 .prog{height:3px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;position:relative}
+.m4 .prog i{position:absolute;inset:0;width:62%;background:var(--y);border-radius:3px;animation:m4b 2.6s ease-in-out infinite}
+@keyframes m4b{0%,100%{width:58%}50%{width:66%}}
+.spa{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)}
+.swa{width:15px;height:15px;border-radius:4px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="meta">
+  <h1>A2 · Studio — larger preview</h1>
+  <p>Same direction as <a href="A-studio.html" style="color:#FFE81F">A</a>, rebalanced in favour of the picture. The rail goes from 58 to 46 px and the media panel from 146 to 110 px, but the part that matters is that the contextual bar and the transport are no longer stacked above and below the canvas: they float over it. The preview takes roughly 2.3 times more area.</p>
+</div>
+<h2 class="sr-only">Variant of the Studio mockup with a larger video preview and smaller tools, with the contextual and transport bars floating over the canvas.</h2>
+<div class="m4">
+  <div class="r" style="align-items:center;gap:8px;margin-bottom:8px">
+    <span class="mk">zip<em>zop</em></span>
+    <span class="chip" style="color:#8A8A96">beach_day_v3 <i class="ti ti-chevron-down" aria-hidden="true"></i></span>
+    <span style="flex:1"></span>
+    <span class="chip"><i class="ti ti-coins" aria-hidden="true" style="color:var(--y)"></i><span class="mo" style="color:var(--br)">1 240</span></span>
+    <span class="chip" style="width:24px;height:24px;padding:0;justify-content:center;color:var(--br)">T</span>
+    <span class="pill">Export</span>
+  </div>
+  <div class="r">
+    <div class="rail glass">
+      <div class="tile on"><i class="ti ti-photo" aria-hidden="true"></i>Media</div>
+      <div class="tile"><i class="ti ti-typography" aria-hidden="true"></i>Text</div>
+      <div class="tile"><i class="ti ti-music" aria-hidden="true"></i>Audio</div>
+      <div class="tile"><i class="ti ti-adjustments" aria-hidden="true"></i>Effects</div>
+      <div class="tile ai"><i class="ti ti-sparkles" aria-hidden="true"></i>AI</div>
+    </div>
+    <div class="pan glass">
+      <p class="h">Media <i class="ti ti-chevron-left" aria-hidden="true" style="font-size:13px"></i></p>
+      <div class="grid2">
+        <div class="th on">01</div><div class="th">02</div><div class="th">03</div>
+        <div class="th" style="align-items:center;justify-content:center;color:#61616E;font-size:14px"><i class="ti ti-plus" aria-hidden="true"></i></div>
+      </div>
+      <p class="h" style="margin:11px 0 6px">Captions</p>
+      <div class="prog"><i></i></div>
+      <p class="mo" style="margin:5px 0 0;color:#61616E;font-size:10px">62 % · 40 CR</p>
+      <p class="h" style="margin:11px 0 6px">Storage</p>
+      <div class="prog"><i style="width:48%;animation:none"></i></div>
+      <p class="mo" style="margin:5px 0 0;color:#61616E;font-size:10px">2.4 / 5 GB</p>
+    </div>
+    <div class="stage">
+      <div class="cv">
+        <div class="fr"></div>
+        <div class="ctx glass">
+          <span class="cb on"><i class="ti ti-pointer" aria-hidden="true"></i></span>
+          <span class="cb"><i class="ti ti-scissors" aria-hidden="true"></i></span>
+          <span class="cb"><i class="ti ti-arrows-horizontal" aria-hidden="true"></i></span>
+          <span class="cb"><i class="ti ti-volume" aria-hidden="true"></i></span>
+          <span class="cb"><i class="ti ti-crop" aria-hidden="true"></i></span>
+          <span class="cb"><i class="ti ti-transition-right" aria-hidden="true"></i></span>
+          <span class="vs"></span>
+          <span class="mag"><i class="ti ti-sparkles" aria-hidden="true"></i>Magic</span>
+        </div>
+        <div class="tr glass">
+          <i class="ti ti-player-skip-back" aria-hidden="true" style="font-size:13px"></i>
+          <span class="rnd"><i class="ti ti-player-play" aria-hidden="true"></i></span>
+          <span class="mo" style="color:var(--br)">00:04.120</span>
+          <span class="mo" style="color:#5A5A66">00:41.900</span>
+        </div>
+        <div class="ar glass mo" style="color:#8A8A96">9:16 · 1080p</div>
+      </div>
+    </div>
+  </div>
+  <div class="tl glass">
+    <div class="tlh">
+      <span class="h" style="margin:0">Timeline</span>
+      <span class="mo" style="color:#5A5A66;font-size:10px">12 clips</span>
+      <span style="flex:1"></span>
+      <span class="mo" style="color:#5A5A66;font-size:10px">snap on</span>
+      <i class="ti ti-zoom-out" aria-hidden="true" style="font-size:13px"></i>
+      <span class="mo" style="color:var(--br);font-size:10px">1.5x</span>
+      <i class="ti ti-zoom-in" aria-hidden="true" style="font-size:13px"></i>
+    </div>
+    <div class="rule mo"><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span></div>
+    <div class="gz">
+      <div class="lane">
+        <div class="lh"><i class="ti ti-movie" aria-hidden="true"></i>V1</div>
+        <div class="cl">
+          <div class="c" style="flex:2">gopro_01</div>
+          <div class="c sel" style="flex:3">gopro_02</div>
+          <div class="c drag" style="flex:2">dragging</div>
+          <div class="c" style="flex:2">gopro_04</div>
+          <div class="ph"><b></b></div>
+        </div>
+      </div>
+      <div class="lane mut">
+        <div class="lh"><i class="ti ti-volume-off" aria-hidden="true"></i>A1</div>
+        <div class="cl"><div class="c" style="flex:1">track.wav — muted lane</div></div>
+      </div>
+      <div class="lane" style="border:0">
+        <div class="lh"><i class="ti ti-typography" aria-hidden="true"></i>T1</div>
+        <div class="cl" style="gap:2px">
+          <div class="c" style="flex:1">we</div><div class="c" style="flex:1">just</div><div class="c" style="flex:2">arrived</div><div class="c" style="flex:1">at</div><div class="c" style="flex:2">camp</div><div class="c" style="flex:3;opacity:.3">…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="spa">
+  <span><span class="swa" style="background:#0A0A0C;border:0.5px solid var(--border)"></span> <span class="swa" style="background:#17171B"></span> <span class="swa" style="background:#2A2A31"></span> <span class="swa" style="background:#FFE81F"></span> <code style="font-size:12px">#FFE81F</code></span>
+  <span>Plus Jakarta Sans + IBM Plex Mono</span>
+  <span>Motion: 200 ms ease-out, hover lifts</span>
+</div>
+</div>
+</body>
+</html>

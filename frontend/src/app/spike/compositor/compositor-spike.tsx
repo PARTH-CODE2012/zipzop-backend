@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { parseCubeLut } from '@/spike/compositor/cube'
-import { CompositorEngine, type CompositorStats } from '@/spike/compositor/engine'
-import { LUT_URL, type TransitionMode } from '@/spike/compositor/timeline'
+import { parseCubeLut } from '@/editor/playback/cube'
+import { CompositorEngine, type CompositorStats } from '@/editor/playback/engine'
+import { LUT_URL, type TransitionMode } from '@/editor/playback/timeline'
 
 interface Preset {
   readonly label: string

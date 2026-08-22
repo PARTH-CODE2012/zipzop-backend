@@ -409,8 +409,11 @@ Settled by the project lead on 13 August 2026. **Ordinary editing is free** — 
 | **Export** | 720p, watermarked | 1080p | 4K | 4K, custom watermark |
 | **Queue** | Standard | Fast | Priority | Dedicated priority |
 | **Face mapping** | — | 5 min/mo | 20 min/mo | 60 min/mo |
+| **Upload, per file** | 100 MB | 1 GB | 2 GB † | 5 GB |
 
 \* Unlimited carries a fair-use ceiling in the terms. Unlimited against usage-billed hardware has no floor without one.
+
+† Upload sizes were confirmed on 17 August for three plans — Free, Pro and "Enterprise Unlimited" — against the four tiers here. 5 GB is recorded against Studio on the reading that they are the same tier, and **Business's 2 GB is an interim we chose**, sitting between its neighbours. Decision **P**: correct it when the answer comes, do not hold anything up for it.
 
 ### 8.2 Videos are what we show; credits are what we count
 
@@ -437,7 +440,7 @@ Jobs always spend the allowance first, so credits a user paid for are never dest
 | **Payments** | 🟢 Stripe for global/USD, Razorpay for India/INR, both live at launch. IP suggests the currency; the user can change it. |
 | **Export** | 🟢 Costs credits. Free-tier exports carry a watermark; Pro and above do not; Studio can supply its own. |
 | **Cloud** | 🟢 AWS, on a company account. |
-| **Upload limits** | 🟠 Defaults proposed in [`02-scope-v1.md`](02-scope-v1.md) §3.2 — 2 GB, 60 minutes, up to 4K source. Confirm before launch. |
+| **Upload limits** | 🟢 **Per-file size confirmed 17 August**, and it is per plan rather than one global figure: 100 MB Free, 1 GB Pro, 5 GB on the unlimited tier, and a 2 GB interim we chose for Business — decision **P**, one constant to change. 🟠 Duration (60 minutes) and source resolution (4K) remain the proposed defaults in [`02-scope-v1.md`](02-scope-v1.md) §3.2. |
 | **Storage retention** | 🟠 Open. How long we keep media and projects. A direct recurring cost, and the largest one. |
 | **Teams** | 🟠 Open, and out of scope for the roadmap as it stands. |
 | **Sign-in** | 🟠 Open. Google/Apple sign-in, or email and password only. |
@@ -524,6 +527,7 @@ None of these block starting. They are ordered by when the answer is actually ne
 | # | Decision | Why it matters | When |
 |---|---|---|---|
 | **C** | Does Smart Trimming tighten a recording, or cut it down to its best parts? | The stated 10-minutes-to-2 result is a different, harder feature. Changes what we promise, not what we build first. | 🟠 Before phase 1 ships |
+| **P** | Which tier is "Enterprise Unlimited", and what may Business upload? | The upload limits confirmed on 17 August name three plans; §8.1 has four. 5 GB is recorded against Studio, and Business runs on a **2 GB interim we chose** so that ingest has a number to enforce. Nothing waits on it; the cost of being wrong is one constant and one table cell. | ⚪ Whenever it comes up |
 | **M** | Confirm the credit numbers per tier | Proposed in [`03-backend-architecture.md`](03-backend-architecture.md) §5.5 and derived from estimated costs. Should be re-tuned once cost-per-job is measured on real hardware. | 🟠 Before launch |
 | **N** | Storage retention policy | The largest recurring cost in the system, and it only grows. | 🟠 Before launch |
 | **D** | Whose face can be uploaded — only the account holder's, or anyone's? | §4.3 settled whose video can be targeted, not whose face can be supplied. | 🟠 Before face-mapping phase |

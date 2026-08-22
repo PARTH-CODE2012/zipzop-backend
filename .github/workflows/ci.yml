@@ -30,13 +30,31 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      # M2's upload flow is presigned URLs against S3. A mock cannot fail the
+      # way the real thing does — a signature that does not verify, path-style
+      # addressing, a Content-Type that is part of the signature — so the tests
+      # run against a real MinIO here too.
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: zipzop
+          MINIO_ROOT_PASSWORD: zipzop-dev-secret
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 5s --health-timeout 3s --health-retries 20
 
     env:
       DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@localhost:5432/zipzop_test
-      REDIS_URL: redis://localhost:6379/0
+      REDIS_URL: redis://localhost:6379/9
       CELERY_BROKER_URL: redis://localhost:6379/1
       JWT_SECRET_KEY: ci-only-secret
       ENVIRONMENT: test
+      S3_ENDPOINT_URL: http://localhost:9000
+      S3_BUCKET: zipzop-media-test
+      S3_ACCESS_KEY_ID: zipzop
+      S3_SECRET_ACCESS_KEY: zipzop-dev-secret
+      S3_FORCE_PATH_STYLE: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +63,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # The ingest worker shells out to both. Without them every media test
+      # fails on a missing binary rather than on anything about the code.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Install
         working-directory: backend
@@ -63,6 +86,14 @@ jobs:
       - name: Migrations apply cleanly
         working-directory: backend
         run: alembic upgrade head
+
+      # The models and the migrations must describe the same schema. Without
+      # this, a column added to a model and forgotten in a migration passes
+      # every test — the test database is built from the migrations, so the
+      # application simply never sees the column it thinks it has.
+      - name: Models match the migrated schema
+        working-directory: backend
+        run: alembic check
 
       - name: Test
         working-directory: backend
@@ -99,6 +130,14 @@ jobs:
       - name: Install
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+
+      # generated.ts is gitignored — it is derived from the committed
+      # openapi.json and committing it would let the two drift. That means CI
+      # has to generate it before anything type-checks: every step below this
+      # one fails on a missing module otherwise.
+      - name: Generate API types from the committed contract
+        working-directory: frontend
+        run: pnpm generate:types
 
       - name: Lint
         working-directory: frontend

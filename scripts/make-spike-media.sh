@@ -88,4 +88,4 @@ echo "generating LUT in $OUT/luts"
 python3 "$ROOT/scripts/make_spike_lut.py" "$OUT/luts/cinematic_warm.cube"
 
 echo
-echo "done — open http://localhost:3000/spike/compositor (make dev-frontend)"
+echo "done — open http://localhost:${WEB_PORT:-3123}/spike/compositor (make dev-frontend)"

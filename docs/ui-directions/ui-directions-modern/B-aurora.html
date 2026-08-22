@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZipZop · B · Aurora</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap">
+<style>
+:root{--text-secondary:#8B8B94;--border:#33333A}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px 60px;background:#131315;color:#E8E8EC;font:14px/1.6 system-ui,sans-serif;display:flex;justify-content:center}
+.wrap{width:100%;max-width:720px}
+.meta{margin:0 0 20px}
+.meta h1{font:600 17px/1.3 system-ui;margin:0 0 6px}
+.meta p{margin:0;color:#8B8B94;font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.m2{--y:#F5E534;--tx:#93939F;--br:#F2F2F6;background:#08080A;border:1px solid rgba(255,255,255,.06);border-radius:18px;overflow:hidden;color:var(--tx);font:12px/1.4 'Sora',system-ui}
+.m2 .cv{position:relative;min-height:246px;padding:10px;background-image:radial-gradient(320px 200px at 78% 12%,rgba(245,229,52,.09),transparent 70%),radial-gradient(300px 220px at 12% 88%,rgba(120,200,255,.05),transparent 70%)}
+.m2 .mo{font-family:'Roboto Mono',ui-monospace,monospace;font-size:11px}
+.m2 .isl{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(16px);border-radius:16px;animation:m2in .5s cubic-bezier(.22,1,.36,1) both}
+@keyframes m2in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.m2 .top{display:flex;align-items:center;gap:9px;padding:5px 6px 5px 13px;border-radius:999px;width:fit-content;margin:0 auto}
+.m2 .mk{font-weight:700;font-size:14px;color:var(--br);letter-spacing:-.02em}
+.m2 .mk em{font-style:normal;color:var(--y)}
+.m2 .ib{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#8D8D99;font-size:14px;transition:background .22s cubic-bezier(.22,1,.36,1),color .22s,transform .22s}
+.m2 .ib:hover{background:rgba(255,255,255,.11);color:var(--br);transform:scale(1.08)}
+.m2 .pill{background:var(--y);color:#08080A;border-radius:999px;padding:6px 15px;font-weight:600;font-size:12px;transition:transform .24s cubic-bezier(.34,1.56,.64,1),box-shadow .24s}
+.m2 .pill:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(245,229,52,.28)}
+.m2 .left{position:absolute;left:12px;top:56px;padding:6px;display:flex;flex-direction:column;gap:4px;animation-delay:.08s}
+.m2 .t{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#7C7C89;font-size:17px;transition:background .22s,color .22s,transform .22s}
+.m2 .t:hover{background:rgba(255,255,255,.1);color:var(--br);transform:translateX(2px)}
+.m2 .t.on{background:var(--y);color:#08080A}
+.m2 .sep{height:1px;background:rgba(255,255,255,.11);margin:3px 5px}
+.m2 .right{position:absolute;right:12px;top:56px;width:132px;padding:11px;animation-delay:.14s}
+.m2 .h{font-size:11px;color:#63636F;margin:0 0 9px;font-weight:600}
+.m2 .row{display:flex;justify-content:space-between;margin-bottom:6px}
+.m2 .rl{height:3px;background:rgba(255,255,255,.13);border-radius:3px;margin-bottom:12px;position:relative}
+.m2 .rl i{display:block;height:100%;background:var(--y);border-radius:3px}
+.m2 .rl b{position:absolute;top:-3.5px;width:10px;height:10px;border-radius:50%;background:var(--y);box-shadow:0 0 10px rgba(245,229,52,.5)}
+.m2 .fr{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:104px;height:132px;border-radius:12px;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 0 40px rgba(0,0,0,.6)}
+.m2 .aib{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:5px 6px;border-radius:999px;animation-delay:.2s}
+.m2 .ai{display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;color:var(--y);font-weight:500;font-size:12px;transition:background .22s,transform .22s}
+.m2 .ai:hover{background:rgba(245,229,52,.16);transform:translateY(-1px)}
+.m2 .ai.on{background:rgba(245,229,52,.18)}
+.m2 .tl{background:#0B0B0E;border-top:1px solid rgba(255,255,255,.08);padding:9px 12px 11px}
+.m2 .tlh{display:flex;align-items:center;gap:10px;margin-bottom:7px;color:#63636F;font-size:11px}
+.m2 .rule{display:flex;padding-left:56px;color:#54545F;margin-bottom:4px}
+.m2 .rule span{width:60px}
+.m2 .gz{background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.1) 0 1px,transparent 1px 60px),repeating-linear-gradient(90deg,rgba(255,255,255,.04) 0 1px,transparent 1px 15px);border:1px solid rgba(255,255,255,.08);border-radius:6px}
+.m2 .lane{display:flex;align-items:center;height:27px;border-bottom:1px solid rgba(255,255,255,.05)}
+.m2 .lh{width:56px;display:flex;align-items:center;gap:6px;color:#54545F;font-size:11px;padding-left:6px}
+.m2 .cl{flex:1;display:flex;gap:3px;position:relative;height:100%;align-items:center;padding-right:4px}
+.m2 .c{height:21px;border-radius:4px;background:rgba(255,255,255,.12);display:flex;align-items:center;padding:0 8px;color:#B0B0BC;font-size:11px;white-space:nowrap;overflow:hidden;transition:background .18s,transform .18s}
+.m2 .c:hover{background:rgba(255,255,255,.19)}
+.m2 .c.sel{background:var(--y);color:#08080A;font-weight:600}
+.m2 .c.drag{background:rgba(245,229,52,.14);color:var(--y);box-shadow:0 0 0 1px var(--y),0 5px 16px rgba(0,0,0,.5);transform:translateY(-3px)}
+.m2 .mut{opacity:.3}
+.m2 .snap{position:absolute;left:62%;top:-4px;bottom:-4px;width:1px;background:var(--y);opacity:.55}
+.m2 .ph{position:absolute;left:38%;top:-14px;bottom:0;width:2px;background:var(--y);z-index:3;box-shadow:0 0 12px rgba(245,229,52,.5)}
+.m2 .ph b{position:absolute;top:-3px;left:-5px;width:12px;height:8px;border-radius:3px;background:var(--y)}
+.spb{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--text-secondary)}
+.swb{width:15px;height:15px;border-radius:5px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="meta">
+  <h1>B · Aurora — everything floats above the canvas</h1>
+  <p>Nothing is pinned to an edge: the project bar, the tools and the properties are translucent islands sitting on a full-bleed canvas, with a diluted yellow ambience running through them. The top is vaporous; the timeline at the bottom is square and precise.</p>
+</div>
+<h2 class="sr-only">Modern mockup of the ZipZop editor as translucent floating islands over a full-bleed canvas, with a grid timeline anchored at the bottom.</h2>
+<div class="m2">
+  <div class="cv">
+    <div class="isl top">
+      <span class="mk">zip<em>zop</em></span>
+      <span style="color:#63636F">beach_day_v3</span>
+      <span class="ib"><i class="ti ti-arrow-back-up" aria-hidden="true"></i></span>
+      <span class="ib"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i></span>
+      <span class="mo" style="color:var(--y)">1 240</span>
+      <span class="pill">Export</span>
+    </div>
+    <div class="isl left">
+      <span class="t on"><i class="ti ti-pointer" aria-hidden="true"></i></span>
+      <span class="t"><i class="ti ti-scissors" aria-hidden="true"></i></span>
+      <span class="t"><i class="ti ti-typography" aria-hidden="true"></i></span>
+      <span class="t"><i class="ti ti-volume" aria-hidden="true"></i></span>
+      <span class="t"><i class="ti ti-crop" aria-hidden="true"></i></span>
+      <span class="sep"></span>
+      <span class="t"><i class="ti ti-photo" aria-hidden="true"></i></span>
+    </div>
+    <div class="fr"></div>
+    <div class="isl right">
+      <p class="h">gopro_02</p>
+      <div class="row"><span>Volume</span><span class="mo" style="color:var(--br)">-3 dB</span></div>
+      <div class="rl"><i style="width:64%"></i><b style="left:calc(64% - 5px)"></b></div>
+      <div class="row"><span>Speed</span><span class="mo" style="color:var(--br)">1.00x</span></div>
+      <div class="rl"><i style="width:38%"></i><b style="left:calc(38% - 5px)"></b></div>
+      <div class="row"><span>Grade</span><span class="mo" style="color:var(--br)">72 %</span></div>
+      <div class="rl" style="margin-bottom:4px"><i style="width:72%"></i><b style="left:calc(72% - 5px)"></b></div>
+      <p class="mo" style="color:#54545F;margin:8px 0 0">in 04.120 · out 11.480</p>
+    </div>
+    <div class="isl aib">
+      <span class="ai on"><i class="ti ti-message-2" aria-hidden="true"></i>Captions</span>
+      <span class="ai"><i class="ti ti-wand" aria-hidden="true"></i>Smart trim</span>
+      <span class="ai"><i class="ti ti-palette" aria-hidden="true"></i>Colour grade</span>
+    </div>
+  </div>
+  <div class="tl">
+    <div class="tlh">
+      <i class="ti ti-player-play" aria-hidden="true" style="font-size:15px;color:var(--y)"></i>
+      <span class="mo" style="color:var(--br)">00:04.120</span>
+      <span class="mo">/ 00:41.900</span>
+      <span style="flex:1"></span>
+      <span><i class="ti ti-magnet" aria-hidden="true"></i> snap</span>
+      <span class="mo">zoom 1.5x</span>
+    </div>
+    <div class="rule mo"><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span></div>
+    <div class="gz">
+      <div class="lane">
+        <div class="lh"><i class="ti ti-movie" aria-hidden="true"></i>V1</div>
+        <div class="cl">
+          <div class="c" style="flex:2">gopro_01</div>
+          <div class="c sel" style="flex:3">gopro_02</div>
+          <div class="c drag" style="flex:2">dragging</div>
+          <div class="c" style="flex:2">gopro_04</div>
+          <div class="snap"></div>
+          <div class="ph"><b></b></div>
+        </div>
+      </div>
+      <div class="lane mut">
+        <div class="lh"><i class="ti ti-volume-off" aria-hidden="true"></i>A1</div>
+        <div class="cl"><div class="c" style="flex:1">track.wav — muted lane</div></div>
+      </div>
+      <div class="lane" style="border:0">
+        <div class="lh"><i class="ti ti-typography" aria-hidden="true"></i>T1</div>
+        <div class="cl" style="gap:2px">
+          <div class="c" style="flex:1">we</div><div class="c" style="flex:1">just</div><div class="c" style="flex:2">arrived</div><div class="c" style="flex:1">at</div><div class="c" style="flex:2">camp</div><div class="c" style="flex:3;opacity:.28">…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="spb">
+  <span><span class="swb" style="background:#08080A;border:0.5px solid var(--border)"></span> <span class="swb" style="background:#141418"></span> <span class="swb" style="background:#2C2C34"></span> <span class="swb" style="background:#F5E534"></span> <code style="font-size:12px">#F5E534</code></span>
+  <span>Sora + Roboto Mono</span>
+  <span>Motion: 500 ms lift-in, magnetic hover, spring on the CTA</span>
+</div>
+</div>
+</body>
+</html>

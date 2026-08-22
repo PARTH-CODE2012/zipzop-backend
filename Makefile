@@ -13,12 +13,18 @@ help: ## Show this help
 # ------------------------------------------------------------------ setup ---
 
 .PHONY: setup
-setup: ## First run: copy .env, install both sides
+setup: ## First run: copy .env, install both sides, generate the API types
 	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")
 	$(MAKE) install-backend
 	$(MAKE) install-frontend
+	# generated.ts is gitignored — it is derived from the committed openapi.json,
+	# and committing it would let the two drift. A fresh clone therefore has no
+	# API types at all, and `pnpm typecheck`, `pnpm build` and `pnpm dev` all
+	# fail on a missing module until this runs. It belongs in setup, not in a
+	# note somebody reads after losing twenty minutes.
+	$(MAKE) types
 	@echo ""
-	@echo "Next: make up && make migrate"
+	@echo "Next: make infra && make migrate && make dev-all"
 
 .PHONY: install-backend
 install-backend: ## Install Python dependencies into backend/.venv
@@ -71,7 +77,8 @@ pull: docker-ok ## Fetch images one at a time, retrying — use this on a flaky 
 .PHONY: up
 up: docker-ok ## Start Postgres, Redis, MinIO, API, worker and beat
 	$(COMPOSE) up -d
-	@echo "api      http://localhost:8000/docs"
+	@source scripts/ports.sh && zz_load_ports && \
+		echo "api      http://localhost:$$API_PORT/docs"
 	@echo "minio    http://localhost:9001  (zipzop / zipzop-dev-secret)"
 
 # ---------------------------------------------- native services (no Docker) --
@@ -130,9 +137,24 @@ psql: ## Open a shell on the database
 
 # --------------------------------------------------------------------- dev ---
 
+# Every target that starts or names a server resolves its port through
+# scripts/ports.sh first. Nothing below writes a port number down: 8000 and
+# 3000 are the two most contested ports on a developer's machine, and the
+# frontend assuming 8000 while the API had moved is exactly how this broke.
+PORTS := source scripts/ports.sh && zz_resolve_ports >/dev/null
+
+.PHONY: ports
+ports: ## Show which ports the dev stack will use, and why
+	@source scripts/ports.sh && zz_resolve_ports && \
+		echo "  API      http://localhost:$$API_PORT" && \
+		echo "  web      http://localhost:$$WEB_PORT" && \
+		echo "  CORS     $$CORS_ORIGINS"
+
 .PHONY: dev
 dev: ## Run the API natively with reload (infrastructure must be up)
-	cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --reload --port 8000
+	@$(PORTS) && cd $(BACKEND) && \
+		echo "API on http://localhost:$$API_PORT" && \
+		./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT --reload
 
 .PHONY: dev-worker
 dev-worker: ## Run a Celery worker natively
@@ -140,13 +162,109 @@ dev-worker: ## Run a Celery worker natively
 
 .PHONY: dev-frontend
 dev-frontend: ## Run the Next.js dev server
-	cd $(FRONTEND) && pnpm dev
+	@$(PORTS) && cd $(FRONTEND) && \
+		echo "web on http://localhost:$$WEB_PORT, API at $$NEXT_PUBLIC_API_BASE_URL" && \
+		pnpm dev --port $$WEB_PORT
+
+.PHONY: infra
+infra: ## Start whatever infrastructure is not already up (Postgres, Redis, MinIO)
+	@./scripts/infra.sh
+
+.PHONY: dev-all
+.PHONY: watch
+watch: ## One tmux session, three visible panes: API + worker + web — Ctrl-C in a pane stops just that service
+	@./scripts/dev-up.sh
+
+.PHONY: watch-stop
+watch-stop: ## Stop what `make watch` started, leaving the containers up
+	@./scripts/dev-down.sh
+
+dev-all: infra migrate ## Everything you need to click around: API + ingest worker + frontend
+	@source scripts/ports.sh && zz_resolve_ports && \
+	echo "starting the API, the ingest worker and the dev server…" && \
+	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
+		--reload > /tmp/zipzop-api.log 2>&1 &) && \
+	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
+	sleep 4 && \
+	echo "" && \
+	echo "  editor    http://localhost:$$WEB_PORT/editor/scratch" && \
+	echo "  API docs  http://localhost:$$API_PORT/docs" && \
+	echo "  logs      /tmp/zipzop-{api,worker,web}.log" && \
+	echo "" && \
+	echo "  stop with: make dev-stop"
+
+# `pkill -f` matches whole command lines and knows nothing about which checkout
+# a process belongs to, so the four `pkill`s that used to live here killed every
+# Next dev server and every uvicorn on the machine — other projects included.
+# scripts/dev-stop.sh filters on the process's working directory, and refuses to
+# kill any ancestor of itself. Both filters are failures that happened.
+.PHONY: dev-stop
+dev-stop: ## Stop this project's dev processes — and only this project's
+	@./scripts/dev-stop.sh
+
+.PHONY: doctor
+doctor: ## Check a fresh clone has everything it needs, and say what is missing
+	@./scripts/doctor.sh
 
 # ------------------------------------------------------------------- spike ---
 
 .PHONY: spike-media
 spike-media: ## Generate the M1 compositor spike's test clips and LUT (needs ffmpeg)
 	./scripts/make-spike-media.sh
+
+.PHONY: luts
+luts: ## Generate the five shared .cube grades the browser and the renderer both read
+	python3 scripts/make_luts.py $(FRONTEND)/public/luts
+
+# --------------------------------------------------------------------- e2e ---
+# M2's closing condition, checked in a real browser. See frontend/e2e/README.md
+# for what the 29 checks cover and for the three bugs this found that the unit
+# suites could not.
+
+.PHONY: e2e-media
+e2e-media: ## Generate the end-to-end fixture clip (needs ffmpeg)
+	@ffmpeg -y -hide_banner -loglevel error \
+		-f lavfi -i "testsrc2=size=1280x720:rate=30:duration=6" \
+		-f lavfi -i "sine=frequency=440:duration=6,volume=0.8" \
+		-c:v libx264 -preset veryfast -pix_fmt yuv420p \
+		-c:a aac -b:a 128k -movflags +faststart \
+		$(FRONTEND)/e2e/fixture.mp4
+	@echo "wrote $(FRONTEND)/e2e/fixture.mp4"
+
+# The resolved ports are written to a file the `e2e` target reads back, because
+# each make recipe is its own shell: a port resolved in `e2e-up` is gone by the
+# time `e2e` runs, and the browser would go looking on the default.
+ZZ_PORTS_FILE := /tmp/zipzop-ports.env
+
+.PHONY: e2e-up
+e2e-up: ## Start everything the end-to-end run needs, in the background
+	@$(MAKE) --no-print-directory native-check
+	@source scripts/ports.sh && zz_resolve_ports && \
+	{ echo "API_PORT=$$API_PORT"; echo "WEB_PORT=$$WEB_PORT"; } > $(ZZ_PORTS_FILE) && \
+	echo "starting the API, a worker and the dev server on :$$API_PORT and :$$WEB_PORT…" && \
+	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
+		--log-level warning > /tmp/zipzop-api.log 2>&1 &) && \
+	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
+	echo "logs: /tmp/zipzop-{api,worker,web}.log"
+
+.PHONY: e2e-down
+e2e-down: dev-stop ## Stop what e2e-up started
+
+.PHONY: e2e
+e2e: e2e-media ## Prove M2 end to end in a real browser
+	@[ -f $(ZZ_PORTS_FILE) ] && source $(ZZ_PORTS_FILE) || true; \
+	source scripts/ports.sh && zz_load_ports && zz_export_urls && \
+	cd $(FRONTEND) && node e2e/m2.mjs
+
+.PHONY: e2e-headful
+e2e-headful: e2e-media ## The same, with a window you can watch
+	@[ -f $(ZZ_PORTS_FILE) ] && source $(ZZ_PORTS_FILE) || true; \
+	source scripts/ports.sh && zz_load_ports && zz_export_urls && \
+	cd $(FRONTEND) && node e2e/m2.mjs --headful
 
 # ---------------------------------------------------------------- contract ---
 
