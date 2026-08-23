@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZipZop — Build status</title>
+<style>
+  /* ---------------------------------------------------------------
+     Palette inherited from the product itself, not invented for this
+     page: the editor ships one accent, one hex (#ffe81f), on a
+     near-black chrome (#0a0a0c). Here the chrome colour becomes the
+     document's ink, and the accent stays a fill or a rule — never
+     type, because yellow on white is unreadable.
+     --------------------------------------------------------------- */
+  :root {
+    --ground: #fbfaf7;
+    --ground-2: #f4f2ec;
+    --ink: #0a0a0c;
+    --ink-2: #35342e;
+    --muted: #6e6c64;
+    --rule: #e4e2db;
+    --rule-strong: #cfccc2;
+
+    --accent: #ffe81f;
+    --accent-type: #6f6200;
+    --accent-soft: rgba(255, 232, 31, 0.22);
+
+    /* Semantic, deliberately separate from the accent. */
+    --done: #2f7d5c;
+    --open: #a8813a;
+    --ahead: #b4b1a6;
+
+    --shell: 1140px;
+    --prose: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0a0a0c;
+      --ground-2: #151517;
+      --ink: #f0f0f4;
+      --ink-2: #c9c9d0;
+      --muted: #8b8b94;
+      --rule: #26262a;
+      --rule-strong: #3a3a40;
+      --accent-type: #ffe81f;
+      --accent-soft: rgba(255, 232, 31, 0.16);
+      --done: #59c397;
+      --open: #e0b45c;
+      --ahead: #4a4a52;
+    }
+  }
+  :root[data-theme='dark'] {
+    --ground: #0a0a0c;
+    --ground-2: #151517;
+    --ink: #f0f0f4;
+    --ink-2: #c9c9d0;
+    --muted: #8b8b94;
+    --rule: #26262a;
+    --rule-strong: #3a3a40;
+    --accent-type: #ffe81f;
+    --accent-soft: rgba(255, 232, 31, 0.16);
+    --done: #59c397;
+    --open: #e0b45c;
+    --ahead: #4a4a52;
+  }
+  :root[data-theme='light'] {
+    --ground: #fbfaf7;
+    --ground-2: #f4f2ec;
+    --ink: #0a0a0c;
+    --ink-2: #35342e;
+    --muted: #6e6c64;
+    --rule: #e4e2db;
+    --rule-strong: #cfccc2;
+    --accent-type: #6f6200;
+    --accent-soft: rgba(255, 232, 31, 0.22);
+    --done: #2f7d5c;
+    --open: #a8813a;
+    --ahead: #b4b1a6;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  :where(h1, h2, h3, p, ul, ol, pre, figure) { margin: 0; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink-2);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shell {
+    max-width: var(--shell);
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  .prose { max-width: var(--prose); }
+
+  /* ------------------------------------------------------------- type */
+  h1, h2, h3 {
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: -0.032em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 { font-size: clamp(2.1rem, 5vw, 3.1rem); line-height: 1.05; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  h3 { font-size: 1rem; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  strong { color: var(--ink); font-weight: 650; }
+
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------------------------------------------------------- masthead */
+  header.masthead {
+    border-bottom: 1px solid var(--rule-strong);
+    padding: 56px 0 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .masthead-top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 28px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .lede { font-size: 1.12rem; color: var(--ink-2); max-width: 62ch; }
+
+  .stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    padding: 5px 11px;
+    white-space: nowrap;
+  }
+  .stamp::before {
+    content: '';
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border: 1px solid rgba(0,0,0,0.28);
+  }
+
+  /* ------------------------------------------------------- section rhythm */
+  section { padding-top: 64px; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 10px;
+    margin-bottom: 28px;
+  }
+  .section-head .eyebrow { margin-left: auto; }
+
+  /* --------------------------------------------------------- the track
+     The milestones drawn as the thing this product is: an editing
+     timeline. The order is not decoration — M5 cannot start before M4,
+     and the playhead sits where the work actually is. */
+  .track {
+    border: 1px solid var(--rule-strong);
+    background: var(--ground-2);
+    overflow-x: auto;
+  }
+  .track-lane {
+    display: grid;
+    grid-template-columns: repeat(9, minmax(104px, 1fr));
+    min-width: 980px;
+    position: relative;
+  }
+  .cell {
+    border-right: 1px solid var(--rule);
+    padding: 14px 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 128px;
+  }
+  .cell:last-child { border-right: 0; }
+  .cell .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .cell .name {
+    font-size: 0.83rem;
+    line-height: 1.3;
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .cell.ahead .name { color: var(--muted); font-weight: 500; }
+
+  .fill {
+    height: 5px;
+    background: var(--rule-strong);
+    margin-top: auto;
+    position: relative;
+  }
+  .fill span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--accent);
+  }
+  .cell.ahead .fill span { background: var(--ahead); }
+
+  /* Proposed, not approved. Hatched rather than filled, because a solid bar
+     would claim a commitment nobody has made yet. */
+  .cell.pending { background: var(--accent-soft); }
+  .cell.pending .name { color: var(--ink); }
+  .cell.pending .fill span {
+    background: repeating-linear-gradient(
+      45deg, var(--open) 0 4px, transparent 4px 8px
+    );
+    width: 100%;
+  }
+  .pct {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .playhead {
+    position: absolute;
+    top: -1px; bottom: -1px;
+    width: 2px;
+    background: var(--ink);
+    z-index: 2;
+  }
+  .playhead::before {
+    content: 'now';
+    position: absolute;
+    top: -1px;
+    left: 2px;
+    background: var(--ink);
+    color: var(--ground);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    padding: 1px 5px 2px;
+  }
+
+  /* ------------------------------------------------------------ figures */
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    border: 1px solid var(--rule-strong);
+    border-bottom: 0;
+  }
+  .figure {
+    padding: 18px 18px 20px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .figure:last-child { border-right: 0; }
+  .figure .n {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.7rem;
+    color: var(--ink);
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .figure .k {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 7px;
+    display: block;
+    line-height: 1.4;
+  }
+
+  /* -------------------------------------------------------- capabilities */
+  .caps { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+  .cap {
+    display: grid;
+    grid-template-columns: 168px 1fr;
+    gap: 8px 28px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: start;
+  }
+  .cap h3 { padding-top: 1px; }
+  .cap p { color: var(--ink-2); }
+  .cap .note { color: var(--muted); font-size: 0.9rem; margin-top: 5px; }
+
+  /* -------------------------------------------------------------- steps */
+  .steps { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); }
+  .step { border-top: 2px solid var(--ink); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .step h3 { letter-spacing: -0.015em; }
+  .step p { font-size: 0.94rem; color: var(--ink-2); }
+  .step .after { font-size: 0.88rem; color: var(--muted); }
+
+  pre {
+    margin: 0;
+    background: var(--ground-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.84rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+  code.inline {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    padding: 1px 5px;
+    color: var(--accent-type);
+  }
+
+  /* ------------------------------------------------------------- lists */
+  ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  ul.plain li {
+    display: grid;
+    grid-template-columns: 15px 1fr;
+    gap: 12px;
+    align-items: start;
+    color: var(--ink-2);
+  }
+  ul.plain li::before {
+    content: '';
+    width: 7px; height: 7px;
+    margin-top: 9px;
+    background: var(--open);
+  }
+  ul.plain li.blocked::before { background: var(--ahead); }
+
+  .next { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+  .next-row {
+    display: grid;
+    grid-template-columns: 62px 1fr auto;
+    gap: 10px 24px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .next-row .m {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    color: var(--ink);
+    letter-spacing: 0.06em;
+  }
+  .next-row .why { color: var(--muted); font-size: 0.9rem; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule-strong);
+    color: var(--muted);
+    font-size: 0.86rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    justify-content: space-between;
+  }
+
+  @media (max-width: 620px) {
+    .cap { grid-template-columns: 1fr; gap: 4px; }
+    .next-row { grid-template-columns: 54px 1fr; }
+    .next-row .why { grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <header class="masthead">
+    <div class="masthead-top">
+      <div>
+        <span class="eyebrow">Phase 1 &middot; build status</span>
+        <h1>ZipZop</h1>
+      </div>
+      <span class="stamp">22 Aug 2026 &middot; M4 complete</span>
+    </div>
+    <p class="lede">
+      A browser video editor with AI tools built in. Five of eight milestones are
+      complete. You can sign up, upload a video, cut it, caption it, grade it, and
+      come back tomorrow to exactly what you left. What it cannot do yet is give
+      you the finished file &mdash; that is the milestone starting now.
+    </p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>Where we are</h2>
+      <span class="eyebrow">M0 &rarr; M7</span>
+    </div>
+
+    <div class="track">
+      <div class="track-lane">
+        <div class="playhead" style="left: 55.55%"></div>
+
+        <div class="cell">
+          <span class="code">M0</span>
+          <span class="name">Foundations</span>
+          <span class="pct">100%</span>
+          <span class="fill"><span style="width:100%"></span></span>
+        </div>
+        <div class="cell">
+          <span class="code">M1</span>
+          <span class="name">Playback engine</span>
+          <span class="pct">13 / 14</span>
+          <span class="fill"><span style="width:92%"></span></span>
+        </div>
+        <div class="cell">
+          <span class="code">M2</span>
+          <span class="name">Accounts &amp; upload</span>
+          <span class="pct">100%</span>
+          <span class="fill"><span style="width:100%"></span></span>
+        </div>
+        <div class="cell">
+          <span class="code">M3</span>
+          <span class="name">Editing that sticks</span>
+          <span class="pct">28 / 30</span>
+          <span class="fill"><span style="width:93%"></span></span>
+        </div>
+        <div class="cell">
+          <span class="code">M4</span>
+          <span class="name">AI tools</span>
+          <span class="pct">28 / 31</span>
+          <span class="fill"><span style="width:90%"></span></span>
+        </div>
+        <div class="cell pending">
+          <span class="code">M4.5</span>
+          <span class="name">Interface pass</span>
+          <span class="pct">proposed</span>
+          <span class="fill"><span></span></span>
+        </div>
+        <div class="cell ahead">
+          <span class="code">M5</span>
+          <span class="name">Export a file</span>
+          <span class="pct">next</span>
+          <span class="fill"><span style="width:0%"></span></span>
+        </div>
+        <div class="cell ahead">
+          <span class="code">M6</span>
+          <span class="name">Payments</span>
+          <span class="pct">&mdash;</span>
+          <span class="fill"><span style="width:0%"></span></span>
+        </div>
+        <div class="cell ahead">
+          <span class="code">M7</span>
+          <span class="name">Security review</span>
+          <span class="pct">&mdash;</span>
+          <span class="fill"><span style="width:0%"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <p class="prose" style="margin-top: 20px; color: var(--muted); font-size: 0.94rem;">
+      All five have met the condition they were written against. The three
+      sitting under 100% carry a handful of items judged not worth blocking on
+      &mdash; they are listed at the bottom of this page rather than rounded away.
+      <strong style="color: var(--ink-2);">M4.5 is a proposal awaiting approval</strong>,
+      which is why it is hatched rather than filled.
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>What it does today</h2>
+      <span class="eyebrow">working, end to end</span>
+    </div>
+
+    <div class="caps">
+      <div class="cap">
+        <h3>Accounts</h3>
+        <div>
+          <p>Register, sign in, stay signed in across reloads and tabs.</p>
+          <p class="note">Sessions rotate their tokens; presenting an old one ends every session on the account, which is what a stolen token looks like.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Upload</h3>
+        <div>
+          <p>Drop in a real video. It uploads straight to storage, then a worker measures it, builds a preview copy, a thumbnail and a waveform.</p>
+          <p class="note">Files up to 2&nbsp;GB. Anything unreadable fails with a sentence the user can act on rather than an error code.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Editing</h3>
+        <div>
+          <p>Cut, split, trim, move and duplicate clips across video, audio and text tracks. Snapping, multi-select, unlimited undo.</p>
+          <p class="note">Every edit is undoable in one press &mdash; including a captions run that added 1,800 clips.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Saving</h3>
+        <div>
+          <p>Autosave. Close the tab, come back, find exactly what you left.</p>
+          <p class="note">Two tabs editing the same project is detected and handed to the user to resolve &mdash; nothing is silently overwritten.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Playback</h3>
+        <div>
+          <p>A real compositor in the browser: frame-accurate scrubbing, colour grades applied live, captions drawn over the picture.</p>
+          <p class="note">Verified on Chrome, Firefox, Edge and iOS Safari. macOS Safari is untested &mdash; nobody on the project has a Mac.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Captions</h3>
+        <div>
+          <p>Transcribes speech into one editable clip per word, timed to the audio. <strong>English, French and Hindi.</strong></p>
+          <p class="note">Words the recogniser was unsure about are flagged for review. Runs on our own servers, so it costs nothing per use.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Smart trim</h3>
+        <div>
+          <p>Finds silence, filler words, stutters and restarted sentences, at three strengths, and cuts them in one undoable step.</p>
+          <p class="note">Suggestions only until applied &mdash; and one press of undo puts the clip back.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Colour</h3>
+        <div>
+          <p>Reads the picture and recommends one of five graded looks with a strength, applied instantly in the preview.</p>
+          <p class="note">The same grade files will be used by the export renderer, so what you see is what will come out.</p>
+        </div>
+      </div>
+
+      <div class="cap">
+        <h3>Credits</h3>
+        <div>
+          <p>Every AI tool is priced before you press the button, charged when it starts, and refunded automatically if it fails.</p>
+          <p class="note">The four plans are seeded with real numbers. Taking payments is M6; the accounting underneath it is already built and audited nightly.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>By the numbers</h2>
+      <span class="eyebrow">22 Aug 2026</span>
+    </div>
+    <div class="figures">
+      <div class="figure"><span class="n">443</span><span class="k">automated tests, all passing</span></div>
+      <div class="figure"><span class="n">5 / 8</span><span class="k">milestones complete</span></div>
+      <div class="figure"><span class="n">24</span><span class="k">API operations live</span></div>
+      <div class="figure"><span class="n">3</span><span class="k">AI tools shipping</span></div>
+      <div class="figure"><span class="n">6</span><span class="k">items carried forward, listed below</span></div>
+      <div class="figure"><span class="n">8</span><span class="k">interface items proposed as M4.5</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Run it</h2>
+      <span class="eyebrow">two commands</span>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <h3>First time only</h3>
+        <p>Installs both halves and generates the shared API types.</p>
+        <pre>make setup</pre>
+        <p class="after">Needs Docker, Node and Python. <code class="inline">make doctor</code> says exactly what is missing and what to run for it.</p>
+      </div>
+
+      <div class="step">
+        <h3>Every time after</h3>
+        <p>Starts the database, the queue, storage, the API, the worker and the app &mdash; in one window you can watch.</p>
+        <pre>make watch</pre>
+        <p class="after">Then open <code class="inline">localhost:3123</code>. Ports are picked automatically if something else already holds them.</p>
+      </div>
+
+      <div class="step">
+        <h3>Stop it</h3>
+        <p>Stops this project's servers and leaves everything else on the machine alone.</p>
+        <pre>make watch-stop</pre>
+        <p class="after">Your work is already saved &mdash; there is no separate save step to remember.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Test it</h2>
+      <span class="eyebrow">automated, then by hand</span>
+    </div>
+
+    <div class="prose" style="display: grid; gap: 22px;">
+      <div>
+        <h3 style="margin-bottom: 8px;">The full gate</h3>
+        <p style="margin-bottom: 12px;">
+          One command runs everything the build server runs: 433 tests, type
+          checking on both halves, linting, and a check that the API contract and
+          the app still agree.
+        </p>
+        <pre>make check</pre>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 10px;">
+          Takes about two minutes. It is the gate before anything is pushed.
+        </p>
+      </div>
+
+      <div>
+        <h3 style="margin-bottom: 8px;">The five-minute walkthrough</h3>
+        <p style="margin-bottom: 14px;">
+          What to do to see the current milestone actually working, in order:
+        </p>
+        <ol style="margin: 0; padding-left: 20px; display: grid; gap: 9px; color: var(--ink-2);">
+          <li>Create an account on the sign-in screen.</li>
+          <li>Add a video with a bit of talking in it, and wait for it to say <strong>ready</strong>.</li>
+          <li>Press <strong>Add to timeline</strong>, then click the clip.</li>
+          <li>In the panel on the right, press <strong>Run</strong> under Captions &mdash; the price is on the button before you press it.</li>
+          <li>Watch the progress bar; the words appear on the timeline, one clip each, in time with the speech.</li>
+          <li>Click any word and retype it &mdash; correcting a misheard name is the point.</li>
+          <li>Reload the page. The correction is still there.</li>
+        </ol>
+        <p style="color: var(--muted); font-size: 0.9rem; margin-top: 14px;">
+          This is the milestone's own closing condition, and it was verified in a
+          real browser rather than only in tests.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>A proposal on the table</h2>
+      <span class="eyebrow">scope decided &middot; awaiting go-ahead</span>
+    </div>
+
+    <div class="prose" style="display: grid; gap: 18px;">
+      <p>
+        The editor was used rather than tested, and it turned up eight usability
+        problems that <strong>nothing in the current plan is scheduled to
+        fix</strong>. The only visual work in the eight milestones was a design
+        charter in M3, and that settled colours, type and component states &mdash;
+        it never covered how large a control should be, where it should sit, or
+        whether a feature can be found at all.
+      </p>
+
+      <div style="border-left: 3px solid var(--accent); padding-left: 16px; display: grid; gap: 10px;">
+        <p style="color: var(--ink);"><strong>The one that matters most:</strong>
+          from the home page, the only way into the product leads to a page that
+          still says <em>&ldquo;built in M3&rdquo;</em>. Anyone who does not already
+          know the editor's address cannot reach it.</p>
+        <p style="color: var(--muted); font-size: 0.92rem;">
+          A forgotten stub rather than a design problem, and ten minutes to close.
+        </p>
+      </div>
+
+      <p>
+        The rest: the play button sits nowhere near the picture it plays, the
+        toolbar is thin for a video editor, the two side panels do not have room
+        for the tools Phase&nbsp;2 will add, the adjustment sliders are oversized
+        and cannot be typed into, timeline zoom felt imprecise, and the timeline
+        itself reads as bolted on rather than composed.
+      </p>
+
+      <p>
+        <strong>The three open scope questions are now decided</strong> &mdash;
+        keep the timeline's current mouse-wheel behaviour rather than change it;
+        fold the two side panels into one icon rail plus a single properties panel,
+        instead of two panels stacked with no shared idea of what belongs where;
+        and ship manual controls only for what the renderer already implements,
+        holding any new effect type for Phase&nbsp;2 so the preview and the exported
+        file can never disagree.
+      </p>
+
+      <p style="color: var(--muted); font-size: 0.92rem;">
+        What is left is craft work &mdash; sizes, spacing, the rail's exact visuals
+        &mdash; and one scheduling call: close the dead end and the timeline framing
+        before M5, and group the rest after M6, once the export dialog and the
+        pricing screens have added interface of their own. Full write-up in the
+        project docs.
+      </p>
+
+      <p style="color: var(--muted); font-size: 0.92rem;">
+        A ninth problem from the same session is <strong style="color: var(--ink-2);">already
+        fixed</strong>: titles and captions could not be moved or resized on the
+        timeline at all. That was a defect rather than a matter of taste, so it did
+        not wait for this decision.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>What comes next</h2>
+      <span class="eyebrow">M5 &rarr; M7</span>
+    </div>
+
+    <div class="next">
+      <div class="next-row">
+        <span class="m">M5</span>
+        <div>
+          <strong>Export a file.</strong> A finished 1080p MP4 that looks exactly
+          like the preview. Everything it needs is now in place.
+        </div>
+        <span class="why">unblocked, next up</span>
+      </div>
+      <div class="next-row">
+        <span class="m">M6</span>
+        <div>
+          <strong>Payments.</strong> Subscriptions, top-ups and renewals. The
+          credit accounting underneath is already built and tested.
+        </div>
+        <span class="why">needs provider accounts opened</span>
+      </div>
+      <div class="next-row">
+        <span class="m">M7</span>
+        <div>
+          <strong>Security review.</strong> A deliberate attempt to break what the
+          previous seven milestones built, on a staging copy with synthetic data.
+        </div>
+        <span class="why">last gate before launch</span>
+      </div>
+    </div>
+
+    <p class="prose" style="margin-top: 22px; color: var(--muted); font-size: 0.94rem;">
+      One item on M6 has an external lead time and is worth starting now regardless
+      of where the build is: <strong style="color: var(--ink-2);">opening the Stripe
+      and Razorpay accounts</strong>. Nothing else in the plan waits on anyone outside
+      the team.
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Open, honestly</h2>
+      <span class="eyebrow">carried forward, not hidden</span>
+    </div>
+
+    <div class="prose">
+      <p style="margin-bottom: 20px;">
+        Six items are open across the three milestones above 90%. None of them
+        blocks the next milestone; each was a judgement call rather than an
+        oversight.
+      </p>
+      <ul class="plain">
+        <li class="blocked">
+          <div>
+            <strong>macOS Safari is untested.</strong> Blocked on hardware, not on
+            time &mdash; nobody on the project has a Mac. iOS Safari, the harder
+            case, passes.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Two of three caption styles.</strong> Design work rather than
+            engineering; inventing them in code would ship two nobody chose.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Font, size and colour controls for text.</strong> The data is
+            already stored and typed &mdash; each one is a control to add, not a
+            change of shape.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Test fixtures for the AI tools.</strong> Lets the interface be
+            worked on without running real jobs. Convenience, not correctness.
+          </div>
+        </li>
+        <li>
+          <div>
+            <strong>Retry messaging when a job fails.</strong> The refund is
+            automatic and already tested; what is missing is the sentence telling
+            the user it happened.
+          </div>
+        </li>
+        <li class="blocked">
+          <div>
+            <strong>Offline backup of unsaved edits.</strong> Deferred by design.
+            Work is saved to the server continuously; this would only cover losing
+            the network mid-edit.
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>ZipZop &middot; Phase 1 &middot; status as of 22 August 2026</span>
+    <span class="mono">M0&ndash;M4 closed &middot; M4.5 proposed &middot; M5 next</span>
+  </footer>
+
+</div>
+
+</body>
+</html>

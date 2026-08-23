@@ -25,6 +25,7 @@ import {
   isMediaTrack,
   type MediaClip,
   type MediaTrack,
+  type TextClip,
   type TextTrack,
   type TimelineDocument,
   type Track,
@@ -74,6 +75,49 @@ function findMedia(
   return null
 }
 
+/**
+ * Any clip on **any** track, media or text.
+ *
+ * `findMedia` above searches video and audio only, which is right for the
+ * operations that need a `sourceInMs` or a `speed` to mean anything — a volume,
+ * a colour grade, a transition. It was wrong for the ones that only need a
+ * position: **moving, trimming, splitting and duplicating a title or a caption
+ * all silently did nothing**, because the lookup they went through could not
+ * see the text track at all. The gesture ran, the pointer moved, and the
+ * operation returned without touching the document.
+ *
+ * A discriminated result rather than a widened one, because the two kinds
+ * genuinely differ: a media clip has media behind it and a text clip does not,
+ * and the trims below have to know which they are holding.
+ */
+type FoundClip =
+  | { kind: 'media'; track: Draft<MediaTrack>; index: number; clip: Draft<MediaClip> }
+  | { kind: 'text'; track: Draft<TextTrack>; index: number; clip: Draft<TextClip> }
+
+function findAnyClip(document: Draftable, clipId: string): FoundClip | null {
+  for (const track of document.tracks) {
+    const index = track.clips.findIndex((clip) => clip.id === clipId)
+    if (index < 0) continue
+    if (isMediaTrack(track as Track)) {
+      const media = track as Draft<MediaTrack>
+      return { kind: 'media', track: media, index, clip: media.clips[index]! }
+    }
+    const text = track as Draft<TextTrack>
+    return { kind: 'text', track: text, index, clip: text.clips[index]! }
+  }
+  return null
+}
+
+/**
+ * The shortest a clip of each kind may be trimmed to.
+ *
+ * A caption is one word and can legitimately be very short; a media clip that
+ * brief is a frame of noise nobody meant to keep.
+ */
+function minDurationFor(found: FoundClip): number {
+  return found.kind === 'text' ? MIN_CAPTION_MS : MIN_CLIP_MS
+}
+
 export function ensureTrack(document: Draftable, kind: 'video' | 'audio'): Draft<MediaTrack> {
   const existing = mediaTracks(document).find((track) => track.kind === kind)
   if (existing) return existing
@@ -90,7 +134,8 @@ export function ensureTrack(document: Draftable, kind: 'video' | 'audio'): Draft
 }
 
 /** Clips ordered by start, which invariant 2 requires and every edit restores. */
-function reorder(track: Draft<MediaTrack>): void {
+/** Invariant 2: ascending `startMs`, on any track. */
+function reorder(track: { clips: { startMs: number }[] }): void {
   track.clips.sort((a, b) => a.startMs - b.startMs)
 }
 
@@ -139,38 +184,57 @@ export function appendClip(
  * would leave a piece too short to be useful.
  */
 export function splitAt(document: Draftable, clipId: string, timelineMs: number): string | null {
-  const found = findMedia(document, clipId)
+  const found = findAnyClip(document, clipId)
   if (!found) return null
 
-  const { track, index, clip } = found
+  const { index, clip } = found
   const at = Math.round(timelineMs)
   const elapsed = at - clip.startMs
   const remaining = clipEndMs(clip) - at
-  if (elapsed < MIN_CLIP_MS || remaining < MIN_CLIP_MS) return null
+  const minimum = minDurationFor(found)
+  if (elapsed < minimum || remaining < minimum) return null
 
+  if (found.kind === 'text') {
+    // Both halves keep the words. Splitting the *text* at a character would be
+    // a guess about where the sentence divides; splitting the timing is what
+    // the gesture on the timeline actually means, and the user can retype
+    // either half afterwards.
+    const rightTextId = newClipId()
+    found.clip.durationMs = elapsed
+    found.track.clips.splice(index + 1, 0, {
+      ...found.clip,
+      id: rightTextId,
+      startMs: at,
+      durationMs: remaining,
+      position: found.clip.position ? { ...found.clip.position } : null,
+    } as Draft<TextClip>)
+    return rightTextId
+  }
+
+  const source = found.clip
   const rightId = newClipId()
   const right: Draft<MediaClip> = {
-    ...clip,
+    ...source,
     id: rightId,
     startMs: at,
     durationMs: remaining,
-    sourceInMs: clip.sourceInMs + Math.round(elapsed * clip.speed),
+    sourceInMs: source.sourceInMs + Math.round(elapsed * source.speed),
     // The two halves meet at a cut. A transition belongs to the outside edges
     // of the pair — duplicating it onto the new join would invent a crossfade
     // the user never asked for.
     transitionIn: null,
-    transitionOut: clip.transitionOut ?? null,
+    transitionOut: source.transitionOut ?? null,
     // Effects follow the picture, so both halves keep the grade. Immer's draft
     // is structurally shared, so this copy is cheap.
-    effects: clip.effects.map((effect) => ({ ...effect })),
+    effects: source.effects.map((effect) => ({ ...effect })),
   }
 
-  clip.durationMs = elapsed
-  clip.transitionOut = null
-  track.clips.splice(index + 1, 0, right)
+  found.clip.durationMs = elapsed
+  found.clip.transitionOut = null
+  found.track.clips.splice(index + 1, 0, right)
   // Both halves are shorter than the clip they came from, so a transition on
   // either outside edge may no longer fit under invariant 7.
-  clampTransitions(track)
+  clampTransitions(found.track)
   return rightId
 }
 
@@ -196,7 +260,7 @@ export function trimStart(
   newStartMs: number,
   bounds: { minStartMs?: number } = {},
 ): void {
-  const found = findMedia(document, clipId)
+  const found = findAnyClip(document, clipId)
   if (!found) return
   const { track, index, clip } = found
 
@@ -205,18 +269,28 @@ export function trimStart(
     0,
     bounds.minStartMs ?? 0,
     previous ? clipEndMs(previous) : 0,
-    // Cannot pull the head back past the start of the media.
-    clip.startMs - Math.floor(clip.sourceInMs / clip.speed),
+    // Cannot pull the head back past the start of the media. A text clip has
+    // no media, so nothing but its neighbour stops it.
+    found.kind === 'media'
+      ? found.clip.startMs - Math.floor(found.clip.sourceInMs / found.clip.speed)
+      : 0,
   )
-  const ceiling = clipEndMs(clip) - MIN_CLIP_MS
+  const ceiling = clipEndMs(clip) - minDurationFor(found)
   const target = Math.min(ceiling, Math.max(floor, Math.round(newStartMs)))
 
   const delta = target - clip.startMs
   if (delta === 0) return
   clip.startMs = target
   clip.durationMs -= delta
-  clip.sourceInMs = Math.max(0, clip.sourceInMs + Math.round(delta * clip.speed))
-  clampTransitions(track)
+
+  if (found.kind === 'media') {
+    // `startMs` and `sourceInMs` move together, or the picture slides.
+    found.clip.sourceInMs = Math.max(
+      0,
+      found.clip.sourceInMs + Math.round(delta * found.clip.speed),
+    )
+    clampTransitions(found.track)
+  }
 }
 
 /**
@@ -246,19 +320,21 @@ export function trimEnd(
   newEndMs: number,
   bounds: { maxSourceMs?: number } = {},
 ): void {
-  const found = findMedia(document, clipId)
+  const found = findAnyClip(document, clipId)
   if (!found) return
   const { track, index, clip } = found
 
   const next = track.clips[index + 1]
   let ceiling = next ? next.startMs : Number.MAX_SAFE_INTEGER
-  if (bounds.maxSourceMs !== undefined) {
-    ceiling = Math.min(ceiling, maxTrimEndMs(clip, bounds.maxSourceMs))
+  // Only media can read past the end of something. A title is as long as the
+  // user says it is.
+  if (found.kind === 'media' && bounds.maxSourceMs !== undefined) {
+    ceiling = Math.min(ceiling, maxTrimEndMs(found.clip, bounds.maxSourceMs))
   }
-  const floor = clip.startMs + MIN_CLIP_MS
+  const floor = clip.startMs + minDurationFor(found)
   const target = Math.min(ceiling, Math.max(floor, Math.round(newEndMs)))
   clip.durationMs = target - clip.startMs
-  clampTransitions(track)
+  if (found.kind === 'media') clampTransitions(found.track)
 }
 
 // --------------------------------------------------------------------------
@@ -275,19 +351,21 @@ export function trimEnd(
  * because autosave can fire between two drags.
  */
 export function moveClip(document: Draftable, clipId: string, startMs: number): void {
-  const found = findMedia(document, clipId)
+  const found = findAnyClip(document, clipId)
   if (!found) return
   const { track, index, clip } = found
 
+  // Identical arithmetic for a title and for a video clip: invariant 1 applies
+  // per track whatever the track holds, and a position is a position.
   const previous = track.clips[index - 1]
   const next = track.clips[index + 1]
   const floor = previous ? clipEndMs(previous) : 0
   const ceiling = next ? next.startMs - clip.durationMs : Number.MAX_SAFE_INTEGER
   clip.startMs = Math.max(floor, Math.min(ceiling, Math.max(0, Math.round(startMs))))
   reorder(track)
-  // The move can change which clip is the neighbour, and the bound is half the
-  // shorter of the pair.
-  clampTransitions(track)
+  // Only media carries transitions, and moving can change which clip is the
+  // neighbour the bound is measured against.
+  if (found.kind === 'media') clampTransitions(found.track)
 }
 
 // --------------------------------------------------------------------------
@@ -300,7 +378,7 @@ export function moveClip(document: Draftable, clipId: string, startMs: number): 
  * break invariant 1 the moment it was made.
  */
 export function duplicateClip(document: Draftable, clipId: string): string | null {
-  const found = findMedia(document, clipId)
+  const found = findAnyClip(document, clipId)
   if (!found) return null
   const { track, index, clip } = found
 
@@ -312,15 +390,29 @@ export function duplicateClip(document: Draftable, clipId: string): string | nul
       : track.clips.reduce((end, each) => Math.max(end, clipEndMs(each)), 0)
 
   const id = newClipId()
-  const copy: Draft<MediaClip> = {
-    ...clip,
+  if (found.kind === 'media') {
+    found.track.clips.push({
+      ...found.clip,
+      id,
+      startMs,
+      effects: found.clip.effects.map((effect) => ({ ...effect })),
+    } as Draft<MediaClip>)
+    reorder(found.track)
+    clampTransitions(found.track)
+    return id
+  }
+
+  found.track.clips.push({
+    ...found.clip,
     id,
     startMs,
-    effects: clip.effects.map((effect) => ({ ...effect })),
-  }
-  track.clips.push(copy)
-  reorder(track)
-  clampTransitions(track)
+    // The copy is the user's now, not the tool's: a duplicated caption that
+    // kept its `sourceJobId` would claim to have come from a transcription it
+    // was never part of.
+    sourceJobId: null,
+    position: found.clip.position ? { ...found.clip.position } : null,
+  } as Draft<TextClip>)
+  reorder(found.track)
   return id
 }
 

@@ -316,7 +316,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Smart trim → splits and removals, one `commit`, with the ripple that closes the gaps behind them
 - [x] Colour grade → one `effects` entry, replacing any grade already there
 - [x] ⚠️ **Asset time → timeline time conversion**, unit-tested on a clip that is both trimmed *and* sped up — the only clip where the two clocks differ enough for a mistake to show
-- [x] Caption editing: correct a word, retime and delete. ⚠️ Restyling is the missing caption styles, above
+- [x] Caption editing: correct a word, retime, move, split, duplicate and delete. ⚠️ Restyling is the missing caption styles, above. 🔴 **Moving and retiming a text clip did nothing at all until 22 August** — every one of those operations went through a lookup that searched video and audio only, so the gesture ran and the document was never touched. Nine tests now cover the text path that had none
 - [x] Low-confidence words flagged visually. **Session state, not document state**: the contract's `TextClip` has no confidence field, because confidence describes how a word was produced rather than what it is
 - [ ] Failure states mapped from `errorCode`, with retry, saying the credits came back
 

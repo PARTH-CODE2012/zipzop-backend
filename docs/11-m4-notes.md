@@ -195,7 +195,34 @@ like a browser and is not one.
 
 ---
 
-## 5. What is deliberately not done
+## 5. One more defect, found the same way
+
+Using the editor rather than testing it turned up eight usability problems
+(written up as [`12-m4-5-interface-pass.md`](12-m4-5-interface-pass.md)) and one
+that was not a usability problem at all.
+
+🔴 **A title or a caption could not be moved, trimmed, split or duplicated.**
+Every one of those operations went through `findMedia`, which searches video and
+audio tracks only. The gesture ran, the pointer moved, the clip highlighted — and
+the operation returned without touching the document. Nothing errored, nothing
+changed, and there was nothing to report.
+
+It survived M3 and M4 because the media path was covered from the first day and
+**the text path was never asked the same questions**. `operations.test.ts` had
+tests for moving a video clip into its neighbour, for trimming past the end of
+the media, for splitting at speed — and not one for moving a title. The nine
+tests added with the fix all fail against the old lookup.
+
+The fix is a second lookup, `findAnyClip`, returning a discriminated result
+rather than a widened one: the two kinds genuinely differ, and the trims have to
+know which they are holding. A title has no `sourceInMs` to keep in step and no
+transitions to re-clamp; a caption may legitimately be trimmed shorter than a
+media clip, because one spoken word is brief and a video clip that short is a
+frame of noise.
+
+---
+
+## 6. What is deliberately not done
 
 - **Two of the three caption styles.** `caption_bold` ships. The other two are
   design work — a look, not a mechanism — and inventing them in code would
@@ -213,7 +240,7 @@ like a browser and is not one.
 
 ---
 
-## 6. Applying a result, and the conversion that makes it correct
+## 7. Applying a result, and the conversion that makes it correct
 
 ⚠️ **Every job result is in asset time. The timeline is not.** A clip trimmed to
 start four seconds into its media and played at 1.5x has a clock of its own, and
@@ -247,7 +274,7 @@ order is trim first, caption second.
 
 ---
 
-## 7. Numbers worth knowing
+## 8. Numbers worth knowing
 
 | | |
 |---|---|

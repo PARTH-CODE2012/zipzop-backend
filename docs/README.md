@@ -29,6 +29,7 @@ Everything needed to build this product. Start here.
 | **M3** | [Editing that survives a reload](09-m3-notes.md) | starting M4 — and the [UI Charter](08-ui-charter.md) before writing any component. The nine directions it was chosen from are in [`ui-directions/`](ui-directions/index.html) |
 | **M4 prep** | [M4 readiness](10-m4-readiness.md) | starting M4 — what is already built, what the contract already specifies, and two open decisions found while checking |
 | **M4** | [The job pipeline and the three tools](11-m4-notes.md) | touching jobs, credits, a worker or a tool result. Why the enqueue moved outside the transaction, and the asset-time conversion that makes a caption land in the right place |
+| **M4.5** 🟠 | [The interface pass](12-m4-5-interface-pass.md) | touching any editor screen. Eight usability problems found by *using* the editor, three of which need a decision before code |
 
 ### If you have fifteen minutes
 
@@ -73,6 +74,8 @@ Editing survives a reload, verified end to end on a running stack. The server ha
 That browser run also found what no unit test could: a machine without WebGL2 took the *whole editor* down rather than losing the picture. The compositor having no fallback is deliberate; the editor going with it was not. Both are in [`11-m4-notes.md`](11-m4-notes.md) §4.
 
 Left for M4: the mock fixtures, and two of the three caption styles — design work rather than engineering. M5 is unblocked.
+
+🟠 **A ninth milestone is proposed and not yet approved.** Using the editor — rather than testing it — turned up eight usability problems that nothing in M0–M7 is scheduled to fix, because the only visual work in the plan was M3's charter and that covered tokens rather than layout or density. They are written up as [`12-m4-5-interface-pass.md`](12-m4-5-interface-pass.md), with a recommendation to split them around M5 rather than take them all at once. One item from that session was a functional defect rather than an interface one — titles and captions could not be moved or trimmed at all — and it was fixed on 22 August rather than deferred.
 
 Left open on purpose: the text track's font, size and colour controls, the IndexedDB mirror (💤), and transitions in the preview — all three in [`09-m3-notes.md`](09-m3-notes.md) §5, along with the nine defects the M3 audit found, one of them a security defect in M2's auth code.
 
