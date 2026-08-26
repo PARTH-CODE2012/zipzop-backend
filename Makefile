@@ -268,6 +268,10 @@ e2e-headful: e2e-media ## The same, with a window you can watch
 
 # ---------------------------------------------------------------- contract ---
 
+.PHONY: razorpay-check
+razorpay-check: ## Check the Razorpay keys authenticate, and which currencies the account takes
+	bash scripts/razorpay-check.sh $(ARGS)
+
 .PHONY: openapi
 openapi: ## Regenerate openapi.json from FastAPI
 	cd $(BACKEND) && ./.venv/bin/python -m app.scripts.dump_openapi ../openapi.json

@@ -2,7 +2,9 @@
 
 **Temporary working file.** Not part of the documentation set in [`docs/`](docs/) — this is the day-to-day task list, meant to be edited constantly and deleted when phase 1 ships.
 
-Scope comes from [`docs/02-scope-v1.md`](docs/02-scope-v1.md). Where a task is ambiguous, that document wins.
+Scope comes from [`docs/02-scope-v1.md`](docs/02-scope-v1.md), **plus [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) since 25 August**. Where a task is ambiguous, those two win.
+
+> **The Discord launch, added 25 August — nothing is cut.** *MVP* means phase 1 as listed here, so export and M7 are untouched. What is added lands almost entirely in **M6**: a fifth **`beta` plan at $3.99**, temporary; a **promo-code and commission** block that is new work with no schema behind it; and **templates**, which is small and belongs to the editor rather than the tools. Razorpay ships first, Stripe is deferred. Every scope question was decided the same day — [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).
 
 ---
 
@@ -306,8 +308,8 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Frontend — tools
 
-- [ ] Mock server (Prism or MSW) serving fixtures from the same schema *(moved from M0 — still open)*
-- [ ] Fixtures: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
+- [x] ~~Mock server (Prism or MSW)~~ → **`src/lib/api/fixtures.ts`**, answering inside `request()` behind `NEXT_PUBLIC_DEMO=1`. Neither Prism nor MSW: both are a dependency and a second process, and what was needed was for one function to answer from a table. **Typed against `generated.ts`**, so a fixture that drifts from the contract fails `pnpm typecheck` — which it did, four times, while being written
+- [~] Fixtures: **a caption result with a deliberately misspelled name** ✅ ("Sara" for Sarah), a **graded clip**, an **asset still ingesting**, and **credits split across two buckets** ✅. Still missing: a smart-trim result, a failing job, and a free account hitting `PLAN_LIMIT_EXCEEDED`
 - [x] Estimate on panel open, price on the button — including `blockedBy`, so "Not enough credits" is on the button rather than behind a failed click
 - [x] Invoke with idempotency key, editing continues while it runs
 - [x] WebSocket progress, polling fallback every 3 s. **The socket only ever makes the poll happen sooner** — every event is a hint to re-read the job, never the job's new state, so a missed event costs latency and nothing else
@@ -322,9 +324,51 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ---
 
+## M4.5 · The interface pass ✅
+
+*Ends when: the editor can be reached, driven and understood by someone who did not build it.*
+
+**Done 25 August.** Seven items from [`docs/12-m4-5-interface-pass.md`](docs/12-m4-5-interface-pass.md),
+all of them found by *using* the editor rather than testing it. Written up in
+[`docs/14-m4-5-notes.md`](docs/14-m4-5-notes.md), including the two defects this
+pass introduced and the one it found in passing.
+
+- [x] **1 · `/projects` was a dead end** 🔴 — a stub reading *"Built in M3."*, and the only link into the product. It is now the real list: open, create, duplicate, delete-with-confirm, relative times, empty state, and the same account gate the editor uses. The home page also links straight to `/editor/scratch`, which was previously reachable only by knowing the URL
+- [x] **2 · The transport moved** out of the application header to under the picture, between the frame it plays and the playhead it moves. Frame-step, jump-to-start and jump-to-end existed as shortcuts with **no visible control**; each has a button now, each naming its shortcut
+- [x] **3 · Manual colour and audio control** — a picker over the five shipped `.cube` looks plus a strength field, so warming an image no longer means spending credits on an analysis job and accepting what it recommends. Volume, speed and the fades moved out of the inspector into the Audio mode. ⚠️ **No new effect type**, per the 22 August decision: anything the export renderer does not already implement would make the preview and the file disagree
+- [x] **4 · The left panel became a mode rail** — Media · Titles · Audio · Colour · Captions · Smart trim, one active at a time. The right panel went back to being the inspector and nothing else; the stacked tools panel is gone. **The rail grows by one icon per tool** — phase 2's four are one entry each in `rail/modes.ts`
+- [x] **5 · Compact numeric fields** replacing full-width range inputs — a row is 34 px instead of 56, every value is typeable, and *"Fade in"* finally says it is the audio ramp and not a video transition
+- [x] **6 · The precise zoom is discoverable** — `ctrl + scroll to zoom here` sits beside the slider. Behaviour unchanged per the 22 August decision: plain wheel still scrolls
+- [x] **7 · The timeline is part of the page** — its own surface and rule, and **a draggable divider** with a keyboard path, an `Escape` cancel, a double-click reset and a remembered height. Bounded so it can never squeeze the picture off screen
+- [x] Gates: **301 tests** (up from 236) · `tsc --noEmit` clean · `eslint` clean · production build green
+- [x] Driven in a real browser on Windows through the fixture server — every mode, the grade, the typed field, undo/redo
+
+### Found by looking, not by testing
+
+- [x] 🔴 **Typing `42` into a field showing `66 %` set the strength to 100 %.** The field's displayed unit and its stored unit had diverged, so the parse clamped to the maximum and wrote a value nobody asked for — silently, from the control added *specifically* so values could be set exactly. Fixed with an explicit scale, and `toDisplay`/`toDocument` are pure and tested, including an exact round trip at all 101 steps
+- [x] **The toolbar still read *"AI tools are in the panel on the right"*** after the tools moved to the left rail. A label pointing at a panel that no longer exists, which only opening the editor finds
+
+---
+
 ## M5 · A file comes out
 
 *Ends when: you export a 1080p 9:16 MP4 and it looks exactly like the preview.*
+
+> **Read [`docs/15-m5-readiness.md`](docs/15-m5-readiness.md) first.** Written 25
+> August from the code: what export inherits already working, what the contract
+> already settles, and 🔴 **the problem to solve in the first hour** — the
+> renderer has no way to read a `.cube` file. They live in
+> `frontend/public/luts/`, the backend has no path to one, and the container is
+> built from the `backend/` context so they are not in the image. `lut3d=file=…`
+> has nothing to point at, and it fails at the first graded export rather than at
+> build time. Recommendation and two alternatives are in §3.
+
+- [ ] 🔴 **Give the renderer the LUTs, and a backend test that every look in `color_analysis.LOOKS` has a readable `.cube`** — the current catalogue test compares the client's list against a hand-copied constant and never reads the server ([readiness §3](docs/15-m5-readiness.md))
+- [ ] Add `export` to `PHASE_1_TOOLS` and write `ExportInput` — `POST /jobs {"tool":"export"}` is rejected today by design
+- [ ] `storage.export_key()` — the `exports/` prefix is in the architecture doc and nowhere in the code
+- [ ] Decide the frame-comparison tolerance **before** writing the comparison ([readiness §4.1](docs/15-m5-readiness.md)) — the preview composites a 480p proxy and the export uses the original, so an exact match is the wrong target
+- [ ] Decide transitions: the renderer will draw a dissolve the preview never shows ([readiness §4.2](docs/15-m5-readiness.md)). Either the preview learns them, or the editor says so. **Silently differing is the wrong option**
+- [ ] ⚠️ **Infrastructure first.** Nothing in M5 can be verified without Docker or a native Postgres + Redis + MinIO: export is ffmpeg, object storage and a worker, and there is no fixture-server version of it. `make migrate` · `make test-backend` · `make e2e` green from a known state before adding to it
 
 - [ ] `POST /jobs {tool: export}` — reject stale `timelineVersion` with `409`
 - [ ] Render worker: resolve timeline, fetch **originals**
@@ -342,22 +386,68 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 *Ends when: you hit the free limit, subscribe, and the new allowance appears within seconds.*
 
-- [ ] Stripe and Razorpay **accounts opened** 🔗 — external lead time, start this now
-- [ ] `billing/providers/` — one adapter per provider, identical interface
-- [ ] `GET /plans` — public, currency suggested by IP, overridable
+> **Grew on 25 August — read [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).**
+> Everything below still ships. **Razorpay first** removes the second adapter for
+> now; the **fifth `beta` plan** and the **promo-code and commission** block at
+> the end of this section are added. Net: bigger than it was.
+
+- [~] ~~Stripe and~~ **Razorpay account opened** 🔗 — **test key pair received 25 August**, in the developer's `.env` and nowhere else. Two things still outstanding:
+  - [ ] **The webhook secret**, which is a *third* secret and does not exist until a webhook endpoint is created in the dashboard. Until then the signature check cannot be exercised, and an untested signature check is indistinguishable from none. ✅ The application now **refuses to boot in production without it**
+  - [ ] ⚠️ **Confirm the account may charge USD.** $3.99 is a dollar price on an Indian processor, and currency availability is an account-activation matter rather than an API capability. ✅ `make razorpay-check ARGS=--currency` probes it — **a refusal in test mode is conclusive and arrives now**; an acceptance leaves it open until the account goes live
+- [x] **Production cannot boot with test keys** — `assert_production_safe()` refuses `rzp_test_…` in production, a key with no secret, and a key with no webhook secret. Only checked when a key is present, so today's empty configuration still starts. Eight cases in `tests/test_config.py`
+- [ ] Stripe is deferred, so its application can wait
+- [ ] `billing/providers/` — ~~one adapter per provider~~ **the Razorpay adapter first**, against the interface that was designed for two. Stripe stays addable without reshaping anything ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §8.1)
+- [ ] `GET /plans` — public, currency suggested by IP, overridable. ⚠️ **Must filter on `plans.is_public`** — the column exists in migration `0002` and **nothing reads it today**. It is the whole mechanism for retiring `beta` later without touching anyone already on it, and an endpoint that ignores it makes the retirement a no-op
 - [ ] `POST /billing/checkout` → hosted checkout URL
 - [ ] `POST /billing/topup`, `/portal`, `/cancel` with the "you will lose X credits" response
 - [ ] Webhooks: **verify signature → store in `provider_events` → 200 immediately → process async**
 - [ ] Duplicate events collide on the primary key and are dropped
 - [ ] Renewal: sweep `plan` + `facemap`, grant new allowance, **never touch `topup`**, one transaction
 - [ ] Celery beat hourly sweep as the safety net — and the only path for free users
-- [ ] Upgrade immediate + pro rata; downgrade at period end
+- [ ] Upgrade immediate + pro rata; downgrade at period end — **five plans now, so `beta` → `pro` is the upgrade path that will actually get used**
 - [ ] `GET /credits/ledger` with buckets
-- [ ] Cost-per-job metric instrumented ⚠️ — the tiers get re-priced on this
+- [ ] Cost-per-job metric instrumented ⚠️ — **more urgent at $3.99 than it was at $19.99.** The allowance was derived from a price five times higher, and `SECONDS_PER_MINUTE_OF_MEDIA` in `pricing.py` is a heuristic, not a measurement ([`docs/11-m4-notes.md`](docs/11-m4-notes.md) §8). Net of the 15% commission and processing, one subscription clears about **$3.28** to cover a month of transcription, trimming, storage and export
 - [ ] Frontend: pricing page, checkout redirect, **confirming state on return** (never trust the redirect), 30 s polling fallback
 - [ ] Frontend: balances — one number everywhere except billing, cancellation and face mapping
 - [ ] Frontend: paywalls that name the unblock and link to it. **No dead ends**
 - [ ] Frontend: running out mid-project never blocks plain editing and never loses work
+
+### The `beta` plan — new on 25 August 🔗
+
+$3.99 / ₹199, added beside the four tiers and retired once the Discord campaign
+ends. Values and the reasoning for each are in
+[`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) §3.
+
+- [ ] Migration: `ALTER TYPE plan_code ADD VALUE 'beta'` and seed the row — **800 credits · 1080p · watermark `none` · `queue_priority` 0 · 399 cents / 19900 paise · `facemap_seconds` 0 · `fair_use_credits` NULL**
+- [ ] ⚠️ **`queue_priority` is 0, not 5.** Celery's `priority_steps` are `[0, 10, 20, 30]` and `apply_async(priority=…)` passes the plan's value through untranslated. A value between bands is silently mapped to a neighbour
+- [ ] 🔴 **Add `beta` to both dictionaries in [`app/services/plans.py`](backend/app/services/plans.py)** — `CONCURRENCY_LIMITS` and `STORAGE_QUOTA_BYTES` are read with a direct subscript, so a plan missing from either raises `KeyError` on the claim path and the upload path. Use `{"analysis": 2, "render": 1, "inference": 0}` and 25 GB, and **keep the `PLACEHOLDER` marker** — the storage question is still unanswered for every tier
+- [ ] `test_the_four_plans_are_seeded_with_the_documented_values` in `test_schema.py` asserts an exact five-key dictionary — **it will fail, and that is the test working.** Update it with the new row
+
+### Discord referrals — new on 25 August 🔗
+
+Nothing here exists yet: `promo`, `referral`, `coupon` and `affiliate` all return
+zero matches across the backend. **The field is the visible tenth of it** — the
+attribution has to outlive the session, because the commission is owed on a
+subscription that happens later.
+
+- [ ] `promo_codes` table — one code per Discord server owner, activatable and deactivatable
+- [ ] Promo-code field at sign-up, and the attribution **stored on the user permanently**, not in the session. An attribution lost at signup is a commission that can never be paid
+- [ ] The code grants **+300 bonus credits, one off — not a discount.** A discount and a 15% commission on the same $3.99 leave almost nothing, and the free tier already gives 300 credits away, so a code that granted nothing would give the user no reason to type it and the owner nothing to announce
+- [ ] Commission accrual as **ledger rows**, **recomputed on every renewal** rather than once at signup — a one-off commission on a recurring product misaligns the owner's incentive from month two. Money moving is already double-entry and append-only ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §2 principle 6), so this is a new counterparty, not a new financial model
+- [ ] Owner-facing figures: how many signed up, how many subscribed, what is owed
+- [ ] Payout: **accrue from day one, pay the first cohort by hand.** 🔴 The real process — schedule, threshold, channel, tax — is still unowned and is needed by the tenth server owner, not the first
+- [ ] ⚠️ Abuse: self-referral, codes shared outside the server, and a chargeback landing after a commission is paid. One paragraph of thought before launch, not after
+
+### Templates — small, and not an AI tool 🔗
+
+Decided 25 August as **the user's own settings, saved and reapplied** — caption
+style, colour grade, transition defaults, title styling. Not a supplied library:
+that reading is [`vision.md`](vision.md) §Features 04 & 05 and carries a licensed
+music library and the real-person-naming exposure, neither of which has an owner.
+
+- [ ] Save the current project's settings as a named template, on the account
+- [ ] Apply one to another project as **a single `commit`**, so it undoes in one step like every other bulk operation
+- [ ] **No worker, no queue, no credits, no new job type** — it is a subset of the timeline document, so it belongs beside the editing operations rather than in the tools panel
 
 ---
 
@@ -442,7 +532,13 @@ Walk [`docs/02-scope-v1.md`](docs/02-scope-v1.md) §6 end to end, as someone who
 
 ## Deliberately not in phase 1
 
-Face mapping · lip sync · GPU cluster · noise removal · upscaling · stabilisation · clip finder · speaker tracking · templates · music · mobile · multiple video tracks · caption translation · subtitle files · custom LUTs · teams · publishing to TikTok/YouTube/Instagram · invoicing documents · tax configuration
+Face mapping · lip sync · GPU cluster · noise removal · upscaling · stabilisation · clip finder · speaker tracking · ~~templates~~ · music · mobile · multiple video tracks · caption translation · subtitle files · custom LUTs · teams · publishing to TikTok/YouTube/Instagram · invoicing documents · tax configuration
+
+> **Templates moved in on 25 August**, but only the narrow half of it. *Reuse
+> your own project's settings* is phase 1. **A supplied library** — designed
+> templates, licensed music, mood detection — is still out, and it is what the
+> two commercial problems in [`vision.md`](vision.md) §Features 04 & 05 attach
+> to. Reasoning in [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) §4.
 
 If one of these starts feeling necessary, it is a scope conversation, not a task.
 

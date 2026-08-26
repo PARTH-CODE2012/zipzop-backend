@@ -823,6 +823,25 @@ export function applyColorGrade(
   ] as typeof clip.effects
 }
 
+/**
+ * Take the look off a clip.
+ *
+ * `applyColorGrade` replaces, so without this the only way back from a grade is
+ * undo — and undo is a poor fit for "I tried five looks and want none of them",
+ * which is exactly what a manual picker invites (M4.5 item 3). Removing the
+ * entry rather than writing a strength of zero keeps the document honest: a
+ * clip with no look has no `color_grade` effect, and the renderer never has to
+ * decide whether a zero-strength LUT means anything.
+ */
+export function clearColorGrade(document: Draftable, clipId: string): void {
+  const found = findMedia(document, clipId)
+  if (!found) return
+  const { clip } = found
+  clip.effects = clip.effects.filter(
+    (effect) => effect.type !== 'color_grade',
+  ) as typeof clip.effects
+}
+
 /** Edit a title's words. The whole reason captions are clips and not a burn-in. */
 export function setText(document: Draftable, clipId: string, text: string): void {
   for (const track of document.tracks) {

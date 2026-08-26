@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest'
 import {
   MIN_CLIP_MS,
   appendClip,
+  applyColorGrade,
+  clearColorGrade,
   duplicateClip,
   moveClip,
   removeClips,
@@ -579,5 +581,63 @@ describe('transitions stay inside invariant 7 after the clips move', () => {
     // 400 <= half of 4000: untouched, and untouched means no Immer patch and
     // therefore no spurious undo step.
     expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 400 })
+  })
+})
+
+// --------------------------------------------------------------------------
+
+describe('colour grade', () => {
+  it('writes one effect', () => {
+    const next = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cinematic_warm', strength: 0.6 }),
+    )
+    expect(byId(next, 'clp_a')?.effects).toEqual([
+      { type: 'color_grade', lut: 'cinematic_warm', strength: 0.6, sourceJobId: null },
+    ])
+  })
+
+  it('replaces rather than stacks', () => {
+    // Two LUTs on one clip produce a picture neither of them describes, and the
+    // manual picker in M4.5 makes swapping looks the common case rather than
+    // the rare one.
+    const once = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cinematic_warm', strength: 0.6 }),
+    )
+    const twice = edit(once, (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 0.6 }),
+    )
+    expect(byId(twice, 'clp_a')?.effects).toEqual([
+      { type: 'color_grade', lut: 'cyberpunk', strength: 0.6, sourceJobId: null },
+    ])
+  })
+
+  it('clamps strength into 0-1', () => {
+    const next = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 4 }),
+    )
+    expect(byId(next, 'clp_a')?.effects[0]).toMatchObject({ strength: 1 })
+  })
+})
+
+describe('clearColorGrade', () => {
+  it('removes the entry rather than zeroing its strength', () => {
+    // A clip with no look has no `color_grade` effect, so the renderer never
+    // has to decide whether a zero-strength LUT means anything.
+    const graded = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 0.8 }),
+    )
+    const cleared = edit(graded, (draft) => clearColorGrade(draft, 'clp_a'))
+    expect(byId(cleared, 'clp_a')?.effects).toEqual([])
+  })
+
+  it('leaves a clip that was never graded alone', () => {
+    const next = edit(timeline(clip()), (draft) => clearColorGrade(draft, 'clp_a'))
+    expect(byId(next, 'clp_a')?.effects).toEqual([])
+  })
+
+  it('does nothing for a clip that is not there', () => {
+    expect(() =>
+      edit(timeline(clip()), (draft) => clearColorGrade(draft, 'clp_missing')),
+    ).not.toThrow()
   })
 })

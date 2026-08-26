@@ -6,7 +6,7 @@ before M5 starts; the three open scope decisions closed the same day.
 
 | | |
 |---|---|
-| **Status** | 🟠 Scope decided — awaiting the project lead's go-ahead to schedule the work |
+| **Status** | ✅ **Shipped 25 August 2026.** All seven items — see [`14-m4-5-notes.md`](14-m4-5-notes.md) for what they became, the two defects the work introduced, and what the verification is and is not worth |
 | **Why it exists** | Nothing in M0–M7 is a usability pass. The [UI Charter](08-ui-charter.md) settled the palette, the type scale and the component states; it never covered control density, layout or discoverability |
 | **Depends on** | Nothing. Every item here is independent of M5 |
 | **Blocks** | Nothing — but see *"When to do this"* below |

@@ -12,7 +12,7 @@
  * and the conversion is testable without a browser.
  */
 
-import { trackOfKind } from '@/editor/state/timeline-document'
+import { timelineDurationMs, trackOfKind } from '@/editor/state/timeline-document'
 import type { MediaClip, TextClip, TimelineDocument } from '@/editor/state/timeline-document'
 import type { SpikeMediaClip, SpikeTextClip, SpikeTimeline } from '@/editor/playback/timeline'
 
@@ -79,10 +79,29 @@ export function documentToPlaybackTimeline(
   // in the document that can be drawn the instant it is typed.
   const text = (trackOfKind(document, 'text')?.clips ?? []).map(toPlaybackText)
 
-  const durationMs = [...video, ...text].reduce(
-    (longest, clip) => Math.max(longest, clip.startMs + clip.durationMs),
-    0,
-  )
+  /**
+   * How long the timeline is — **read from the document, never measured from
+   * the clips that survived the join above.**
+   *
+   * This used to reduce over `video` and `text`, and it was wrong twice:
+   *
+   *  * **The audio track was not in the sum at all.** A music bed running six
+   *    seconds past the last frame was cut off mid-note, and the engine stopped
+   *    somewhere the ruler said was not the end.
+   *  * **Skipped clips took their length with them.** A clip whose asset has no
+   *    proxy yet is deliberately dropped from `video` (see the docstring above),
+   *    so a project where nothing had finished ingesting measured only its text
+   *    clips — and playback looped at the **last caption word** while the
+   *    timeline, the transport and `selectDurationMs` all still read the real
+   *    length. Three parts of the interface agreeing with each other and a
+   *    fourth quietly disagreeing.
+   *
+   * `timelineDurationMs` is the same function the ruler and the transport use,
+   * which is the point: there is one answer to *how long is this project*, and
+   * playback is not entitled to a different one. A clip still being ingested
+   * does not shorten the project — it appears when it is ready.
+   */
+  const durationMs = timelineDurationMs(document)
 
   return {
     timeline: {

@@ -20,6 +20,10 @@
  */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8123/v1'
 
+import { assertNotProduction, fixtureFor, isDemo, MISS } from '@/lib/api/fixtures'
+
+assertNotProduction()
+
 /** Mirrors docs/05-api-contract.md §1. `code` is stable; `message` is not. */
 export interface ApiErrorBody {
   code: string
@@ -101,6 +105,24 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, idempotencyKey, _retried, headers, ...rest } = options
+
+  /**
+   * The fixture server — off unless `NEXT_PUBLIC_DEMO=1`, and refused outright
+   * in a production build (`assertNotProduction`).
+   *
+   * One branch at one call site, because every request already funnels through
+   * here. A route with no fixture returns `MISS` and falls through to the real
+   * `fetch` below, so an unmocked endpoint fails visibly against the absent
+   * server rather than quietly returning something invented.
+   */
+  if (isDemo()) {
+    const fixture = fixtureFor(rest.method ?? 'GET', path, body)
+    if (fixture !== MISS) {
+      // A tick of latency, so loading states are visible rather than skipped.
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      return fixture as T
+    }
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     ...rest,

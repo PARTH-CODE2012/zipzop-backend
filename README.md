@@ -70,6 +70,17 @@ Anything unexpected:
 make doctor     # says exactly what is missing, and what to run for it
 ```
 
+Payment keys, once they are in `.env`:
+
+```bash
+make razorpay-check
+```
+
+Says whether the Razorpay pair authenticates, and which mode it is in. Add
+`ARGS=--currency` to also find out whether the account will take **USD** — the
+subscription is priced in dollars on an Indian processor, and that is a property
+of the account rather than of the API. Nothing in it ever prints a secret.
+
 ### Running it in your own terminals
 
 `make dev-all` backgrounds all three processes and buries their output in
@@ -239,6 +250,37 @@ and `pnpm dev` all fail on a missing module until `make types` has run.
 | The editor `500`s **after** a `pnpm build` | The build overwrote the `.next/` the running dev server was using | `Ctrl-C`, `rm -rf frontend/.next`, start `pnpm dev` again |
 | Uploads fail, everything else works | FFmpeg is missing, or MinIO is down | `ffmpeg -version`, then `make infra` |
 
+### Looking at the interface without a backend
+
+**On a machine with no Docker** — a Windows laptop, a review copy, a first
+five minutes — the whole stack cannot run: no Postgres, no Redis, no MinIO,
+therefore no API. The screens can still be driven:
+
+```bash
+cd frontend && NEXT_PUBLIC_DEMO=1 pnpm dev --port 3123
+```
+
+Then **http://localhost:3123/projects**. Sign-in is already satisfied, the
+project list has three projects, and the editor opens on a timeline with three
+video clips, a music bed and seventeen caption words — one of them a
+deliberately misspelled name, because correcting it is M4's closing condition.
+
+It is served by [`src/lib/api/fixtures.ts`](frontend/src/lib/api/fixtures.ts),
+which answers inside the API client instead of going to the network. **Every
+fixture is typed against the generated contract**, so one that drifts fails
+`pnpm typecheck` rather than making the interface look right against a server
+shape that does not exist.
+
+> **This proves that screens render. It proves nothing else.** Nothing in demo
+> mode touches ffmpeg, S3, Postgres, Celery or a real job, so it says nothing
+> about ingest, jobs, credits or persistence — and with no ffmpeg there is no
+> proxy, so **the preview has no picture**. The real end-to-end proof is
+> `make e2e`, which drives a real browser against real infrastructure.
+>
+> It is off unless the variable is set, and `pnpm build` **refuses to build**
+> with it on: a demo mode that could reach a deployment is a way to serve
+> invented data to a customer.
+
 ### Without Docker
 
 Postgres and Redis from apt behave identically. **MinIO has no apt equivalent
@@ -305,4 +347,4 @@ The reasoning behind each of these is in [`docs/`](docs/).
 
 ## Status
 
-Phase 1 in progress. Nothing blocking — the product position, phase 1 scope, commercial model, cloud and payment providers are all agreed. See [`docs/README.md`](docs/README.md#status).
+Phase 1 in progress. **M4.5, the interface pass, shipped 25 August** — the mode rail, the transport under the picture, manual colour and audio control, a real project list, and a resizable timeline ([notes](docs/14-m4-5-notes.md)). Nothing blocking — the product position, phase 1 scope, commercial model, cloud and payment providers are all agreed. **The Discord launch was added on 25 August**: a fifth `beta` plan at $3.99 beside the four tiers, retired later; a promo-code scheme paying Discord server owners 15%; and templates. It cuts nothing and changes no architecture. See [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md), then [`docs/README.md`](docs/README.md#status).
