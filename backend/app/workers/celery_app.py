@@ -49,6 +49,9 @@ celery_app.conf.update(
         "app.workers.tasks.render.*": {"queue": "render"},
         "app.workers.tasks.inference.*": {"queue": "inference"},  # phase 2
         "app.workers.tasks.billing.*": {"queue": "billing"},
+        # Its own queue rather than piggybacking on `billing`: a backlog on
+        # billing's queue must never delay finding a stuck upload or job.
+        "app.workers.tasks.reconciliation.*": {"queue": "reconciliation"},
     },
 )
 
@@ -70,5 +73,13 @@ celery_app.conf.beat_schedule = {
     "storage-lifecycle": {
         "task": "app.workers.tasks.ingest.sweep_expired_media",
         "schedule": crontab(hour=4, minute=0),
+    },
+    # Every 5 minutes, not nightly like the ledger — this is about a person
+    # waiting on an upload or a job right now, not an overnight audit of the
+    # books. See app/services/pipeline_reconciliation.py for what it checks and
+    # why re-sending a Celery message is safe to do more than once.
+    "pipeline-sweep": {
+        "task": "app.workers.tasks.reconciliation.sweep_pipeline",
+        "schedule": crontab(minute="*/5"),
     },
 }

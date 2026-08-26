@@ -354,6 +354,36 @@ async def test_unreadable_media_fails_with_a_sentence_a_person_can_read(
     assert asset.proxy_key is None  # nothing half-written
 
 
+async def test_an_infrastructure_blip_is_retried_not_failed(
+    db: AsyncSession, s3: Any, sample_video: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found by audit, 26 August 2026.
+
+    Before this, any exception here — including an S3 client error unrelated
+    to the file itself — was caught by a bare `except Exception` and written
+    straight to `failed`, telling the user their upload was bad when the truth
+    was that storage blinked. `run_ingest` must now let this class of failure
+    escape as `TransientFailureError`, so the Celery task around it can retry,
+    and the row must be left exactly as it was — `probing`, not `failed` —
+    for a retry to have anything to pick back up.
+    """
+    from app.services.ingest_pipeline import TransientFailureError
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+
+    def _broken_download(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("S3 connection reset")
+
+    monkeypatch.setattr(storage, "download", _broken_download)
+
+    with pytest.raises(TransientFailureError):
+        await run_ingest(db, asset.id)
+
+    await db.refresh(asset)
+    assert asset.status is AssetStatus.PROBING
+    assert asset.failure_reason is None
+
+
 async def test_a_silent_video_still_reaches_ready(
     db: AsyncSession, s3: Any, silent_video: Path
 ) -> None:

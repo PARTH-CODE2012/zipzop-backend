@@ -139,7 +139,7 @@ cd backend && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8123 --re
 ```
 
 ```bash
-cd backend && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2
+cd backend && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation --concurrency=2
 ```
 
 ```bash

@@ -117,7 +117,7 @@ services:
       target: dev
     # Queues are split by family so a backlog of exports cannot starve
     # captioning — see docs/03-backend-architecture.md §3.
-    command: celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2
+    command: celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation --concurrency=2
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@postgres:5432/zipzop

@@ -5,6 +5,6 @@ can prove the whole chain — API → Redis → worker → result — before any
 depends on it.
 """
 
-from app.workers.tasks import analysis, billing, ingest
+from app.workers.tasks import analysis, billing, ingest, reconciliation
 
-__all__ = ["analysis", "billing", "ingest"]
+__all__ = ["analysis", "billing", "ingest", "reconciliation"]

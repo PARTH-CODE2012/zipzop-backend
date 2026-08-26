@@ -27,12 +27,36 @@ from app.services import ingest, storage
 log = get_logger(__name__)
 
 
-async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
-    """Returns the asset's final status. Never raises for bad media.
+class TransientFailureError(Exception):
+    """Something on our side broke, and the same file would probably ingest
+    fine on a retry — S3 unreachable, the database dropped the connection, a
+    write timed out.
 
-    An unreadable upload is a normal outcome that the user has to be told
-    about, not an exception for the queue to retry — retrying a corrupt file
-    three times produces the same answer three times and delays the message.
+    Mirrors `analysis_pipeline.TransientFailureError`: the task wrapper in
+    `app.workers.tasks.ingest` catches this and calls `self.retry()`, the same
+    way `run_analysis` does. Everything else — a corrupt file, no video track,
+    a duration over the limit — is `UnreadableMediaError` or handled inline, and
+    stays a permanent, user-facing `failed`: retrying a bad file produces the
+    same answer three times and only delays the message.
+
+    **Found by audit, 26 August 2026.** Before this, `run_ingest` caught every
+    exception — including this class of infrastructure blip — and immediately
+    wrote `failed` with a generic message. `process_asset`'s Celery task
+    declared `max_retries=2` in its decorator, but nothing in the pipeline ever
+    raised in a way that reached a `self.retry()` call, so the retry policy was
+    decorative: it was never exercised by any code path.
+    """
+
+
+async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
+    """Returns the asset's final status, or raises `TransientFailureError`.
+
+    An unreadable upload is a normal outcome the user has to be told about, not
+    an exception for the queue to retry — retrying a corrupt file three times
+    produces the same answer three times and delays the message. An
+    infrastructure failure is the opposite: the file is probably fine, and the
+    queue retrying it is exactly right, which is why this raises rather than
+    swallows it (see `TransientFailureError` above).
     """
     asset = await session.get(MediaAsset, asset_id)
     if asset is None:
@@ -124,12 +148,20 @@ async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
         log.info("ingest_rejected", asset_id=key_id, reason=str(exc))
         await fail_ingest(session, asset_id, str(exc))
         return "failed"
-    except Exception as exc:  # pragma: no cover - infrastructure failures
-        log.exception("ingest_error", asset_id=key_id, error=type(exc).__name__)
-        await fail_ingest(
-            session, asset_id, "Something went wrong preparing this file. Please try again."
-        )
-        return "failed"
+    except TransientFailureError:
+        # Already the right shape — re-raised as-is so the task wrapper's
+        # `except TransientFailureError` catches it directly.
+        raise
+    except Exception as exc:
+        # Not bad media, not one of our own transient markers: an S3 client
+        # exception, a dropped database connection, anything unclassified.
+        # Wrapped and re-raised rather than swallowed — the asset is left
+        # exactly as it was (still `probing`), and the task decides whether to
+        # retry or give up. Writing `failed` here, as this used to, told the
+        # user their upload was bad when the truth was that our infrastructure
+        # blinked.
+        log.warning("ingest_transient_failure", asset_id=key_id, error=type(exc).__name__)
+        raise TransientFailureError(f"ingest failed for {key_id}: {exc}") from exc
 
 
 def _sha256(path: Path) -> str:

@@ -246,9 +246,32 @@ async def complete_upload(
 
     await assets.mark_probing(asset, size_bytes=stored.size_bytes, checksum=None)
 
+    # Committed here, **before** the enqueue — found by audit, 26 August 2026.
+    # This used to send the Celery message first and let `get_session`'s
+    # dependency commit afterwards, once the handler returned. A worker can
+    # start reading the instant the message lands, on its own connection, and
+    # a connection that started before this one committed sees the row still
+    # `pending_upload` — the exact race `POST /jobs` deliberately avoids by
+    # enqueueing after its own commit (see the module docstring on
+    # `app/api/routes/jobs.py`). This endpoint just never got the same fix.
+    await session.commit()
+
     from app.workers.tasks.ingest import process_asset
 
-    process_asset.delay(str(asset.id))
+    try:
+        process_asset.delay(str(asset.id))
+    except Exception:
+        # The row is already committed as `probing`. Unlike a job — where the
+        # sweep can safely re-send a stuck `queued` message because `claim()`
+        # makes a redundant send a no-op — there is no equivalent guarantee for
+        # an asset: `MediaAsset` has no atomic claim, so
+        # `pipeline_reconciliation.py` only *reports* a `probing` asset this
+        # old, it does not re-enqueue it (see that module's docstring). A send
+        # failure here is therefore not self-healing yet; it is loud, at
+        # least, which is the reason this is caught at all rather than left to
+        # the framework's own unhandled-exception log line.
+        log.exception("ingest_enqueue_failed", asset_id=str(asset.id))
+        raise
     log.info("ingest_enqueued", asset_id=str(asset.id))
     return _serialise(asset)
 

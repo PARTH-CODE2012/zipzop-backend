@@ -166,6 +166,8 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 - [x] `GET /media/{id}` with signed URLs, 1-hour expiry
 - [x] `GET /media` (cursor-paged), `DELETE /media/{id}` with `ASSET_IN_USE` guard
 - [x] Reject unreadable media with a reason a person can read
+- [x] 🔴 **Fixed 26 August — the ingest worker's retry was decorative.** `process_asset` declared `max_retries=2` but `run_ingest` caught every exception, including infrastructure blips, and wrote `failed` immediately — no code path ever called `self.retry()`. Now mirrors `analysis.py`'s `TransientFailureError` pattern exactly: bad media stays a permanent, immediate `failed`; an S3 or database blip is retried 3× with backoff before giving up. See [`docs/16-pipeline-reliability-notes.md`](docs/16-pipeline-reliability-notes.md)
+- [x] 🔴 **Fixed 26 August — `POST /media/{id}/complete` enqueued before its own commit.** A worker could claim the asset on another connection and read it still `pending_upload`, the exact race `POST /jobs`'s own docstring warns against. Commit now happens before `process_asset.delay()`, matching the pattern jobs already used
 - [x] **`docker-compose.yml` corrected**: it made `proxies/`, `thumbs/` and `peaks/` anonymously readable, against [`docs/03`](docs/03-backend-architecture.md) §6.3 — *"Everything is private."* Verified: anonymous GET now 403, signed GET 200
 
 ### Frontend
@@ -291,7 +293,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Priority bands, queues split per family. Redis has no native priority, so Celery's `priority_steps` are set to the four plans' `queue_priority` values and `apply_async(priority=…)` needs no translation
 - [x] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
 - [x] Progress published to Redis at real checkpoints, not on a timer
-- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times
+- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times. ⚠️ **This was only ever true for analysis.** The identical claim in M2 for ingest was decorative until 26 August — see below
 - [x] Refund on failure, **to the buckets it took from**, read back from the reservation rows
 - [x] Period-rollover edge case: refund to `topup` instead — with a tolerance, because `jobs.created_at` is the database's clock and `current_period_start` is written by whatever granted it
 - [x] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
@@ -347,6 +349,27 @@ pass introduced and the one it found in passing.
 
 - [x] 🔴 **Typing `42` into a field showing `66 %` set the strength to 100 %.** The field's displayed unit and its stored unit had diverged, so the parse clamped to the maximum and wrote a value nobody asked for — silently, from the control added *specifically* so values could be set exactly. Fixed with an explicit scale, and `toDisplay`/`toDocument` are pure and tested, including an exact round trip at all 101 steps
 - [x] **The toolbar still read *"AI tools are in the panel on the right"*** after the tools moved to the left rail. A label pointing at a panel that no longer exists, which only opening the editor finds
+
+---
+
+## Pipeline reliability — fixed 26 August ✅
+
+*An outside audit's headline finding, verbatim: "Make the upload → processing →
+job pipeline reliable and self-recovering... database state, file storage, and
+background workers can get out of sync."*
+
+Read [`docs/16-pipeline-reliability-notes.md`](docs/16-pipeline-reliability-notes.md)
+for the full account — what was verified against the running code before
+anything was changed, what each fix does, and what is deliberately still open.
+
+- [x] 🔴 **Ingest's retry was decorative** — `run_ingest` caught every exception, including infrastructure blips, and wrote `failed` immediately. `max_retries=2` on the Celery task was never once exercised. Now raises `TransientFailureError` for anything that is not bad media, and `process_asset` retries it 3× with backoff before giving up — the exact pattern `analysis.py` already had
+- [x] 🔴 **The upload-complete endpoint enqueued before its own commit** — the same race `POST /jobs`'s own docstring warns against, just never fixed here. `session.commit()` now happens before `process_asset.delay()`
+- [x] **`POST /jobs`'s enqueue now logs loudly on failure** rather than only raising — the job and its credit reservation are already committed durable at that point; the log line is what tells anyone the send itself failed, distinct from every other exception trace
+- [x] **A pipeline sweep, every 5 minutes** (`app/services/pipeline_reconciliation.py`, its own `reconciliation` queue) — re-sends the Celery message for a job stuck `queued` with no `started_at`, requeues-then-resends a job stuck `running` past a generous ceiling, and fails an upload reservation nobody ever completed. All three re-sends are safe because `claim()`'s `WHERE status='queued'` makes acting on a job that was never actually stuck a harmless no-op
+- [x] Thirteen tests — twelve in `tests/test_pipeline_reconciliation.py`, every "acted on" case paired with a "left alone" case at a fresher timestamp since a threshold that is too eager is the actual risk here, plus one in `tests/test_ingest.py` proving a storage blip raises `TransientFailureError` rather than writing `failed`. ⚠️ **Written, not run** — this machine has no Docker, so nothing that needs Postgres has executed since M4
+- [x] 🔴 **Two defects in this pass's own new code, caught by re-reading it** — `sweep_stuck_running_jobs` sent its Celery messages *before* committing the requeue, the exact bug being fixed two files away; and `sweep()` claimed each check was isolated while running them unguarded in sequence, so one failure would have skipped the rest. Both fixed, both now covered by tests
+- [ ] 🟠 **Deliberately not automated: a stuck `probing` asset.** `MediaAsset` has no atomic claim the way `Job` does — no `WHERE status='probing'` guard, no `worker_id`, not even an `updated_at` column to measure staleness precisely. Re-triggering ingest for one could start a second worker transcoding the same file while the first is still running. The sweep **reports** these, it does not touch them. Giving `media_assets` the same claim mechanism `jobs` already has is the natural next step, and it is a migration, not a config change
+- [ ] 🟠 Worth deciding once traffic exists: should `pipeline_sweep_ran` page someone, the way ledger drift does, or is a log line enough at phase-1 scale?
 
 ---
 

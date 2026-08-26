@@ -126,10 +126,26 @@ async def _with_reservations(session: Session, jobs: list[Job]) -> list[JobRespo
 
 
 def _enqueue(job: Job) -> None:
-    """Hand the job to a worker. **After** the transaction, never inside it."""
+    """Hand the job to a worker. **After** the transaction, never inside it.
+
+    If the send itself fails — Redis unreachable at this exact instant — the
+    job and its credit reservation are already committed and durable. This
+    re-raises rather than swallowing it, so the caller still gets an honest
+    error instead of a response that claims the job started. What changed,
+    26 August 2026: the job no longer has to be found by accident. It is left
+    exactly as `queued`, which is what
+    `app.services.pipeline_reconciliation.sweep_stuck_queued_jobs` looks for — a
+    periodic sweep re-sends the same `apply_async` call, and re-sending it for
+    a job a worker already claimed is a harmless no-op (`claim()`'s
+    `WHERE status='queued'` matches nothing the second time).
+    """
     from app.workers.tasks.analysis import run_analysis
 
-    run_analysis.apply_async(args=[str(job.id)], priority=job.priority)
+    try:
+        run_analysis.apply_async(args=[str(job.id)], priority=job.priority)
+    except Exception:
+        log.exception("job_enqueue_failed", job_id=str(job.id), tool=job.tool.value)
+        raise
     log.info("job_enqueued", job_id=str(job.id), tool=job.tool.value, priority=job.priority)
 
 

@@ -158,7 +158,7 @@ dev: ## Run the API natively with reload (infrastructure must be up)
 
 .PHONY: dev-worker
 dev-worker: ## Run a Celery worker natively
-	cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing
+	cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation
 
 .PHONY: dev-frontend
 dev-frontend: ## Run the Next.js dev server
@@ -185,7 +185,7 @@ dev-all: infra migrate ## Everything you need to click around: API + ingest work
 	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
 		--reload > /tmp/zipzop-api.log 2>&1 &) && \
 	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
-		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+		-Q ingest,analysis,render,billing,reconciliation --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
 	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
 	sleep 4 && \
 	echo "" && \
@@ -247,7 +247,7 @@ e2e-up: ## Start everything the end-to-end run needs, in the background
 	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
 		--log-level warning > /tmp/zipzop-api.log 2>&1 &) && \
 	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
-		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+		-Q ingest,analysis,render,billing,reconciliation --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
 	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
 	echo "logs: /tmp/zipzop-{api,worker,web}.log"
 
