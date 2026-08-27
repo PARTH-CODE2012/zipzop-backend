@@ -24,17 +24,23 @@ never started. So where the ledger reconciliation only reports, this module
 * **Abandoned uploads** — a `pending_upload` asset old enough that its presigned
   URL has long expired has no worker watching it at all; nothing else will ever
   touch that row, so marking it `failed` is unambiguous.
+* **Stuck `probing` assets** — released and re-sent, in the two shapes the job
+  checks already have: one whose ingest message never arrived (never claimed),
+  and one whose worker died holding the claim. Bounded by `MAX_INGEST_ATTEMPTS`,
+  past which the asset is failed rather than resurrected again.
 
-**What this deliberately does not do: touch a stuck `probing` asset.**
-`MediaAsset` has no atomic claim the way `Job` does — no `WHERE status='probing'`
-guard, no `worker_id`, not even an `updated_at` column to measure staleness
-precisely. Re-sending `process_asset.delay()` for one could start a second
-worker transcoding the same file while the first is still running, racing the
-same row's `finish_ingest` write. That needs `media_assets` to grow the same
-claim mechanism `jobs` already has before it can be automated — until then this
-only **reports** which assets look stuck, the same caution
-`reconciliation.py` already applies to money. See the follow-up in
-`docs/PHASE1-TASKS.md`.
+> **This last one was reported and not acted on until 27 August**, and the
+> reason is worth keeping. `MediaAsset` had no atomic claim the way `Job` does
+> — no `worker_id`, no guard on the update that starts processing, not even a
+> column separating "when the upload was reserved" from "when a worker picked
+> it up". Re-sending `process_asset.delay()` under those conditions could start
+> a second worker transcoding the same file while the first was still running,
+> racing the same row's `finish_ingest` write: a worse failure than the one
+> being fixed. Migration `0003_media_asset_claim` gives the table the three
+> columns `jobs` has, `run_ingest` now claims through
+> `media.claim_for_ingest`, and the recovery below is safe for exactly the same
+> reason the job re-sends are — an atomic claim makes a redundant message a
+> no-op.
 
 Found by an outside audit, 26 August 2026, of the class of bug that survives a
 green test suite because nothing exercises the unhappy path: a broker
@@ -53,6 +59,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.logging import get_logger
 from app.models import AssetStatus, Job, JobStatus, MediaAsset
 from app.repositories.job import requeue
+from app.repositories.media import release_ingest_claim
 
 log = get_logger(__name__)
 
@@ -72,23 +79,50 @@ STUCK_RUNNING_AFTER = timedelta(minutes=30)
 #: a slow upload on a bad connection is never caught mid-flight.
 ABANDONED_UPLOAD_AFTER = timedelta(hours=2)
 
-#: `media_assets` has no `updated_at`, only `created_at` — this is measured
-#: from when the row was *created*, which conflates upload time with probing
-#: time. Report-only, and this imprecision is one more reason it stays that
-#: way rather than acting on it.
+#: A claimed asset whose worker has not been heard from since. Measured from
+#: `ingest_started_at` — the column migration `0003` added precisely so this
+#: could stop measuring from `created_at`, which conflated a slow upload with
+#: a dead worker and was one of the two reasons this check could not act.
+#: Generous: a 2 GB source on a busy worker is minutes of ffmpeg, and cutting
+#: a live transcode short to start it again is the failure to avoid here.
 STUCK_PROBING_AFTER = timedelta(minutes=20)
+
+#: A `probing` asset nobody ever claimed — `complete_upload` committed and the
+#: `process_asset` message never arrived. The mirror of `STUCK_QUEUED_AFTER`
+#: and the same duration for the same reason: there is no worker retrying this
+#: one in the background, so there is nothing to wait for.
+UNCLAIMED_PROBING_AFTER = timedelta(minutes=10)
+
+#: How many times the sweep will resurrect one asset before failing it. A file
+#: that reliably kills its worker would otherwise be re-sent every five minutes
+#: for ever, and each attempt costs a full download and transcode. Counted on
+#: `ingest_attempts`, which `claim_for_ingest` increments and
+#: `release_ingest_claim` deliberately does not reset.
+#:
+#: Above the task's own `MAX_RETRIES = 3`, on purpose: those three are one
+#: worker retrying itself over ninety seconds, and this is the outer bound
+#: across every worker that ever touched the row.
+MAX_INGEST_ATTEMPTS = 5
 
 
 @dataclass(frozen=True, slots=True)
 class PipelineSweepResult:
     requeued_jobs: list[uuid.UUID] = field(default_factory=list)
     failed_uploads: list[uuid.UUID] = field(default_factory=list)
-    #: Reported, not acted on — see the module docstring.
-    stuck_probing: list[uuid.UUID] = field(default_factory=list)
+    #: Stuck `probing` assets sent back for ingest. Acted on since 27 August —
+    #: this was `stuck_probing`, a report, until `media_assets` grew a claim.
+    requeued_assets: list[uuid.UUID] = field(default_factory=list)
+    #: Assets past `MAX_INGEST_ATTEMPTS`, failed rather than resurrected again.
+    failed_assets: list[uuid.UUID] = field(default_factory=list)
 
     @property
     def touched(self) -> int:
-        return len(self.requeued_jobs) + len(self.failed_uploads)
+        return (
+            len(self.requeued_jobs)
+            + len(self.failed_uploads)
+            + len(self.requeued_assets)
+            + len(self.failed_assets)
+        )
 
 
 async def sweep_stuck_queued_jobs(session: AsyncSession, *, now: datetime) -> list[uuid.UUID]:
@@ -184,57 +218,167 @@ async def sweep_abandoned_uploads(session: AsyncSession, *, now: datetime) -> li
     return ids
 
 
-async def report_stuck_probing_assets(session: AsyncSession, *, now: datetime) -> list[uuid.UUID]:
-    """Log which assets look stuck. **Does not touch them** — see the module
-    docstring for why re-triggering ingest is not safe yet."""
+async def sweep_unclaimed_probing_assets(
+    session: AsyncSession, *, now: datetime
+) -> list[uuid.UUID]:
+    """Assets whose ingest message never arrived at all.
+
+    The asset analogue of `sweep_stuck_queued_jobs`, and the same signature on
+    the row: `probing` — so `complete_upload`'s transaction committed — with no
+    `worker_id` and no `ingest_started_at`, so no worker ever claimed it. That
+    is a Celery send that failed, or a message dropped between the two.
+
+    Nothing is written here. There is no claim to release on a row that was
+    never claimed, so the whole recovery is the message itself, and
+    `claim_for_ingest` is what makes sending it safe: an asset that was not
+    actually stuck matches nothing and the second worker exits with
+    `IngestUnavailableError`.
+    """
     rows = await session.execute(
         sa.select(MediaAsset.id).where(
             MediaAsset.status == AssetStatus.PROBING,
-            MediaAsset.created_at < now - STUCK_PROBING_AFTER,
+            MediaAsset.worker_id.is_(None),
+            MediaAsset.ingest_started_at.is_(None),
+            MediaAsset.ingest_attempts < MAX_INGEST_ATTEMPTS,
+            MediaAsset.deleted_at.is_(None),
+            MediaAsset.created_at < now - UNCLAIMED_PROBING_AFTER,
         )
     )
     ids = [row[0] for row in rows.all()]
+    if not ids:
+        return []
+
+    from app.workers.tasks.ingest import process_asset
+
     for asset_id in ids:
-        log.warning("pipeline_sweep_asset_looks_stuck", asset_id=str(asset_id))
+        process_asset.apply_async(args=[str(asset_id)])
+        log.warning("pipeline_sweep_resent_unclaimed_ingest", asset_id=str(asset_id))
     return ids
 
 
-async def _guarded(
-    session: AsyncSession, name: str, check: Callable[[], Awaitable[list[uuid.UUID]]]
-) -> list[uuid.UUID]:
-    """Run one check; if it fails, log it and let the others still run.
+async def sweep_stuck_probing_assets(
+    session: AsyncSession, *, now: datetime
+) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
+    """Assets whose worker took the claim and then disappeared.
 
-    This is a recovery job. A sweep that abandons three working checks because
-    the fourth hit a lock timeout is a recovery job that stops recovering the
+    Returns `(requeued, failed)`. The asset analogue of
+    `sweep_stuck_running_jobs`, down to the ordering: **every row released and
+    committed before a single message goes out.** `claim_for_ingest` is
+    `WHERE worker_id IS NULL`, so a worker that picks up the message before
+    this commit is visible reads the row still claimed by the dead worker,
+    matches nothing, and gives up — the send wasted and the asset waiting
+    another five minutes. This is the third place that rule is written down;
+    the first draft of `sweep_stuck_running_jobs` got it wrong.
+
+    An asset past `MAX_INGEST_ATTEMPTS` is failed instead. Something about that
+    file kills whatever picks it up, and a download-and-transcode every five
+    minutes for ever is an expensive way to keep not finding that out.
+    """
+    rows = await session.execute(
+        sa.select(MediaAsset.id, MediaAsset.ingest_attempts).where(
+            MediaAsset.status == AssetStatus.PROBING,
+            MediaAsset.ingest_started_at < now - STUCK_PROBING_AFTER,
+            MediaAsset.deleted_at.is_(None),
+        )
+    )
+    found = rows.all()
+    if not found:
+        return [], []
+
+    from app.workers.tasks.ingest import process_asset
+
+    requeue_ids = [row[0] for row in found if row[1] < MAX_INGEST_ATTEMPTS]
+    exhausted = [row[0] for row in found if row[1] >= MAX_INGEST_ATTEMPTS]
+
+    for asset_id in requeue_ids:
+        await release_ingest_claim(session, asset_id)
+
+    if exhausted:
+        await session.execute(
+            sa.update(MediaAsset)
+            .where(MediaAsset.id.in_(exhausted), MediaAsset.status == AssetStatus.PROBING)
+            .values(
+                status=AssetStatus.FAILED,
+                failure_reason="We could not prepare this file. Please try uploading it again.",
+            )
+        )
+
+    await session.commit()
+
+    for asset_id in requeue_ids:
+        process_asset.apply_async(args=[str(asset_id)])
+        log.warning("pipeline_sweep_requeued_stuck_ingest", asset_id=str(asset_id))
+    for asset_id in exhausted:
+        log.error("pipeline_sweep_ingest_attempts_exhausted", asset_id=str(asset_id))
+    return requeue_ids, exhausted
+
+
+async def _guarded[T](
+    session: AsyncSession, name: str, check: Callable[[], Awaitable[T]]
+) -> T | None:
+    """Run one check; if it fails, log it and return None so the others run.
+
+    This is a recovery job. A sweep that abandons four working checks because
+    the fifth hit a lock timeout is a recovery job that stops recovering the
     first time anything goes wrong — which is the failure mode it exists to
     prevent, reproduced one level up.
 
     The rollback matters: a check that raised part-way through may have left
     the session dirty, and the next check shares it.
+
+    **`None` rather than an empty default.** The checks no longer all answer in
+    the same shape — one returns two lists — and taking the empty value as a
+    parameter would mean either one shared mutable list handed to several
+    fields of the frozen result, or a `cast` at every call site. `None` is the
+    one value that fits every shape, and the caller says what nothing means for
+    its own.
     """
     try:
         return await check()
     except Exception:
         log.exception("pipeline_sweep_check_failed", check=name)
         await session.rollback()
-        return []
+        return None
 
 
 async def sweep(session: AsyncSession) -> PipelineSweepResult:
     """Run every check. Each is isolated: one failing does not stop the rest."""
     now = datetime.now(UTC)
     requeued = [
-        *await _guarded(session, "stuck_queued", lambda: sweep_stuck_queued_jobs(session, now=now)),
-        *await _guarded(
-            session, "stuck_running", lambda: sweep_stuck_running_jobs(session, now=now)
+        *(
+            await _guarded(
+                session, "stuck_queued", lambda: sweep_stuck_queued_jobs(session, now=now)
+            )
+            or []
+        ),
+        *(
+            await _guarded(
+                session, "stuck_running", lambda: sweep_stuck_running_jobs(session, now=now)
+            )
+            or []
         ),
     ]
-    failed_uploads = await _guarded(
-        session, "abandoned_uploads", lambda: sweep_abandoned_uploads(session, now=now)
+    failed_uploads = (
+        await _guarded(
+            session, "abandoned_uploads", lambda: sweep_abandoned_uploads(session, now=now)
+        )
+        or []
     )
-    stuck_probing = await _guarded(
-        session, "stuck_probing", lambda: report_stuck_probing_assets(session, now=now)
+    unclaimed = (
+        await _guarded(
+            session, "unclaimed_probing", lambda: sweep_unclaimed_probing_assets(session, now=now)
+        )
+        or []
     )
+    probing = await _guarded(
+        session, "stuck_probing", lambda: sweep_stuck_probing_assets(session, now=now)
+    )
+    # Spelled out rather than `or ([], [])`: this one answers with two lists,
+    # and unpacking a fallback silently would hide which of them was empty.
+    stuck_assets, exhausted = probing if probing is not None else ([], [])
     return PipelineSweepResult(
-        requeued_jobs=requeued, failed_uploads=failed_uploads, stuck_probing=stuck_probing
+        requeued_jobs=requeued,
+        failed_uploads=failed_uploads,
+        requeued_assets=[*unclaimed, *stuck_assets],
+        failed_assets=exhausted,
     )

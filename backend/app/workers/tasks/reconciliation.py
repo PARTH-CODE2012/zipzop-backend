@@ -18,17 +18,19 @@ log = get_logger(__name__)
 @celery_app.task(name="app.workers.tasks.reconciliation.sweep_pipeline")
 def sweep_pipeline() -> dict[str, Any]:
     result = asyncio.run(_run())
-    if result.touched or result.stuck_probing:
+    if result.touched:
         log.warning(
             "pipeline_sweep_ran",
             requeued_jobs=len(result.requeued_jobs),
             failed_uploads=len(result.failed_uploads),
-            stuck_probing_reported=len(result.stuck_probing),
+            requeued_assets=len(result.requeued_assets),
+            failed_assets=len(result.failed_assets),
         )
     return {
         "requeuedJobs": [str(i) for i in result.requeued_jobs],
         "failedUploads": [str(i) for i in result.failed_uploads],
-        "stuckProbingReported": [str(i) for i in result.stuck_probing],
+        "requeuedAssets": [str(i) for i in result.requeued_assets],
+        "failedAssets": [str(i) for i in result.failed_assets],
     }
 
 

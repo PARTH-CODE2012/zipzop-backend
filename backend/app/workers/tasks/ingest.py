@@ -43,10 +43,18 @@ RETRY_BACKOFF_SECONDS = (10, 30, 90)
 )
 def process_asset(self: Any, asset_id: str) -> dict[str, Any]:
     """Turn an uploaded object into a usable asset."""
-    from app.services.ingest_pipeline import TransientFailureError
+    from app.services.ingest_pipeline import IngestUnavailableError, TransientFailureError
 
     try:
-        status = asyncio.run(_run(uuid.UUID(asset_id)))
+        worker_id = self.request.hostname or "worker"
+        status = asyncio.run(_run(uuid.UUID(asset_id), worker_id=worker_id))
+    except IngestUnavailableError as unavailable:
+        # Somebody else has it, or it already finished. The ordinary answer to
+        # a redelivered message and to a sweep re-send that turned out not to
+        # be needed — `claim_for_ingest` matching nothing is the mechanism
+        # working, not failing. Retrying would only lose the same race again.
+        log.info("ingest_unavailable", asset_id=asset_id, reason=str(unavailable))
+        return {"assetId": asset_id, "status": "unavailable"}
     except TransientFailureError as transient:
         attempt = self.request.retries
         if attempt >= MAX_RETRIES:
@@ -62,7 +70,7 @@ def process_asset(self: Any, asset_id: str) -> dict[str, Any]:
     return {"assetId": asset_id, "status": status}
 
 
-async def _run(asset_id: uuid.UUID) -> str:
+async def _run(asset_id: uuid.UUID, *, worker_id: str) -> str:
     # A worker process is not a request: it opens and commits its own session
     # rather than borrowing the API's dependency — and on its own engine, which
     # `worker_session` disposes with the loop this `asyncio.run` created. See
@@ -72,7 +80,7 @@ async def _run(asset_id: uuid.UUID) -> str:
 
     async with worker_session() as session:
         try:
-            status = await run_ingest(session, asset_id)
+            status = await run_ingest(session, asset_id, worker_id=worker_id)
             await session.commit()
             return status
         except Exception:

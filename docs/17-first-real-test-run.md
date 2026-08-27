@@ -189,8 +189,9 @@ The infrastructure prerequisite in
 [`15-m5-readiness.md`](15-m5-readiness.md) §6 is met apart from `make e2e`.
 The claim gap in
 [`16-pipeline-reliability-notes.md`](16-pipeline-reliability-notes.md) §5 —
-`media_assets` having no atomic claim the way `jobs` does — is unchanged and
-still the right thing to close before export adds a render queue.
+`media_assets` having no atomic claim the way `jobs` does — was closed later
+the same day, once the suite could actually prove a change to that code path:
+[`18-media-asset-claim.md`](18-media-asset-claim.md).
 
 The broader point for M5: **four defects were found in under an hour by running
 commands against work that had already been carefully re-read twice.** The

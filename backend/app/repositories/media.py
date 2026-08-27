@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AssetKind, AssetStatus, MediaAsset, Project, ProjectAsset
 from app.repositories.base import (
@@ -208,3 +209,77 @@ async def fail_ingest(session: Any, asset_id: uuid.UUID, reason: str) -> None:
     asset.status = AssetStatus.FAILED
     asset.failure_reason = reason
     await session.flush()
+
+
+async def claim_for_ingest(
+    session: AsyncSession, asset_id: uuid.UUID, *, worker_id: str
+) -> MediaAsset | None:
+    """Take the asset, or return None because somebody else already has.
+
+    The mirror of `app.repositories.job.claim`, and the same single mechanism:
+    one UPDATE whose WHERE clause exactly one worker can satisfy. The losers
+    match zero rows and stop. Nothing is locked by us, nothing is polled, and a
+    redelivered Celery message cannot start a second transcode of a file that
+    is already being transcoded.
+
+    **The discriminator is `worker_id IS NULL`, not the status.** `jobs` moves
+    `queued → running`, so its status alone says whether anyone has it. An
+    asset is *already* `probing` when `complete_upload` sends the message —
+    there is no state before it — so the status can only say "this needs
+    ingesting", never "somebody is ingesting it". `worker_id` is what carries
+    that, which is why the sweep has to clear it (`release_ingest_claim`)
+    before a stuck asset can be picked up again.
+
+    `deleted_at IS NULL` because a soft-deleted asset is gone as far as the
+    rest of the system is concerned, and spending a transcode on one is waste
+    at best.
+
+    The caller **must commit before doing the work.** The row lock this UPDATE
+    takes is held to the end of the transaction, so a second worker's claim
+    does not fail fast, it *blocks* — for however long the first worker's
+    ffmpeg runs. Committing turns a minutes-long block into an immediate None.
+    """
+    result = await session.execute(
+        sa.update(MediaAsset)
+        .where(
+            MediaAsset.id == asset_id,
+            MediaAsset.status == AssetStatus.PROBING,
+            MediaAsset.worker_id.is_(None),
+            MediaAsset.deleted_at.is_(None),
+        )
+        .values(
+            worker_id=worker_id,
+            ingest_started_at=sa.func.now(),
+            ingest_attempts=MediaAsset.ingest_attempts + 1,
+        )
+        .returning(MediaAsset.id)
+    )
+    if result.one_or_none() is None:
+        return None
+    # `populate_existing`, because the UPDATE went straight to the database and
+    # the identity map still holds the row as it was before the claim. Without
+    # it the returned object reports `worker_id=None` for an asset it just
+    # claimed, which is true of nothing and is a trap for the next reader.
+    return await session.get(MediaAsset, asset_id, populate_existing=True)
+
+
+async def release_ingest_claim(session: AsyncSession, asset_id: uuid.UUID) -> None:
+    """Put the asset back to unclaimed so it can be picked up again.
+
+    `job.requeue` in everything but name, and called in the same two places:
+    by the pipeline when a transient failure means the work will be retried,
+    and by the sweep when a worker died without raising anything to catch.
+
+    `ingest_attempts` is deliberately **not** reset — it is the count that
+    stops a file which kills its worker every time from being resurrected for
+    ever, and a release that cleared it would make that ceiling unreachable.
+
+    `WHERE status='probing'` so this cannot drag a finished asset back into
+    limbo: one that reached `ready` or `failed` between the check and this
+    write stays there.
+    """
+    await session.execute(
+        sa.update(MediaAsset)
+        .where(MediaAsset.id == asset_id, MediaAsset.status == AssetStatus.PROBING)
+        .values(worker_id=None, ingest_started_at=None)
+    )

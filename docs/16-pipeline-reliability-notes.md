@@ -177,6 +177,20 @@ That is a migration and a small change to `ingest_pipeline.py`, not a config
 value, which is why it is named here as a follow-up rather than done in the
 same pass as everything else.
 
+> ### ✅ Closed, 27 August 2026 — [`18-media-asset-claim.md`](18-media-asset-claim.md)
+>
+> Migration `0003_media_asset_claim`, `media.claim_for_ingest`, and the sweep's
+> report replaced by two checks that mirror the two job checks exactly. The
+> report-only caution above is no longer the behaviour; it is kept because the
+> reasoning for it is what the fix had to satisfy.
+>
+> One detail above turned out to be wrong in a way worth flagging: **the guard
+> could not be `WHERE status='probing'`.** An asset is *already* `probing` when
+> its message is sent — there is no `queued` state before it the way `jobs`
+> has — so the status alone cannot separate "waiting for a worker" from "a
+> worker has it". `worker_id IS NULL` is what carries that. See §2 of the new
+> note.
+
 ---
 
 ## 5b. Two defects in this pass's own code, caught by re-reading it

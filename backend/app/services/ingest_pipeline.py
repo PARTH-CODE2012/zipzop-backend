@@ -21,7 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.logging import get_logger
 from app.models import AssetKind, MediaAsset
-from app.repositories.media import fail_ingest, finish_ingest
+from app.repositories.media import (
+    claim_for_ingest,
+    fail_ingest,
+    finish_ingest,
+    release_ingest_claim,
+)
 from app.services import ingest, storage
 
 log = get_logger(__name__)
@@ -48,7 +53,19 @@ class TransientFailureError(Exception):
     """
 
 
-async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
+class IngestUnavailableError(Exception):
+    """Another worker has this asset, or it is no longer `probing`.
+
+    Not a failure of anything: it is the ordinary answer when a Celery message
+    is delivered twice, or when the pipeline sweep re-sends one for an asset
+    that turned out not to be stuck after all. The task logs it and returns —
+    retrying would only lose the same race again.
+
+    `analysis_pipeline.JobUnavailableError` in everything but name.
+    """
+
+
+async def run_ingest(session: AsyncSession, asset_id: uuid.UUID, *, worker_id: str) -> str:
     """Returns the asset's final status, or raises `TransientFailureError`.
 
     An unreadable upload is a normal outcome the user has to be told about, not
@@ -57,12 +74,32 @@ async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
     infrastructure failure is the opposite: the file is probably fine, and the
     queue retrying it is exactly right, which is why this raises rather than
     swallows it (see `TransientFailureError` above).
+
+    **Claims before it works, since 27 August.** Until then this read the row
+    and started transcoding, and nothing stopped two workers doing that to the
+    same file at once — which is why the pipeline sweep could only report a
+    stuck `probing` asset rather than retry it. `claim_for_ingest` is the same
+    single-UPDATE mechanism `jobs` has had since M4.
     """
     asset = await session.get(MediaAsset, asset_id)
     if asset is None:
         log.warning("ingest_asset_missing", asset_id=str(asset_id))
         return "missing"
 
+    claimed = await claim_for_ingest(session, asset_id, worker_id=worker_id)
+    if claimed is None:
+        # Either somebody else holds it, or it already finished. Both are
+        # normal on a redelivered message; neither is worth retrying.
+        await session.rollback()
+        raise IngestUnavailableError(f"asset {asset_id} is claimed or no longer probing")
+
+    # Committed **before** the work, not after. The claiming UPDATE holds a row
+    # lock until this transaction ends, and ffmpeg on a 2 GB file is minutes —
+    # without this a second worker's claim would block for all of it instead of
+    # returning None immediately.
+    await session.commit()
+
+    asset = claimed
     user_id = str(asset.user_id)
     key_id = str(asset.id)
 
@@ -150,7 +187,12 @@ async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
         return "failed"
     except TransientFailureError:
         # Already the right shape — re-raised as-is so the task wrapper's
-        # `except TransientFailureError` catches it directly.
+        # `except TransientFailureError` catches it directly. The claim is
+        # released first: the retry is a *new* attempt that has to claim again,
+        # and one holding a `worker_id` from the attempt that just failed would
+        # match nothing and never run. Same reason `analysis_pipeline` calls
+        # `requeue` on this path.
+        await _release(session, asset_id)
         raise
     except Exception as exc:
         # Not bad media, not one of our own transient markers: an S3 client
@@ -161,7 +203,26 @@ async def run_ingest(session: AsyncSession, asset_id: uuid.UUID) -> str:
         # user their upload was bad when the truth was that our infrastructure
         # blinked.
         log.warning("ingest_transient_failure", asset_id=key_id, error=type(exc).__name__)
+        await _release(session, asset_id)
         raise TransientFailureError(f"ingest failed for {key_id}: {exc}") from exc
+
+
+async def _release(session: AsyncSession, asset_id: uuid.UUID) -> None:
+    """Hand the asset back so the retry — ours or the sweep's — can claim it.
+
+    Wrapped, because this runs on the failure path and the failure may well be
+    the database itself: a release that raises would replace a
+    `TransientFailureError` the task knows how to retry with an exception it
+    does not. The asset is then left claimed, which is exactly the case the
+    sweep's stuck-`probing` check exists for, so nothing is lost — it is
+    recovered five minutes later instead of immediately.
+    """
+    try:
+        await session.rollback()
+        await release_ingest_claim(session, asset_id)
+        await session.commit()
+    except Exception:  # pragma: no cover - the database is already failing
+        log.warning("ingest_release_failed", asset_id=str(asset_id))
 
 
 def _sha256(path: Path) -> str:
