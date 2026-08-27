@@ -61,7 +61,12 @@ async def _user(db: AsyncSession) -> User:
 
 
 async def _job(
-    db: AsyncSession, user: User, *, status: JobStatus, created_at: datetime, started_at: datetime | None
+    db: AsyncSession,
+    user: User,
+    *,
+    status: JobStatus,
+    created_at: datetime,
+    started_at: datetime | None,
 ) -> Job:
     job = Job(
         user_id=user.id,
@@ -346,6 +351,17 @@ async def test_one_failing_check_does_not_stop_the_others(
         status=AssetStatus.PENDING_UPLOAD,
         created_at=NOW - ABANDONED_UPLOAD_AFTER - timedelta(hours=1),
     )
+
+    # Committed on purpose, and this is the whole subtlety of the test. The
+    # guard rolls the session back when a check raises — which is correct, a
+    # half-failed check leaves the session dirty for the next one. But the
+    # other fixtures in this file only `flush()`, and a rollback would take an
+    # unflushed row with it, so the sweep would find nothing and the test would
+    # blame `_guarded` for the fixture's state. In production the rows a sweep
+    # acts on were committed by other processes minutes or hours earlier;
+    # `worker_session()` hands `sweep()` a session with no pending writes of
+    # its own. Committing here is what makes the test model that.
+    await db.commit()
 
     async def _explode(*_args: object, **_kwargs: object) -> list[uuid.UUID]:
         raise RuntimeError("lock timeout")

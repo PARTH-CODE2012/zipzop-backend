@@ -140,9 +140,7 @@ def test_a_live_key_with_no_webhook_secret_refuses_to_boot(
         production(razorpay_key_id="rzp_live_abc123", razorpay_key_secret="s"),
         monkeypatch,
     )
-    assert found == [
-        "RAZORPAY_WEBHOOK_SECRET is empty — incoming webhooks could not be verified"
-    ]
+    assert found == ["RAZORPAY_WEBHOOK_SECRET is empty — incoming webhooks could not be verified"]
 
 
 def test_a_fully_configured_live_provider_starts(monkeypatch: pytest.MonkeyPatch) -> None:

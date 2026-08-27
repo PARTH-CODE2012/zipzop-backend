@@ -231,6 +231,28 @@ before trusting this write-up over the code:
 make migrate && make test-backend
 ```
 
+### They ran, 27 August 2026
+
+Docker Desktop went on this machine and the suite executed for the first time
+since M4: **227 passed, 2 skipped**, the thirteen among them. (231 now — four
+tests were added for the escaping defect below.)
+
+The write-up above held up, with two corrections worth reading before trusting
+it further, both in [`17-first-real-test-run.md`](17-first-real-test-run.md):
+
+* **One of the thirteen was wrong.** `test_one_failing_check_does_not_stop_the_others`
+  built its fixture with `flush()` and no `commit()`, so `_guarded`'s rollback —
+  the behaviour it was written to prove — destroyed the row it then looked for.
+  The test failed against code that is correct. Hand-review had no way to catch
+  it, because the defect is in the interaction between the test's fixture and
+  the code's rollback, and reading either alone shows nothing wrong.
+* **The `reconciliation` queue was added everywhere except the place people
+  actually run.** `scripts/dev-up.sh` — `make watch` — still started a worker
+  without it, so beat enqueued the sweep every five minutes into a queue with
+  no consumer. The pass's own recovery job was dead in the main dev flow: a
+  message nobody was listening for, which is precisely the bug this pass exists
+  to fix.
+
 ---
 
 ## 7. What this changes for M5

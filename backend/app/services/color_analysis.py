@@ -201,6 +201,29 @@ def _clamp01(value: float) -> float:
 
 def _escape(path: Path) -> str:
     """`movie=` is a filter argument, so colons and backslashes in the path are
-    syntax. Scratch paths are ours and contain neither — escaping anyway costs
-    one line and removes the question."""
-    return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    syntax — and they are unescaped **twice** on the way in, not once.
+
+    The filtergraph parser strips one level before the filter's own option
+    parser ever sees the string, so a single `\\:` arrives as a bare `:` and the
+    path splits at it. One level is what this did until 27 August, and nothing
+    ever caught it: every scratch path on Linux is colon-free, so the escaping
+    was dead code that happened to be wrong. The first path with a colon in it
+    — every Windows path, `C:` — proved it.
+
+    Both levels are applied to the path as it is, with no platform branch. An
+    earlier version of this fix rewrote Windows separators to forward slashes,
+    which ffmpeg accepts and which keeps a drive path from carrying four
+    backslashes per separator — but a backslash is a legal character in a POSIX
+    *filename*, so that rewrite would have turned `/tmp/od\\d/a.mp4` into a path
+    to somewhere else, and it made the function's behaviour untestable on the
+    platform it was not running on. Escaping is correct on both; verified
+    against ffmpeg 9.0.1 on Windows and against the POSIX cases below in
+    `tests/test_analysis.py`.
+
+    A path needing no escaping comes out byte-identical to what went in.
+    """
+    s = str(path)
+    # Level 1 — the filter's own option parser.
+    s = s.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+    # Level 2 — the filtergraph parser, which unescapes before level 1 runs.
+    return s.replace("\\", "\\\\")

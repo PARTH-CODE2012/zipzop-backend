@@ -165,6 +165,11 @@ Small, but worth knowing before opening the editor's files.
 
 ## 6. The honest state of verification
 
+> **Superseded in part, 27 August 2026.** Docker Desktop and ffmpeg are now
+> installed on this machine and the backend suite has actually run. What
+> follows is what this note said on 25 August, corrected item by item below;
+> [`17-first-real-test-run.md`](17-first-real-test-run.md) is the full account.
+
 **M4.5 has not been through `make e2e`, and neither has anything since M4.**
 That needs Docker, which the machine this was built on does not have. The unit
 suites are green — 304 frontend tests — and the backend suite has not been run
@@ -175,10 +180,17 @@ object storage and a worker; there is no fixture-server version of it, and the
 frame comparison test in §4.1 is the milestone's whole point. So the first
 practical prerequisite is not code:
 
-- [ ] A machine with Docker, or Postgres + Redis + MinIO natively
-- [ ] `make migrate`, then `make test-backend` green from a known state
+- [x] A machine with Docker, or Postgres + Redis + MinIO natively — Docker
+      Desktop 29.7 on WSL2, ffmpeg 9.0.1, all three services healthy
+- [x] `make migrate`, then `make test-backend` green from a known state — 231
+      passed, 2 skipped. The two skips are the transcription tests, which want
+      a warmed `faster-whisper` model cache and skip rather than fail without
+      one
 - [ ] `make e2e` green — it covers M2 end to end and will confirm the stack is
-      really working before M5 starts adding to it
+      really working before M5 starts adding to it. **Still open**: it drives a
+      real browser against `make e2e-up`, which needs `pnpm` on PATH and a
+      `tmux`-free way to hold three servers up on Windows. This is now the only
+      unverified thing standing between here and M5
 
 ---
 

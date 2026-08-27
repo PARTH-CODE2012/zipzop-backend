@@ -19,7 +19,15 @@ MISSING=0
 
 echo
 echo "Tools"
-command -v python3 >/dev/null && green "python3 $(python3 -V 2>&1 | cut -d' ' -f2)" || bad "python3 — needed for the backend"
+# `python3 -c ""` rather than `command -v python3`. On Windows the Microsoft
+# Store stub sits on PATH under that exact name, answers `command -v`, and then
+# refuses to run — so this printed a cheerful `python3 est` (the first word of
+# its French "not found" message, parsed as a version) on a machine with no
+# usable python3 at all. Ask it to execute; that is the thing being checked.
+if python3 -c "" >/dev/null 2>&1; then green "python3 $(python3 -V 2>&1 | cut -d' ' -f2)"
+elif python  -c "" >/dev/null 2>&1; then green "python $(python -V 2>&1 | cut -d' ' -f2) (no python3 on PATH — the Makefile falls back to this)"
+else bad "python3 — needed for the backend"
+fi
 command -v node    >/dev/null && green "node $(node -v)"                            || bad "node — needed for the frontend"
 # pnpm is checked *from frontend/*, never from the repository root. There is no
 # packageManager field at the root, so corepack resolves whatever it last

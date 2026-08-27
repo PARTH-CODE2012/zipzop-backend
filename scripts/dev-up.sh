@@ -25,6 +25,11 @@ cd "$(dirname "$0")/.."
 
 SESSION=zipzop
 
+# `bin` on POSIX, `Scripts` on Windows. Same resolution the Makefile does, for
+# the same reason: a healthy virtualenv reported as a missing file.
+VBIN=.venv/bin
+[ -d backend/.venv/Scripts ] && VBIN=.venv/Scripts
+
 if ! command -v tmux >/dev/null 2>&1; then
   cat <<'ERR'
 tmux is not installed. Either:
@@ -93,11 +98,11 @@ pane() {  # pane <name> <what it runs>
 if [ "${ZZ_API_ALREADY_UP:-0}" = "1" ]; then
   echo "Not starting a second API — one is already answering on :$API_PORT."
   tmux new-session -d -s "$SESSION" -n worker \
-    "cd backend && env $ENV_PREFIX ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2; echo; echo '[worker stopped — press any key to close this window]'; read -n1"
+    "cd backend && env $ENV_PREFIX ./$VBIN/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation --concurrency=2; echo; echo '[worker stopped — press any key to close this window]'; read -n1"
 else
   tmux new-session -d -s "$SESSION" -n api \
-    "cd backend && env $ENV_PREFIX ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $API_PORT --reload; echo; echo '[api stopped — press any key to close this window]'; read -n1"
-  pane worker "cd backend && env $ENV_PREFIX ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2"
+    "cd backend && env $ENV_PREFIX ./$VBIN/uvicorn app.main:app --host 127.0.0.1 --port $API_PORT --reload; echo; echo '[api stopped — press any key to close this window]'; read -n1"
+  pane worker "cd backend && env $ENV_PREFIX ./$VBIN/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation --concurrency=2"
 fi
 
 pane web "cd frontend && env $ENV_PREFIX pnpm dev --port $WEB_PORT"

@@ -114,7 +114,47 @@ def test_an_unknown_preferred_look_falls_back_rather_than_failing() -> None:
 
 
 # --------------------------------------------------------------------------
-# The pipeline
+# `movie=` path escaping
+#
+# This had no test until 27 August, and it was wrong the whole time: it escaped
+# one level where a filtergraph argument is unescaped two, so any path with a
+# colon in it split at the colon. Nothing noticed because a Linux scratch path
+# has no colon, which is the reason to pin the behaviour down here rather than
+# leave it to `sample_frames` to exercise incidentally on one platform.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The ordinary case, both platforms: nothing to escape, nothing changed.
+        ("/tmp/zipzop-abc123/proxy.mp4", "/tmp/zipzop-abc123/proxy.mp4"),
+        # A colon needs a backslash for the filter's option parser, and that
+        # backslash needs a backslash for the filtergraph parser above it.
+        ("/tmp/od:d/a.mp4", "/tmp/od\\\\:d/a.mp4"),
+        # Same two levels for a quote.
+        ("/tmp/it's/a.mp4", "/tmp/it\\\\'s/a.mp4"),
+    ],
+)
+def test_the_escape_survives_both_levels_of_unescaping(raw: str, expected: str) -> None:
+    assert color_analysis._escape(pathlib.PurePosixPath(raw)) == expected
+
+
+def test_a_posix_filename_containing_a_backslash_is_escaped_not_rewritten() -> None:
+    """A backslash is a legal character in a POSIX filename, so it has to be
+    escaped, never rewritten into a separator.
+
+    This is here because the first attempt at the two-level fix *did* rewrite
+    it — turning Windows separators into forward slashes saves a drive path
+    four backslashes each — and would have pointed at a different file on
+    Linux. The rewrite is gone; this is what stops it coming back.
+    """
+    escaped = color_analysis._escape(pathlib.PurePosixPath("/tmp/od\\d/a.mp4"))
+
+    assert "/tmp/od/d" not in escaped, "the backslash was treated as a separator"
+    assert escaped == "/tmp/od\\\\\\\\d/a.mp4"
+
+
 # --------------------------------------------------------------------------
 
 
