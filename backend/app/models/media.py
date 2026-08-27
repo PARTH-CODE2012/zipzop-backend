@@ -54,6 +54,22 @@ class MediaAsset(UUIDPrimaryKey, Base):
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: The S3 multipart upload this asset's original is being assembled from,
+    #: set at reservation for anything over `multipart_threshold_bytes`.
+    #:
+    #: **The server keeps it rather than asking the client to hand it back.**
+    #: `POST /complete` needs the upload id to assemble the parts, and until
+    #: 28 August it passed `body.etag` there instead — a field that exists, is
+    #: the wrong thing entirely, and made every multipart completion fail with
+    #: `NoSuchUpload`. The request body has no upload id to pass, and adding
+    #: one would mean trusting a client-supplied identifier for an upload the
+    #: server itself started. It is on the row instead.
+    #:
+    #: Also what lets a replayed reservation return the *same* upload with
+    #: fresh URLs instead of starting a second one, and what `abort_multipart`
+    #: would need to reclaim the parts of an upload nobody finished.
+    multipart_upload_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # -------------------------------------------------------------- probe
     original_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(Text, nullable=True)

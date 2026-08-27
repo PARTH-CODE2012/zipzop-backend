@@ -229,6 +229,21 @@ Straight to S3. Not our API — no `Authorization` header, and adding one breaks
 
 For multipart, `parts` is `[{ "partNumber": 1, "etag": "\"…\"" }, …]`.
 
+**There is no `uploadId` in this body, and that is deliberate.** The server
+stored it against the asset when it reserved the upload, so it does not have to
+trust a client-supplied identifier for an upload it started itself. Two
+consequences worth knowing as a client author: a reservation replayed under the
+same `Idempotency-Key` returns the **same** `uploadId` with freshly signed part
+URLs — which is how an upload longer than the fifteen-minute signature keeps
+the parts it has already sent — and sending `parts` for an upload that was
+never multipart is `422 UNSUPPORTED_MEDIA`.
+
+Each part's `etag` comes from the `ETag` response header of its `PUT`. **The
+bucket must list `ETag` under CORS `ExposeHeaders`** or the browser cannot read
+it; MinIO does by default, a real S3 bucket does not, and the symptom is a
+completion refused for a missing part identifier rather than anything
+mentioning CORS.
+
 `202` — the asset moves to `probing` and an ingest job starts. Poll the asset or wait for the `asset.ready` socket event.
 
 ### `GET /media/{assetId}`

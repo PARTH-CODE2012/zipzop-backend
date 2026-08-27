@@ -156,7 +156,7 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 ### Backend — media 🔗
 
 - [x] `POST /media/uploads` — quota check, presigned PUT, 15-minute expiry, idempotency key honoured
-- [x] Multipart for files over 100 MB *(server side; the browser still refuses over 100 MB — see "Deliberately not done" below)*
+- [x] Multipart for files over 100 MB — **both halves, since 28 August.** The server side shipped with M2 and its completion step was broken the whole time: it passed the request's `etag` where S3 wanted the upload id, so every multipart completion failed with `NoSuchUpload`. Nothing caught it because no test went past the reservation. Fixed by keeping the upload id on the asset row (migration `0004`), and the browser now transfers the parts instead of refusing the file. [`docs/19-multipart-and-ci.md`](docs/19-multipart-and-ci.md)
 - [x] `POST /media/{id}/complete` — verify object exists and size matches, enqueue ingest
 - [x] Ingest worker: `ffprobe` → duration, dimensions, fps, codecs — with display dimensions, so a portrait phone recording does not land on the timeline on its side
 - [x] Ingest worker: 480p H.264 faststart **proxy** ⚠️ — and it never upscales: `scale=-2:'min(480,ih)'`
@@ -192,8 +192,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 ### Deliberately not done in M2
 
 - **No project persistence.** `POST/GET/PATCH /projects` stay in M3, which is titled *"Editing that survives a reload"*. M2's timeline lives in the browser and is gone on reload — the end-to-end run asserts that, so the boundary is checked rather than assumed.
-- **Multi-part upload in the browser.** The server issues the per-part URLs; the client refuses over 100 MB with a clear message rather than failing silently at 101 MB.
-  ⚠️ **The 17 August plan limits invalidated the assumption this rested on.** When it was written no tier had a stated per-file size, so a 100 MB client ceiling was a safe placeholder. Pro is now 1 GB and Studio 5 GB ([`docs/02-scope-v1.md`](docs/02-scope-v1.md) §3.2), which means **a paying user cannot upload a file their own plan permits.** The server side is already done — this is the browser half of the same feature, and it now has a deadline it did not have before. It is not M3 work by title, but it must not reach launch unlogged.
+- ~~**Multi-part upload in the browser.**~~ ✅ **Done 28 August.** The warning below stood for eleven days and was right: the 17 August plan limits made a 100 MB client ceiling mean *a paying user cannot upload a file their own plan permits*, with Pro at 1 GB and Studio at 5 GB. The browser now uploads the parts, retries a failed one rather than the whole file, and asks for fresh part URLs when the fifteen-minute signatures expire mid-transfer. The server half turned out to have been broken since M2 as well — [`docs/19-multipart-and-ci.md`](docs/19-multipart-and-ci.md).
 - **Storage quota values.** 🟠 The enforcement path is built and tested, but no document states the limit for any tier. The numbers in `app/services/plans.py` are marked `PLACEHOLDER` and must not ship. Same commercial question as the retention policy, and the same owner.
 - **The peaks disagreement.** [`docs/03`](docs/03-backend-architecture.md) §6.2 says "min/max amplitude pairs"; the contract §3 says one value per bucket, and its own arithmetic only works that way. The contract is what both sides build against, so one value per bucket ships. §6.2's wording is the one to correct.
 

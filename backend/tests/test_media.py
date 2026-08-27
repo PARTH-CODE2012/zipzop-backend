@@ -196,6 +196,156 @@ async def test_a_large_file_is_offered_multipart(client: AsyncClient, s3: Any) -
     assert plan["parts"][0]["partNumber"] == 1
 
 
+# --------------------------------------------------------------------------
+# Multipart, all the way through
+#
+# `test_a_large_file_is_offered_multipart` above covers the reservation and
+# stops there, which is exactly how a broken completion survived a green suite:
+# `POST /complete` passed `body.etag` where S3 wanted the upload id, so every
+# multipart upload failed at the last step and no test ever took that step.
+# These go the whole way — real parts, to real presigned URLs, against real
+# MinIO — because the assembled object is the only evidence that counts.
+# --------------------------------------------------------------------------
+
+
+def _small_multipart_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Trigger multipart on a few MB rather than the real 100.
+
+    The part *size* is untouched — S3 refuses any part but the last under
+    5 MB, so a test that shrank that would prove the completion works in a
+    configuration the real thing can never be in.
+    """
+    monkeypatch.setattr(settings, "multipart_threshold_bytes", 1024 * 1024)
+
+
+async def _put_part(url: str, payload: bytes) -> tuple[int, str]:
+    """A part goes up with no Content-Type — unlike the single-PUT path, the
+    part URLs are not signed with one. Returns the status and the ETag, which
+    is what completion has to hand back to S3."""
+    async with httpx.AsyncClient(timeout=120) as raw:
+        response = await raw.put(url, content=payload)
+        return response.status_code, response.headers.get("ETag", "")
+
+
+async def test_a_multipart_upload_completes_and_assembles_the_whole_object(
+    client: AsyncClient, s3: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test that was missing. Found by audit, 27 August 2026.
+
+    Every byte announced is uploaded in parts and the assembled object is read
+    back and compared, because `complete` returning 202 proves only that the
+    endpoint did not raise — the object being whole and correct is the claim.
+    """
+    _silence_celery(monkeypatch)
+    _small_multipart_threshold(monkeypatch)
+    headers, _ = await _account(client)
+
+    # Two parts: one full 8 MB part and a short final one. A single-part
+    # multipart upload would not exercise ordering or the 5 MB floor.
+    part_size = 8 * 1024 * 1024
+    payload = bytes(range(256)) * ((part_size + 4096) // 256)
+    reserved = (await _reserve(client, headers, size_bytes=len(payload))).json()
+
+    plan = reserved["multipart"]
+    assert plan is not None, "a file over the patched threshold must be offered multipart"
+    assert plan["partSizeBytes"] == part_size
+    assert len(plan["parts"]) == 2
+
+    uploaded = []
+    for part in plan["parts"]:
+        number = part["partNumber"]
+        chunk = payload[(number - 1) * part_size : number * part_size]
+        status_code, etag = await _put_part(part["url"], chunk)
+        assert status_code == 200, f"part {number} was rejected"
+        uploaded.append({"partNumber": number, "etag": etag})
+
+    completed = await client.post(
+        f"{V1}/media/{reserved['assetId']}/complete",
+        headers=headers,
+        json={"etag": None, "parts": uploaded},
+    )
+    assert completed.status_code == 202, completed.text
+
+    # The object S3 assembled, not the row we wrote about it.
+    asset_id = ids.decode(ids.ASSET, reserved["assetId"])
+    stored = s3.get_object(Bucket=settings.s3_bucket, Key=_storage_key_of(s3, asset_id))
+    assert stored["Body"].read() == payload
+
+
+def _storage_key_of(s3: Any, asset_id: uuid.UUID) -> str:
+    """The key the API chose for this asset, found in the bucket rather than
+    recomputed — recomputing it here would test this test's copy of the rule."""
+    listing = s3.list_objects_v2(Bucket=settings.s3_bucket, Prefix="originals/")
+    for entry in listing.get("Contents", []):
+        if str(asset_id) in entry["Key"]:
+            return str(entry["Key"])
+    raise AssertionError(f"nothing in the bucket for asset {asset_id}")
+
+
+async def test_completing_with_parts_the_upload_never_started_is_refused(
+    client: AsyncClient, s3: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A single-PUT reservation has no upload id on its row. Sending parts for
+    one used to reach S3 with an empty string where the upload id belongs; it
+    is now refused before any call goes out."""
+    _silence_celery(monkeypatch)
+    headers, _ = await _account(client)
+
+    reserved = (await _reserve(client, headers, size_bytes=64)).json()
+    assert reserved["multipart"] is None
+
+    refused = await client.post(
+        f"{V1}/media/{reserved['assetId']}/complete",
+        headers=headers,
+        json={"etag": None, "parts": [{"partNumber": 1, "etag": '"deadbeef"'}]},
+    )
+    # 422 `UNSUPPORTED_MEDIA`, the same answer the size-mismatch check in this
+    # handler gives: the client has told us something about this upload that
+    # does not add up.
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["error"]["code"] == "UNSUPPORTED_MEDIA"
+
+
+async def test_a_replayed_reservation_reuses_the_same_multipart_upload(
+    client: AsyncClient, db: AsyncSession, s3: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An idempotent replay must not start a second upload.
+
+    It did until 28 August: the replay branch called `start_multipart` again,
+    so every retry created a fresh upload id and left the parts already sent
+    against the previous one orphaned in the bucket, billed, with nothing able
+    to complete or abort them. The part URLs expire in fifteen minutes and the
+    upload id does not, so a replay hands back fresh URLs for the *same*
+    upload.
+    """
+    _small_multipart_threshold(monkeypatch)
+    headers, _ = await _account(client)
+    key = uuid.uuid4().hex
+
+    first = (await _reserve(client, headers, size_bytes=9_000_000, idempotency_key=key)).json()
+    second = (await _reserve(client, headers, size_bytes=9_000_000, idempotency_key=key)).json()
+
+    assert first["assetId"] == second["assetId"]
+    assert first["multipart"]["uploadId"] == second["multipart"]["uploadId"]
+
+    # And the row agrees, which is what `complete` will read.
+    stored = await db.scalar(
+        sa.select(MediaAsset.multipart_upload_id).where(
+            MediaAsset.id == ids.decode(ids.ASSET, first["assetId"])
+        )
+    )
+    assert stored == first["multipart"]["uploadId"]
+
+    # Exactly one upload is open against that key, not two.
+    open_uploads = s3.list_multipart_uploads(Bucket=settings.s3_bucket).get("Uploads", [])
+    matching = [u for u in open_uploads if first["assetId"].removeprefix("ast_") in u["Key"]]
+    assert len(matching) == 1
+
+    s3.abort_multipart_upload(
+        Bucket=settings.s3_bucket, Key=matching[0]["Key"], UploadId=matching[0]["UploadId"]
+    )
+
+
 async def test_a_filename_cannot_escape_its_key_prefix(
     client: AsyncClient, db: AsyncSession
 ) -> None:

@@ -267,6 +267,6 @@ encode time turning a 240p upload into a blurrier, larger file.
 |---|---|---|
 | 🔴 | **A palette, a typeface and the visual states.** M3 is the editor and is blocked on this. The timeline is built to receive it as a one-file change. | Project lead |
 | 🟠 | **Storage quota per tier.** The contract rejects an upload for "insufficient storage quota" and §9 defines the error with `usedBytes`/`limitBytes`, but no document says how many GB a tier gets. The enforcement path is built and tested; the values in [`../backend/app/services/plans.py`](../backend/app/services/plans.py) are marked `PLACEHOLDER` and **must not ship**. | Project lead |
-| | **Multi-part upload in the browser.** The server issues per-part URLs; the client refuses over 100 MB with a clear message rather than failing silently at 101 MB. | M3 or later |
+| ✅ | ~~**Multi-part upload in the browser.**~~ **Done 28 August** — the client transfers the parts instead of refusing the file, and the server's completion step, broken since this milestone shipped, was fixed with it. [`19-multipart-and-ci.md`](19-multipart-and-ci.md) | Done |
 | | **The end-to-end run is not in CI.** It needs six services up at once. Worth adding before M5, when export makes the browser-versus-FFmpeg comparison a release gate. | Before M5 |
 | | **Safari on macOS.** Still never opened. Low risk since iOS — the harder case — passed in M1. | Before launch |
