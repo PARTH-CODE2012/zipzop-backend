@@ -343,6 +343,7 @@ pass introduced and the one it found in passing.
 - [x] **7 · The timeline is part of the page** — its own surface and rule, and **a draggable divider** with a keyboard path, an `Escape` cancel, a double-click reset and a remembered height. Bounded so it can never squeeze the picture off screen
 - [x] Gates: **301 tests** (up from 236) · `tsc --noEmit` clean · `eslint` clean · production build green
 - [x] Driven in a real browser on Windows through the fixture server — every mode, the grade, the typed field, undo/redo
+- [x] **The vivid frame, 28 August** — a neon cyan → magenta → green ring with a bloom around the picture and around the timeline, from a mockup by the project lead. One class in `globals.css`, three tokens, no colour in any component. ⚠️ **It contradicts charter §3.3** — *"one accent, one hex… no secondary brand colour and no gradient"* — so the charter is amended rather than quietly broken: the vivid colours are decoration only and may never carry state, yellow stays the sole meaningful accent ([charter §3.3, v1.1](docs/08-ui-charter.md)). Checked against the mockup in a real browser through the fixture server
 
 ### Found by looking, not by testing
 

@@ -151,11 +151,25 @@ export function Preview({ assets }: PreviewProps) {
 
   return (
     <div className="relative flex h-full w-full items-center justify-center bg-black/40">
-      <div className="relative" style={{ aspectRatio: '16 / 9', maxHeight: '100%', width: '100%' }}>
-        <canvas ref={glRef} className="absolute inset-0 h-full w-full" data-testid="preview-gl" />
+      {/* `vivid-frame` is the neon ring — decoration only, and defined once in
+          globals.css so no colour lands in this file. It sits on the picture's
+          own box rather than the container so it tracks the 16:9 letterbox
+          instead of the empty space around it. */}
+      <div
+        className="vivid-frame"
+        style={{ aspectRatio: '16 / 9', maxHeight: '100%', width: '100%' }}
+        data-testid="preview-frame"
+      >
+        <canvas
+          ref={glRef}
+          className="absolute inset-0 h-full w-full"
+          style={{ borderRadius: 'inherit' }}
+          data-testid="preview-gl"
+        />
         <canvas
           ref={textRef}
           className="pointer-events-none absolute inset-0 h-full w-full"
+          style={{ borderRadius: 'inherit' }}
           data-testid="preview-text"
         />
       </div>

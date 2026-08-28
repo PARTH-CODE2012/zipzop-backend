@@ -387,7 +387,10 @@ function Workspace({
         viewportPx={viewportHeight}
         onResize={setTimelineHeight}
       />
-      <div className="shrink-0" style={{ height: timelineHeight }}>
+      {/* The padding is the neon frame's, not decoration for its own sake: the
+          ring and its bloom are drawn outside the timeline's box, and flush
+          against the window they were sheared off on three sides. */}
+      <div className="shrink-0 px-3 pb-3" style={{ height: timelineHeight }}>
         <Timeline />
       </div>
     </div>

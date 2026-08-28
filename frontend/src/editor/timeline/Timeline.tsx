@@ -272,7 +272,9 @@ export function Timeline() {
 
   return (
     <section
-      className="no-select flex flex-col"
+      // No `overflow-hidden` here, deliberately: the ring and its bloom are
+      // drawn outside this box, and clipping the box clips them away entirely.
+      className="vivid-frame vivid-frame--wide no-select flex h-full flex-col"
       // M4.5 item 7. It was *"a fixed-height block at the bottom of the window
       // with no border and no visual relationship to anything above it"* — all
       // of its legibility came from inside the component. It is now a raised
@@ -281,8 +283,11 @@ export function Timeline() {
       // at is the workspace's business, and draggable since the same item.
       style={{
         background: 'var(--color-surface-2)',
-        borderTop: '1px solid var(--color-rule)',
-        boxShadow: 'inset 0 1px 0 var(--color-rule)',
+        // The grey rule and its inset highlight are gone: they were what told
+        // you the timeline was a region of its own, and the neon frame now says
+        // that far louder. Keeping both left a dull line running through a lit
+        // edge.
+        borderRadius: 'var(--radius-sm)',
       }}
       data-testid="timeline"
       data-zoom={zoom}

@@ -53,6 +53,24 @@
   --color-accent-line: rgba(255, 232, 31, 0.5);
   --color-accent-glow: rgba(255, 232, 31, 0.22);
 
+  /* --- Vivid -------------------------------------------------------------
+     The neon frame, asked for by the project lead on 28 August from a mockup
+     of the editor with the picture and the timeline each wrapped in a glowing
+     cyan → magenta → green ring.
+
+     ⚠️ This is a **deliberate amendment to charter §3.3**, which reads "one
+     accent, one hex. There is no secondary brand colour and no gradient."
+     Three hues and a conic gradient is the opposite of that sentence, and the
+     sentence was right about why: hue alone must never carry meaning. So the
+     rule is kept where it does work — **these three colours are decoration and
+     nothing else.** No state, no selection, no severity and no data value may
+     be expressed in them. Yellow is still the only accent that means anything,
+     and `--color-danger` / `--color-warning` / `--color-success` still own
+     every semantic signal. Charter §16 records the amendment. */
+  --color-vivid-1: #22e0ff;
+  --color-vivid-2: #ff2fbe;
+  --color-vivid-3: #39ff9e;
+
   /* --- Semantic ----------------------------------------------------------
      Warning is orange and not yellow, deliberately: yellow already means
      *active*, and a yellow "you are running out of credits" is unreadable
@@ -143,6 +161,85 @@ body {
     transparent 70%
   );
   background-attachment: fixed;
+}
+
+/* ==========================================================================
+   The vivid frame — the neon ring around the picture and around the timeline.
+
+   Two rings, not one ring and one fill: `::before` is the same gradient blurred
+   into a bloom, `::after` is the crisp 2px edge on top of it. Both are masked
+   hollow, and that is what makes this safe to put over the picture — a blurred
+   *rectangle* would wash the video out, a blurred *ring* only lights its edge.
+
+   No negative `z-index` anywhere here, on purpose. `position: relative` does
+   not open a stacking context, so a `z-index: -1` bloom escapes to whichever
+   ancestor does and paints behind that ancestor's background — which on the
+   preview is an opaque wash, so the glow would simply vanish. Painting both
+   rings above the content and relying on the mask for the hole has no such
+   dependency on what any ancestor happens to be doing.
+
+   Cost, stated rather than discovered later: one blurred layer per frame, and
+   the charter's §6 budget is five per screen for the chrome. Two frames takes
+   the screen to seven. They are static — no animation, no transition, nothing
+   that re-rasterises them while the timeline scrolls — which is why this is a
+   note and not a refusal. If a third is ever wanted, measure first.
+   ========================================================================== */
+.vivid-frame {
+  --vivid-ring: 2px;
+  /* The bloom is drawn from a *thicker* ring than the crisp edge, and this is
+     the whole trick. Blurring a 2px ring over 20px spreads it so thin it reads
+     as a smudge; blurring a 5px one gives it something to spend. */
+  --vivid-bloom-ring: 7px;
+  --vivid-bloom: 24px;
+  --vivid-bloom-opacity: 1;
+
+  position: relative;
+  border-radius: var(--radius-md);
+}
+
+.vivid-frame::before,
+.vivid-frame::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--vivid-ring) * -1);
+  border-radius: inherit;
+  padding: var(--vivid-ring);
+  pointer-events: none;
+  /* Conic rather than linear: the hue has to travel *around* the frame, and a
+     linear gradient on a wide timeline leaves the short edges one flat colour. */
+  background: conic-gradient(
+    from 210deg,
+    var(--color-vivid-1),
+    var(--color-vivid-2) 33%,
+    var(--color-vivid-3) 66%,
+    var(--color-vivid-1)
+  );
+  /* Fill the padding box only — the hollow that makes it a ring. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* The bloom. First in paint order, so the picture covers its inward half and
+   only the outward glow escapes the frame. */
+.vivid-frame::before {
+  inset: calc(var(--vivid-bloom-ring) * -1);
+  padding: var(--vivid-bloom-ring);
+  filter: blur(var(--vivid-bloom));
+  opacity: var(--vivid-bloom-opacity);
+}
+
+/* Wider and softer, and squared off at the ends: the timeline spans the window
+   and a 16px radius on a 1900px-wide panel reads as a mistake rather than a
+   curve. */
+.vivid-frame--wide {
+  --vivid-bloom: 26px;
+  border-radius: var(--radius-sm);
 }
 
 /* Every number that changes while the user watches it: timecodes, durations,
