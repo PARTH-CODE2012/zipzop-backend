@@ -87,9 +87,11 @@ One accent, one hex. There is no secondary brand colour and no gradient. A2 earn
 >
 > The project lead asked for a neon frame around the picture and the timeline, from a mockup showing each wrapped in a glowing cyan → magenta → green ring. **That is three hues and a conic gradient, and the paragraph above says there are neither.** The paragraph is amended rather than deleted, because the reason behind it survives intact and is the constraint the new colours are held to:
 >
-> * `--color-vivid-1` `#22E0FF`, `--color-vivid-2` `#FF2FBE`, `--color-vivid-3` `#39FF9E` are **decoration and nothing else.** No state, no selection, no severity, no data value may be carried in them.
+> * `--color-vivid-1` `#3DF0FF`, `--color-vivid-2` `#FF3AD2`, `--color-vivid-3` `#46FFA6` are **decoration and nothing else.** No state, no selection, no severity, no data value may be carried in them.
 > * **Yellow is still the only accent that means anything.** `--color-accent` remains active state, primary fill, playhead and live values; §3.4's semantic set still owns every signal.
 > * They appear in exactly two places — the preview frame and the timeline frame — through one class, `.vivid-frame`. A third use is a change to this document, not a styling decision.
+>
+> Each frame is **three layers**, and the third is the one that makes it read as modern rather than merely bright: a masked ring, a blurred bloom drawn from a thicker ring, and a wide low `box-shadow` halo on the frame itself. The halo cannot live on either pseudo-element — `filter` is applied before `mask`, so a `drop-shadow` on the ring is masked away with everything outside the hollow.
 >
 > Rule 3 of §2 — *no state is carried by hue alone* — is what makes this safe. The vivid colours carry no state at all, so they cannot violate it. What they do cost is §6's blur budget: two more composited layers, taking a full editor screen from five to seven. They are static and never re-rasterise, which is why this is recorded rather than refused.
 
@@ -338,9 +340,9 @@ This replaces the `@theme` block in [`../frontend/src/styles/globals.css`](../fr
   --color-accent-glow: rgba(255, 232, 31, 0.22);
 
   /* Vivid — decoration only, never state. See the §3.3 amendment. */
-  --color-vivid-1: #22e0ff;
-  --color-vivid-2: #ff2fbe;
-  --color-vivid-3: #39ff9e;
+  --color-vivid-1: #3df0ff;
+  --color-vivid-2: #ff3ad2;
+  --color-vivid-3: #46ffa6;
 
   /* Semantic */
   --color-danger: #ff5c5c;

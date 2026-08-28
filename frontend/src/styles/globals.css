@@ -67,9 +67,9 @@
      be expressed in them. Yellow is still the only accent that means anything,
      and `--color-danger` / `--color-warning` / `--color-success` still own
      every semantic signal. Charter §16 records the amendment. */
-  --color-vivid-1: #22e0ff;
-  --color-vivid-2: #ff2fbe;
-  --color-vivid-3: #39ff9e;
+  --color-vivid-1: #3df0ff;
+  --color-vivid-2: #ff3ad2;
+  --color-vivid-3: #46ffa6;
 
   /* --- Semantic ----------------------------------------------------------
      Warning is orange and not yellow, deliberately: yellow already means
@@ -185,16 +185,36 @@ body {
    note and not a refusal. If a third is ever wanted, measure first.
    ========================================================================== */
 .vivid-frame {
-  --vivid-ring: 2px;
+  --vivid-ring: 2.5px;
   /* The bloom is drawn from a *thicker* ring than the crisp edge, and this is
      the whole trick. Blurring a 2px ring over 20px spreads it so thin it reads
-     as a smudge; blurring a 5px one gives it something to spend. */
-  --vivid-bloom-ring: 7px;
-  --vivid-bloom: 24px;
+     as a smudge; blurring a 9px one gives it something to spend. */
+  --vivid-bloom-ring: 9px;
+  --vivid-bloom: 28px;
   --vivid-bloom-opacity: 1;
+  /* The far halo — §"three layers" below. */
+  --vivid-halo: 34px;
 
   position: relative;
   border-radius: var(--radius-md);
+
+  /* **Three layers, not two, and the third is what was missing.** The masked
+     ring and its bloom both stop within about 30px of the edge, which gives a
+     bright line and a tight glow — correct, and flat. What reads as modern is
+     the wide, low ambient wash further out, and it cannot come from either
+     pseudo-element: `filter` is applied *before* `mask` in the rendering
+     model, so a `drop-shadow` on the ring is masked away with everything else
+     outside the hollow.
+
+     So it lives on the frame itself, which has no mask, as an ordinary
+     `box-shadow`. Two hues rather than three: a third is not distinguishable
+     at this opacity and costs another shadow to composite.
+
+     `color-mix` rather than a second set of `rgba()` tokens, so the halo is
+     derived from the colour it belongs to and cannot drift from it. */
+  box-shadow:
+    0 0 var(--vivid-halo) color-mix(in srgb, var(--color-vivid-1) 26%, transparent),
+    0 0 calc(var(--vivid-halo) * 1.7) color-mix(in srgb, var(--color-vivid-2) 15%, transparent);
 }
 
 .vivid-frame::before,
@@ -238,7 +258,8 @@ body {
    and a 16px radius on a 1900px-wide panel reads as a mistake rather than a
    curve. */
 .vivid-frame--wide {
-  --vivid-bloom: 26px;
+  --vivid-bloom: 32px;
+  --vivid-halo: 44px;
   border-radius: var(--radius-sm);
 }
 
