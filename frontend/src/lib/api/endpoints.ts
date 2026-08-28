@@ -94,8 +94,21 @@ export function reserveUpload(
   return api.post<UploadResponse>('/media/uploads', body, { idempotencyKey })
 }
 
-export function completeUpload(assetId: string, etag: string | null): Promise<AssetResponse> {
-  return api.post<AssetResponse>(`/media/${assetId}/complete`, { etag, parts: null })
+export type CompletedPart = Schemas['CompletedPart']
+
+/**
+ * `parts` for a multipart upload, `etag` for a single PUT.
+ *
+ * There is deliberately no `uploadId` here: the server stored it on the asset
+ * row when it reserved the upload, so it does not have to trust the client to
+ * hand back an identifier for an upload it started itself.
+ */
+export function completeUpload(
+  assetId: string,
+  etag: string | null,
+  parts: CompletedPart[] | null = null,
+): Promise<AssetResponse> {
+  return api.post<AssetResponse>(`/media/${assetId}/complete`, { etag, parts })
 }
 
 // ----------------------------------------------------------------- projects

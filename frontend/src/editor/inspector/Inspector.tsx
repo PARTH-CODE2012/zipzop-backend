@@ -10,12 +10,21 @@
  * another way in.
  *
  * Charter §8: every control shows its value as a number as well as a position,
- * because a slider alone cannot tell you that speed is exactly 1.00.
+ * because a slider alone cannot tell you that speed is exactly 1.00. Since M4.5
+ * it shows the number *first* — `NumberField` makes it typeable, which is what
+ * item 5 was about.
+ *
+ * **What left in M4.5 item 4.** Volume, speed and the two audio fades moved to
+ * the rail's Audio mode, and the AI tools moved to the rail as modes of their
+ * own. What is left is the one job this panel does well and will keep doing at
+ * this size: *the properties of whatever is selected*. That is the whole point
+ * of the split — the rail grows by an icon per tool, and this panel's job never
+ * changes shape.
  */
 
-import { useState } from 'react'
-
-import { IconCrop, IconTransition, IconVolume } from '@/editor/icons'
+import { NumberField } from '@/editor/controls/NumberField'
+import { IconCrop, IconTransition } from '@/editor/icons'
+import { useRail } from '@/editor/rail/rail-store'
 import { selectSelectedAnyClip, useEditor } from '@/editor/state/store'
 import { useTools } from '@/editor/tools/jobs-store'
 import type { AnyClip, MediaClip, TextClip } from '@/editor/state/timeline-document'
@@ -67,43 +76,18 @@ function MediaProperties({ clip }: { clip: MediaClip }) {
     <>
       <Header title="Clip" subtitle={clip.assetId} />
 
-      <Slider
-        icon={<IconVolume size={13} />}
-        label="Volume"
-        value={clip.volume}
-        min={0}
-        max={2}
-        step={0.05}
-        format={(v) => `${Math.round(v * 100)} %`}
-        onChange={(volume) => store().setClipProperties(clip.id, { volume })}
-      />
-      <Slider
-        label="Speed"
-        value={clip.speed}
-        min={0.25}
-        max={4}
-        step={0.05}
-        format={(v) => `${v.toFixed(2)}x`}
-        onChange={(speed) => store().setClipProperties(clip.id, { speed })}
-      />
-      <Slider
-        label="Fade in"
-        value={clip.audioFadeInMs}
-        min={0}
-        max={Math.min(5_000, clip.durationMs)}
-        step={50}
-        format={(v) => `${Math.round(v)} ms`}
-        onChange={(audioFadeInMs) => store().setClipProperties(clip.id, { audioFadeInMs })}
-      />
-      <Slider
-        label="Fade out"
-        value={clip.audioFadeOutMs}
-        min={0}
-        max={Math.min(5_000, clip.durationMs)}
-        step={50}
-        format={(v) => `${Math.round(v)} ms`}
-        onChange={(audioFadeOutMs) => store().setClipProperties(clip.id, { audioFadeOutMs })}
-      />
+      {/* Volume, speed and the fades live in the rail's Audio mode since M4.5.
+          A line saying where they went, rather than silently removing four
+          controls someone had learned the position of. */}
+      <button
+        type="button"
+        onClick={() => useRail.getState().setMode('audio')}
+        className="self-start"
+        style={{ color: 'var(--color-accent)' }}
+        data-testid="go-audio"
+      >
+        Volume, speed and fades are in Audio &rarr;
+      </button>
 
       <Row label="Rotate" icon={<IconTransition size={13} />}>
         {([0, 90, 180, 270] as const).map((rotation) => (
@@ -238,14 +222,17 @@ function TextProperties({ clip }: { clip: TextClip }) {
       </label>
 
       {clip.kind === 'caption' && (
-        <Slider
+        <NumberField
           label="Start"
+          hint="Where this word begins on the timeline, in milliseconds."
           value={clip.startMs}
           min={0}
           max={Math.max(clip.startMs + 5_000, 10_000)}
           step={10}
-          format={(v) => `${(v / 1000).toFixed(2)}s`}
+          suffix="ms"
+          format={(v) => `${Math.round(v)}`}
           onChange={(startMs) => store().moveClip(clip.id, startMs)}
+          data-testid="field-caption-start"
         />
       )}
 
@@ -329,74 +316,3 @@ function Chip({
   )
 }
 
-/**
- * A slider that writes to the document **once, when the gesture ends**.
- *
- * The store's second rule — *"a drag does not commit"* — was written for
- * dragging clips, and it applies just as much here: `onChange` on a range input
- * fires per pixel of travel, so committing from it puts forty entries in the
- * undo stack for one pull of the volume handle, queues forty autosaves, and
- * makes ⌘Z appear broken because each press moves the value by one step.
- *
- * The number under the hand is local state; the release is what edits the
- * document. `pointerup` covers the mouse, `keyup` the arrow keys, and `blur`
- * the case where the pointer is released somewhere the input never hears about.
- */
-function Slider({
-  label,
-  icon,
-  value,
-  min,
-  max,
-  step,
-  format,
-  onChange,
-}: {
-  label: string
-  icon?: React.ReactNode
-  value: number
-  min: number
-  max: number
-  step: number
-  format: (value: number) => string
-  onChange: (value: number) => void
-}) {
-  const [dragged, setDragged] = useState<number | null>(null)
-  const shown = dragged ?? value
-
-  const commit = () => {
-    if (dragged === null) return
-    setDragged(null)
-    if (dragged !== value) onChange(dragged)
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="flex w-24 shrink-0 items-center gap-1.5" style={{ color: 'var(--color-ink-3)' }}>
-        {icon && (
-          <span aria-hidden="true" style={{ color: 'var(--color-ink-faint)' }}>
-            {icon}
-          </span>
-        )}
-        {label}
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={shown}
-        onChange={(event) => setDragged(Number(event.target.value))}
-        onPointerUp={commit}
-        onLostPointerCapture={commit}
-        onKeyUp={commit}
-        onBlur={commit}
-        aria-label={label}
-        className="flex-1"
-      />
-      <span className="tnum w-16 text-right" style={{ color: 'var(--color-ink)' }}>
-        {format(shown)}
-      </span>
-    </div>
-  )
-}

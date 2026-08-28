@@ -30,20 +30,8 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
-      # M2's upload flow is presigned URLs against S3. A mock cannot fail the
-      # way the real thing does — a signature that does not verify, path-style
-      # addressing, a Content-Type that is part of the signature — so the tests
-      # run against a real MinIO here too.
-      minio:
-        image: minio/minio:latest
-        env:
-          MINIO_ROOT_USER: zipzop
-          MINIO_ROOT_PASSWORD: zipzop-dev-secret
-        ports: ["9000:9000"]
-        options: >-
-          --health-cmd "mc ready local"
-          --health-interval 5s --health-timeout 3s --health-retries 20
-
+      # MinIO is NOT here. It is started as a step below, and it has to be —
+      # see the comment on that step. A service container cannot run it.
     env:
       DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@localhost:5432/zipzop_test
       REDIS_URL: redis://localhost:6379/9
@@ -68,6 +56,38 @@ jobs:
       # fails on a missing binary rather than on anything about the code.
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      # M2's upload flow is presigned URLs against S3. A mock cannot fail the
+      # way the real thing does — a signature that does not verify, path-style
+      # addressing, a Content-Type that is part of the signature — so the tests
+      # run against a real MinIO here too.
+      #
+      # **A step, not a `services:` entry, and this is not a style choice.**
+      # `minio/minio` needs `server /data` as its command, and a service
+      # container has no way to supply one: the `services:` block accepts
+      # image, env, ports, volumes, options and credentials, and `options` are
+      # passed to `docker create` *before* the image name, where a command
+      # cannot go. Run with no command the image prints its usage and exits —
+      # so the MinIO service this job used to declare was never a running
+      # server, and no health command could have made it one. Found 27 August
+      # 2026, when an audit proposed changing that health command; the check
+      # was never the problem.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=zipzop \
+            -e MINIO_ROOT_PASSWORD=zipzop-dev-secret \
+            minio/minio:latest server /data
+          for _ in $(seq 1 40); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              echo "MinIO is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MinIO did not become ready in 80s"
+          docker logs minio
+          exit 1
 
       - name: Install
         working-directory: backend

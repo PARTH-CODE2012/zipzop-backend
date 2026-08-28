@@ -54,6 +54,22 @@ class MediaAsset(UUIDPrimaryKey, Base):
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: The S3 multipart upload this asset's original is being assembled from,
+    #: set at reservation for anything over `multipart_threshold_bytes`.
+    #:
+    #: **The server keeps it rather than asking the client to hand it back.**
+    #: `POST /complete` needs the upload id to assemble the parts, and until
+    #: 28 August it passed `body.etag` there instead — a field that exists, is
+    #: the wrong thing entirely, and made every multipart completion fail with
+    #: `NoSuchUpload`. The request body has no upload id to pass, and adding
+    #: one would mean trusting a client-supplied identifier for an upload the
+    #: server itself started. It is on the row instead.
+    #:
+    #: Also what lets a replayed reservation return the *same* upload with
+    #: fresh URLs instead of starting a second one, and what `abort_multipart`
+    #: would need to reclaim the parts of an upload nobody finished.
+    multipart_upload_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # -------------------------------------------------------------- probe
     original_filename: Mapped[str | None] = mapped_column(Text, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -80,6 +96,37 @@ class MediaAsset(UUIDPrimaryKey, Base):
         PGUUID(as_uuid=True),
         ForeignKey("jobs.id", ondelete="SET NULL", use_alter=True),
         nullable=True,
+    )
+
+    # ------------------------------------------------------------- the claim
+    # The same three columns `jobs` has, for the same reason and read the same
+    # way. Until 27 August this table had none of them, and `run_ingest` simply
+    # read the row and started transcoding: nothing stopped two workers doing
+    # that to the same file at once, which is why the pipeline sweep could only
+    # *report* a stuck `probing` asset instead of retrying it
+    # (docs/16-pipeline-reliability-notes.md §5).
+    #
+    # `worker_id IS NULL` is the discriminator, not the status. An asset is
+    # already `probing` when the message is sent — there is no `queued` state
+    # before it the way `jobs` has — so the status alone cannot distinguish
+    # "waiting for a worker" from "a worker has it". The claiming UPDATE adds
+    # `worker_id IS NULL` and exactly one worker's can match.
+    worker_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: When a worker actually claimed it — **not** `created_at`, which is when
+    #: the upload was reserved. The sweep needs the difference: measuring
+    #: staleness from `created_at` conflates a slow upload with a dead worker,
+    #: and that imprecision was the second reason it could not act.
+    ingest_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    #: Bounded so a file that kills its worker every time cannot be retried for
+    #: ever. `jobs.attempts` in everything but name.
+    ingest_attempts: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        server_default="0",
     )
 
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -110,6 +157,14 @@ class MediaAsset(UUIDPrimaryKey, Base):
             "user_id",
             "checksum_sha256",
             postgresql_where="status = 'ready'",
+        ),
+        # What the pipeline sweep reads every five minutes, and the mirror of
+        # `ix_jobs_status_live`. Partial: `probing` is a handful of rows at any
+        # moment against a table that grows for ever.
+        Index(
+            "ix_media_assets_status_probing",
+            "status",
+            postgresql_where="status = 'probing'",
         ),
     )
 

@@ -5,6 +5,19 @@ BACKEND  := backend
 FRONTEND := frontend
 COMPOSE  := docker compose
 
+# A virtualenv puts its executables in `bin` on POSIX and `Scripts` on Windows.
+# Every recipe below assumed `bin`, so on a Windows checkout `make migrate` and
+# `make test-backend` failed with "no such file or directory" against a
+# virtualenv that was perfectly healthy — which is a confusing way to lose an
+# hour. Recursive `=`, not `:=`: `make setup` references this before the
+# virtualenv it is about to create exists.
+VBIN = $(if $(wildcard $(BACKEND)/.venv/Scripts),.venv/Scripts,.venv/bin)
+
+# `python3` on Windows resolves to the Microsoft Store stub, which is on PATH,
+# answers `command -v`, and then refuses to run — so testing for its presence
+# proves nothing. Test that it executes.
+PYTHON = $(shell python3 -c "" >/dev/null 2>&1 && echo python3 || echo python)
+
 .PHONY: help
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -28,9 +41,9 @@ setup: ## First run: copy .env, install both sides, generate the API types
 
 .PHONY: install-backend
 install-backend: ## Install Python dependencies into backend/.venv
-	cd $(BACKEND) && python3 -m venv .venv && \
-		./.venv/bin/pip install --upgrade pip && \
-		./.venv/bin/pip install -e ".[dev]"
+	cd $(BACKEND) && $(PYTHON) -m venv .venv && \
+		./$(VBIN)/pip install --upgrade pip && \
+		./$(VBIN)/pip install -e ".[dev]"
 
 .PHONY: install-frontend
 install-frontend: ## Install Node dependencies
@@ -120,16 +133,16 @@ ps: ## Show service status
 
 .PHONY: migrate
 migrate: ## Apply all migrations
-	cd $(BACKEND) && ./.venv/bin/alembic upgrade head
+	cd $(BACKEND) && ./$(VBIN)/alembic upgrade head
 
 .PHONY: migration
 migration: ## Create a migration: make migration m="add users"
 	@test -n "$(m)" || (echo "usage: make migration m=\"what changed\"" && exit 1)
-	cd $(BACKEND) && ./.venv/bin/alembic revision --autogenerate -m "$(m)"
+	cd $(BACKEND) && ./$(VBIN)/alembic revision --autogenerate -m "$(m)"
 
 .PHONY: downgrade
 downgrade: ## Roll back one migration
-	cd $(BACKEND) && ./.venv/bin/alembic downgrade -1
+	cd $(BACKEND) && ./$(VBIN)/alembic downgrade -1
 
 .PHONY: psql
 psql: ## Open a shell on the database
@@ -154,11 +167,11 @@ ports: ## Show which ports the dev stack will use, and why
 dev: ## Run the API natively with reload (infrastructure must be up)
 	@$(PORTS) && cd $(BACKEND) && \
 		echo "API on http://localhost:$$API_PORT" && \
-		./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT --reload
+		./$(VBIN)/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT --reload
 
 .PHONY: dev-worker
 dev-worker: ## Run a Celery worker natively
-	cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing
+	cd $(BACKEND) && ./$(VBIN)/celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation
 
 .PHONY: dev-frontend
 dev-frontend: ## Run the Next.js dev server
@@ -182,10 +195,10 @@ watch-stop: ## Stop what `make watch` started, leaving the containers up
 dev-all: infra migrate ## Everything you need to click around: API + ingest worker + frontend
 	@source scripts/ports.sh && zz_resolve_ports && \
 	echo "starting the API, the ingest worker and the dev server…" && \
-	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
+	(cd $(BACKEND) && ./$(VBIN)/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
 		--reload > /tmp/zipzop-api.log 2>&1 &) && \
-	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
-		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+	(cd $(BACKEND) && ./$(VBIN)/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing,reconciliation --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
 	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
 	sleep 4 && \
 	echo "" && \
@@ -244,10 +257,10 @@ e2e-up: ## Start everything the end-to-end run needs, in the background
 	@source scripts/ports.sh && zz_resolve_ports && \
 	{ echo "API_PORT=$$API_PORT"; echo "WEB_PORT=$$WEB_PORT"; } > $(ZZ_PORTS_FILE) && \
 	echo "starting the API, a worker and the dev server on :$$API_PORT and :$$WEB_PORT…" && \
-	(cd $(BACKEND) && ./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
+	(cd $(BACKEND) && ./$(VBIN)/uvicorn app.main:app --host 127.0.0.1 --port $$API_PORT \
 		--log-level warning > /tmp/zipzop-api.log 2>&1 &) && \
-	(cd $(BACKEND) && ./.venv/bin/celery -A app.workers.celery_app worker --loglevel=INFO \
-		-Q ingest,analysis,render,billing --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
+	(cd $(BACKEND) && ./$(VBIN)/celery -A app.workers.celery_app worker --loglevel=INFO \
+		-Q ingest,analysis,render,billing,reconciliation --concurrency=2 > /tmp/zipzop-worker.log 2>&1 &) && \
 	(cd $(FRONTEND) && pnpm dev --port $$WEB_PORT > /tmp/zipzop-web.log 2>&1 &) && \
 	echo "logs: /tmp/zipzop-{api,worker,web}.log"
 
@@ -268,9 +281,13 @@ e2e-headful: e2e-media ## The same, with a window you can watch
 
 # ---------------------------------------------------------------- contract ---
 
+.PHONY: razorpay-check
+razorpay-check: ## Check the Razorpay keys authenticate, and which currencies the account takes
+	bash scripts/razorpay-check.sh $(ARGS)
+
 .PHONY: openapi
 openapi: ## Regenerate openapi.json from FastAPI
-	cd $(BACKEND) && ./.venv/bin/python -m app.scripts.dump_openapi ../openapi.json
+	cd $(BACKEND) && ./$(VBIN)/python -m app.scripts.dump_openapi ../openapi.json
 	@echo "wrote openapi.json"
 
 .PHONY: types
@@ -279,7 +296,7 @@ types: openapi ## Regenerate the frontend's API types from openapi.json
 
 .PHONY: contract-check
 contract-check: ## Fail if openapi.json is stale — run this in CI
-	cd $(BACKEND) && ./.venv/bin/python -m app.scripts.dump_openapi /tmp/openapi.check.json
+	cd $(BACKEND) && ./$(VBIN)/python -m app.scripts.dump_openapi /tmp/openapi.check.json
 	@diff -q openapi.json /tmp/openapi.check.json >/dev/null \
 		|| (echo "openapi.json is stale — run 'make openapi' and commit the result" && exit 1)
 	@echo "openapi.json is up to date"
@@ -291,7 +308,7 @@ test: test-backend test-frontend ## Run every test
 
 .PHONY: test-backend
 test-backend: ## Run backend tests
-	cd $(BACKEND) && ./.venv/bin/pytest -q
+	cd $(BACKEND) && ./$(VBIN)/pytest -q
 
 .PHONY: test-frontend
 test-frontend: ## Run frontend tests
@@ -299,12 +316,12 @@ test-frontend: ## Run frontend tests
 
 .PHONY: lint
 lint: ## Lint and type-check both sides
-	cd $(BACKEND) && ./.venv/bin/ruff check . && ./.venv/bin/mypy app
+	cd $(BACKEND) && ./$(VBIN)/ruff check . && ./$(VBIN)/mypy app
 	cd $(FRONTEND) && pnpm lint && pnpm typecheck
 
 .PHONY: format
 format: ## Auto-format both sides
-	cd $(BACKEND) && ./.venv/bin/ruff format . && ./.venv/bin/ruff check --fix .
+	cd $(BACKEND) && ./$(VBIN)/ruff format . && ./$(VBIN)/ruff check --fix .
 	cd $(FRONTEND) && pnpm format
 
 .PHONY: check

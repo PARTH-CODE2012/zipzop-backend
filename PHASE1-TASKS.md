@@ -2,7 +2,9 @@
 
 **Temporary working file.** Not part of the documentation set in [`docs/`](docs/) — this is the day-to-day task list, meant to be edited constantly and deleted when phase 1 ships.
 
-Scope comes from [`docs/02-scope-v1.md`](docs/02-scope-v1.md). Where a task is ambiguous, that document wins.
+Scope comes from [`docs/02-scope-v1.md`](docs/02-scope-v1.md), **plus [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) since 25 August**. Where a task is ambiguous, those two win.
+
+> **The Discord launch, added 25 August — nothing is cut.** *MVP* means phase 1 as listed here, so export and M7 are untouched. What is added lands almost entirely in **M6**: a fifth **`beta` plan at $3.99**, temporary; a **promo-code and commission** block that is new work with no schema behind it; and **templates**, which is small and belongs to the editor rather than the tools. Razorpay ships first, Stripe is deferred. Every scope question was decided the same day — [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).
 
 ---
 
@@ -154,7 +156,7 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 ### Backend — media 🔗
 
 - [x] `POST /media/uploads` — quota check, presigned PUT, 15-minute expiry, idempotency key honoured
-- [x] Multipart for files over 100 MB *(server side; the browser still refuses over 100 MB — see "Deliberately not done" below)*
+- [x] Multipart for files over 100 MB — **both halves, since 28 August.** The server side shipped with M2 and its completion step was broken the whole time: it passed the request's `etag` where S3 wanted the upload id, so every multipart completion failed with `NoSuchUpload`. Nothing caught it because no test went past the reservation. Fixed by keeping the upload id on the asset row (migration `0004`), and the browser now transfers the parts instead of refusing the file. [`docs/19-multipart-and-ci.md`](docs/19-multipart-and-ci.md)
 - [x] `POST /media/{id}/complete` — verify object exists and size matches, enqueue ingest
 - [x] Ingest worker: `ffprobe` → duration, dimensions, fps, codecs — with display dimensions, so a portrait phone recording does not land on the timeline on its side
 - [x] Ingest worker: 480p H.264 faststart **proxy** ⚠️ — and it never upscales: `scale=-2:'min(480,ih)'`
@@ -164,6 +166,8 @@ Runs at `/spike/compositor` after `make spike-media`. Findings, measurements and
 - [x] `GET /media/{id}` with signed URLs, 1-hour expiry
 - [x] `GET /media` (cursor-paged), `DELETE /media/{id}` with `ASSET_IN_USE` guard
 - [x] Reject unreadable media with a reason a person can read
+- [x] 🔴 **Fixed 26 August — the ingest worker's retry was decorative.** `process_asset` declared `max_retries=2` but `run_ingest` caught every exception, including infrastructure blips, and wrote `failed` immediately — no code path ever called `self.retry()`. Now mirrors `analysis.py`'s `TransientFailureError` pattern exactly: bad media stays a permanent, immediate `failed`; an S3 or database blip is retried 3× with backoff before giving up. See [`docs/16-pipeline-reliability-notes.md`](docs/16-pipeline-reliability-notes.md)
+- [x] 🔴 **Fixed 26 August — `POST /media/{id}/complete` enqueued before its own commit.** A worker could claim the asset on another connection and read it still `pending_upload`, the exact race `POST /jobs`'s own docstring warns against. Commit now happens before `process_asset.delay()`, matching the pattern jobs already used
 - [x] **`docker-compose.yml` corrected**: it made `proxies/`, `thumbs/` and `peaks/` anonymously readable, against [`docs/03`](docs/03-backend-architecture.md) §6.3 — *"Everything is private."* Verified: anonymous GET now 403, signed GET 200
 
 ### Frontend
@@ -188,8 +192,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 ### Deliberately not done in M2
 
 - **No project persistence.** `POST/GET/PATCH /projects` stay in M3, which is titled *"Editing that survives a reload"*. M2's timeline lives in the browser and is gone on reload — the end-to-end run asserts that, so the boundary is checked rather than assumed.
-- **Multi-part upload in the browser.** The server issues the per-part URLs; the client refuses over 100 MB with a clear message rather than failing silently at 101 MB.
-  ⚠️ **The 17 August plan limits invalidated the assumption this rested on.** When it was written no tier had a stated per-file size, so a 100 MB client ceiling was a safe placeholder. Pro is now 1 GB and Studio 5 GB ([`docs/02-scope-v1.md`](docs/02-scope-v1.md) §3.2), which means **a paying user cannot upload a file their own plan permits.** The server side is already done — this is the browser half of the same feature, and it now has a deadline it did not have before. It is not M3 work by title, but it must not reach launch unlogged.
+- ~~**Multi-part upload in the browser.**~~ ✅ **Done 28 August.** The warning below stood for eleven days and was right: the 17 August plan limits made a 100 MB client ceiling mean *a paying user cannot upload a file their own plan permits*, with Pro at 1 GB and Studio at 5 GB. The browser now uploads the parts, retries a failed one rather than the whole file, and asks for fresh part URLs when the fifteen-minute signatures expire mid-transfer. The server half turned out to have been broken since M2 as well — [`docs/19-multipart-and-ci.md`](docs/19-multipart-and-ci.md).
 - **Storage quota values.** 🟠 The enforcement path is built and tested, but no document states the limit for any tier. The numbers in `app/services/plans.py` are marked `PLACEHOLDER` and must not ship. Same commercial question as the retention policy, and the same owner.
 - **The peaks disagreement.** [`docs/03`](docs/03-backend-architecture.md) §6.2 says "min/max amplitude pairs"; the contract §3 says one value per bucket, and its own arithmetic only works that way. The contract is what both sides build against, so one value per bucket ships. §6.2's wording is the one to correct.
 
@@ -289,7 +292,7 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Priority bands, queues split per family. Redis has no native priority, so Celery's `priority_steps` are set to the four plans' `queue_priority` values and `apply_async(priority=…)` needs no translation
 - [x] Worker claim: `UPDATE ... WHERE status='queued'`, stop if zero rows
 - [x] Progress published to Redis at real checkpoints, not on a timer
-- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times
+- [x] Retry transient failures 3× with backoff; permanent failures go straight to `failed`. Bad media is **not** transient — the same file gives the same answer three times. ⚠️ **This was only ever true for analysis.** The identical claim in M2 for ingest was decorative until 26 August — see below
 - [x] Refund on failure, **to the buckets it took from**, read back from the reservation rows
 - [x] Period-rollover edge case: refund to `topup` instead — with a tolerance, because `jobs.created_at` is the database's clock and `current_period_start` is written by whatever granted it
 - [x] `GET /jobs/{id}`, `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/estimate`
@@ -306,8 +309,8 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 ### Frontend — tools
 
-- [ ] Mock server (Prism or MSW) serving fixtures from the same schema *(moved from M0 — still open)*
-- [ ] Fixtures: a 2,000-word caption result **with a deliberately misspelled name**, a smart-trim result, a failing job, an account with credits split across two buckets, a free account hitting `PLAN_LIMIT_EXCEEDED`
+- [x] ~~Mock server (Prism or MSW)~~ → **`src/lib/api/fixtures.ts`**, answering inside `request()` behind `NEXT_PUBLIC_DEMO=1`. Neither Prism nor MSW: both are a dependency and a second process, and what was needed was for one function to answer from a table. **Typed against `generated.ts`**, so a fixture that drifts from the contract fails `pnpm typecheck` — which it did, four times, while being written
+- [~] Fixtures: **a caption result with a deliberately misspelled name** ✅ ("Sara" for Sarah), a **graded clip**, an **asset still ingesting**, and **credits split across two buckets** ✅. Still missing: a smart-trim result, a failing job, and a free account hitting `PLAN_LIMIT_EXCEEDED`
 - [x] Estimate on panel open, price on the button — including `blockedBy`, so "Not enough credits" is on the button rather than behind a failed click
 - [x] Invoke with idempotency key, editing continues while it runs
 - [x] WebSocket progress, polling fallback every 3 s. **The socket only ever makes the poll happen sooner** — every event is a hint to re-read the job, never the job's new state, so a missed event costs latency and nothing else
@@ -316,15 +319,81 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 - [x] Smart trim → splits and removals, one `commit`, with the ripple that closes the gaps behind them
 - [x] Colour grade → one `effects` entry, replacing any grade already there
 - [x] ⚠️ **Asset time → timeline time conversion**, unit-tested on a clip that is both trimmed *and* sped up — the only clip where the two clocks differ enough for a mistake to show
-- [x] Caption editing: correct a word, retime and delete. ⚠️ Restyling is the missing caption styles, above
+- [x] Caption editing: correct a word, retime, move, split, duplicate and delete. ⚠️ Restyling is the missing caption styles, above. 🔴 **Moving and retiming a text clip did nothing at all until 22 August** — every one of those operations went through a lookup that searched video and audio only, so the gesture ran and the document was never touched. Nine tests now cover the text path that had none
 - [x] Low-confidence words flagged visually. **Session state, not document state**: the contract's `TextClip` has no confidence field, because confidence describes how a word was produced rather than what it is
 - [ ] Failure states mapped from `errorCode`, with retry, saying the credits came back
+
+---
+
+## M4.5 · The interface pass ✅
+
+*Ends when: the editor can be reached, driven and understood by someone who did not build it.*
+
+**Done 25 August.** Seven items from [`docs/12-m4-5-interface-pass.md`](docs/12-m4-5-interface-pass.md),
+all of them found by *using* the editor rather than testing it. Written up in
+[`docs/14-m4-5-notes.md`](docs/14-m4-5-notes.md), including the two defects this
+pass introduced and the one it found in passing.
+
+- [x] **1 · `/projects` was a dead end** 🔴 — a stub reading *"Built in M3."*, and the only link into the product. It is now the real list: open, create, duplicate, delete-with-confirm, relative times, empty state, and the same account gate the editor uses. The home page also links straight to `/editor/scratch`, which was previously reachable only by knowing the URL
+- [x] **2 · The transport moved** out of the application header to under the picture, between the frame it plays and the playhead it moves. Frame-step, jump-to-start and jump-to-end existed as shortcuts with **no visible control**; each has a button now, each naming its shortcut
+- [x] **3 · Manual colour and audio control** — a picker over the five shipped `.cube` looks plus a strength field, so warming an image no longer means spending credits on an analysis job and accepting what it recommends. Volume, speed and the fades moved out of the inspector into the Audio mode. ⚠️ **No new effect type**, per the 22 August decision: anything the export renderer does not already implement would make the preview and the file disagree
+- [x] **4 · The left panel became a mode rail** — Media · Titles · Audio · Colour · Captions · Smart trim, one active at a time. The right panel went back to being the inspector and nothing else; the stacked tools panel is gone. **The rail grows by one icon per tool** — phase 2's four are one entry each in `rail/modes.ts`
+- [x] **5 · Compact numeric fields** replacing full-width range inputs — a row is 34 px instead of 56, every value is typeable, and *"Fade in"* finally says it is the audio ramp and not a video transition
+- [x] **6 · The precise zoom is discoverable** — `ctrl + scroll to zoom here` sits beside the slider. Behaviour unchanged per the 22 August decision: plain wheel still scrolls
+- [x] **7 · The timeline is part of the page** — its own surface and rule, and **a draggable divider** with a keyboard path, an `Escape` cancel, a double-click reset and a remembered height. Bounded so it can never squeeze the picture off screen
+- [x] Gates: **301 tests** (up from 236) · `tsc --noEmit` clean · `eslint` clean · production build green
+- [x] Driven in a real browser on Windows through the fixture server — every mode, the grade, the typed field, undo/redo
+- [x] **The vivid frame, 28 August** — a neon cyan → magenta → green ring with a bloom around the picture and around the timeline, from a mockup by the project lead. One class in `globals.css`, three tokens, no colour in any component. ⚠️ **It contradicts charter §3.3** — *"one accent, one hex… no secondary brand colour and no gradient"* — so the charter is amended rather than quietly broken: the vivid colours are decoration only and may never carry state, yellow stays the sole meaningful accent ([charter §3.3, v1.1](docs/08-ui-charter.md)). Checked against the mockup in a real browser through the fixture server
+
+### Found by looking, not by testing
+
+- [x] 🔴 **Typing `42` into a field showing `66 %` set the strength to 100 %.** The field's displayed unit and its stored unit had diverged, so the parse clamped to the maximum and wrote a value nobody asked for — silently, from the control added *specifically* so values could be set exactly. Fixed with an explicit scale, and `toDisplay`/`toDocument` are pure and tested, including an exact round trip at all 101 steps
+- [x] **The toolbar still read *"AI tools are in the panel on the right"*** after the tools moved to the left rail. A label pointing at a panel that no longer exists, which only opening the editor finds
+
+---
+
+## Pipeline reliability — fixed 26 August ✅
+
+*An outside audit's headline finding, verbatim: "Make the upload → processing →
+job pipeline reliable and self-recovering... database state, file storage, and
+background workers can get out of sync."*
+
+Read [`docs/16-pipeline-reliability-notes.md`](docs/16-pipeline-reliability-notes.md)
+for the full account — what was verified against the running code before
+anything was changed, what each fix does, and what is deliberately still open.
+
+- [x] 🔴 **Ingest's retry was decorative** — `run_ingest` caught every exception, including infrastructure blips, and wrote `failed` immediately. `max_retries=2` on the Celery task was never once exercised. Now raises `TransientFailureError` for anything that is not bad media, and `process_asset` retries it 3× with backoff before giving up — the exact pattern `analysis.py` already had
+- [x] 🔴 **The upload-complete endpoint enqueued before its own commit** — the same race `POST /jobs`'s own docstring warns against, just never fixed here. `session.commit()` now happens before `process_asset.delay()`
+- [x] **`POST /jobs`'s enqueue now logs loudly on failure** rather than only raising — the job and its credit reservation are already committed durable at that point; the log line is what tells anyone the send itself failed, distinct from every other exception trace
+- [x] **A pipeline sweep, every 5 minutes** (`app/services/pipeline_reconciliation.py`, its own `reconciliation` queue) — re-sends the Celery message for a job stuck `queued` with no `started_at`, requeues-then-resends a job stuck `running` past a generous ceiling, and fails an upload reservation nobody ever completed. All three re-sends are safe because `claim()`'s `WHERE status='queued'` makes acting on a job that was never actually stuck a harmless no-op
+- [x] Thirteen tests — twelve in `tests/test_pipeline_reconciliation.py`, every "acted on" case paired with a "left alone" case at a fresher timestamp since a threshold that is too eager is the actual risk here, plus one in `tests/test_ingest.py` proving a storage blip raises `TransientFailureError` rather than writing `failed`. ✅ **Run, 27 August** — all thirteen pass. See [`docs/17-first-real-test-run.md`](docs/17-first-real-test-run.md) for what the run found, including one of the thirteen that was wrong
+- [x] 🔴 **`make watch` never consumed the `reconciliation` queue** — every other worker invocation gained it in this pass (Makefile ×3, `docker-compose.yml`), but `scripts/dev-up.sh`, which is what the README tells you to run, did not. Beat enqueued `sweep_pipeline` every five minutes into a queue with no consumer: the recovery job this whole pass exists to add was silently dead in the main dev flow, which is the same "message nobody is listening for" bug it was written to catch. Found by running the toolchain, not by reading it
+- [x] 🔴 **Two defects in this pass's own new code, caught by re-reading it** — `sweep_stuck_running_jobs` sent its Celery messages *before* committing the requeue, the exact bug being fixed two files away; and `sweep()` claimed each check was isolated while running them unguarded in sequence, so one failure would have skipped the rest. Both fixed, both now covered by tests
+- [x] ✅ **`media_assets` has the atomic claim now** — the gap above, closed 27 August before M5 rather than after it, because a stuck render costs far more to duplicate than a stuck 480p proxy. Migration `0003_media_asset_claim` adds `worker_id`, `ingest_started_at` and `ingest_attempts`; `run_ingest` claims through `media.claim_for_ingest` and releases on a transient failure; the sweep's report is replaced by two checks mirroring the two job checks — a message that never arrived, and a worker that died holding the claim — bounded by `MAX_INGEST_ATTEMPTS`. **The guard could not be `WHERE status='probing'` as this item assumed**: an asset is already `probing` when its message is sent, so the status matches for every worker. `worker_id IS NULL` carries the claim instead. Full reasoning in [`docs/18-media-asset-claim.md`](docs/18-media-asset-claim.md); 9 tests added, 240 green
+- [ ] 🟠 **The `probing` thresholds are guesses until something real runs through them.** 20 minutes for a dead worker and 10 for a message that never arrived are argued from phase-1 tool timeouts, not measured. Revisit with M5, where a render legitimately runs longer than anything ingest does
+- [ ] 🟠 Worth deciding once traffic exists: should `pipeline_sweep_ran` page someone, the way ledger drift does, or is a log line enough at phase-1 scale?
 
 ---
 
 ## M5 · A file comes out
 
 *Ends when: you export a 1080p 9:16 MP4 and it looks exactly like the preview.*
+
+> **Read [`docs/15-m5-readiness.md`](docs/15-m5-readiness.md) first.** Written 25
+> August from the code: what export inherits already working, what the contract
+> already settles, and 🔴 **the problem to solve in the first hour** — the
+> renderer has no way to read a `.cube` file. They live in
+> `frontend/public/luts/`, the backend has no path to one, and the container is
+> built from the `backend/` context so they are not in the image. `lut3d=file=…`
+> has nothing to point at, and it fails at the first graded export rather than at
+> build time. Recommendation and two alternatives are in §3.
+
+- [ ] 🔴 **Give the renderer the LUTs, and a backend test that every look in `color_analysis.LOOKS` has a readable `.cube`** — the current catalogue test compares the client's list against a hand-copied constant and never reads the server ([readiness §3](docs/15-m5-readiness.md))
+- [ ] Add `export` to `PHASE_1_TOOLS` and write `ExportInput` — `POST /jobs {"tool":"export"}` is rejected today by design
+- [ ] `storage.export_key()` — the `exports/` prefix is in the architecture doc and nowhere in the code
+- [ ] Decide the frame-comparison tolerance **before** writing the comparison ([readiness §4.1](docs/15-m5-readiness.md)) — the preview composites a 480p proxy and the export uses the original, so an exact match is the wrong target
+- [ ] Decide transitions: the renderer will draw a dissolve the preview never shows ([readiness §4.2](docs/15-m5-readiness.md)). Either the preview learns them, or the editor says so. **Silently differing is the wrong option**
+- [x] ⚠️ **Infrastructure first.** Nothing in M5 can be verified without Docker or a native Postgres + Redis + MinIO: export is ffmpeg, object storage and a worker, and there is no fixture-server version of it. **Done 27 August** — Docker Desktop 29.7, ffmpeg 9.0.1, Postgres + Redis + MinIO up. `make migrate` and `make test-backend` green (231 passed, 2 skipped); `make e2e` is **still not run**, see [`docs/17-first-real-test-run.md`](docs/17-first-real-test-run.md) §5
 
 - [ ] `POST /jobs {tool: export}` — reject stale `timelineVersion` with `409`
 - [ ] Render worker: resolve timeline, fetch **originals**
@@ -342,22 +411,68 @@ Three defects survived a green unit suite, a strict type-check and a clean lint.
 
 *Ends when: you hit the free limit, subscribe, and the new allowance appears within seconds.*
 
-- [ ] Stripe and Razorpay **accounts opened** 🔗 — external lead time, start this now
-- [ ] `billing/providers/` — one adapter per provider, identical interface
-- [ ] `GET /plans` — public, currency suggested by IP, overridable
+> **Grew on 25 August — read [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).**
+> Everything below still ships. **Razorpay first** removes the second adapter for
+> now; the **fifth `beta` plan** and the **promo-code and commission** block at
+> the end of this section are added. Net: bigger than it was.
+
+- [~] ~~Stripe and~~ **Razorpay account opened** 🔗 — **test key pair received 25 August**, in the developer's `.env` and nowhere else. Two things still outstanding:
+  - [ ] **The webhook secret**, which is a *third* secret and does not exist until a webhook endpoint is created in the dashboard. Until then the signature check cannot be exercised, and an untested signature check is indistinguishable from none. ✅ The application now **refuses to boot in production without it**
+  - [ ] ⚠️ **Confirm the account may charge USD.** $3.99 is a dollar price on an Indian processor, and currency availability is an account-activation matter rather than an API capability. ✅ `make razorpay-check ARGS=--currency` probes it — **a refusal in test mode is conclusive and arrives now**; an acceptance leaves it open until the account goes live
+- [x] **Production cannot boot with test keys** — `assert_production_safe()` refuses `rzp_test_…` in production, a key with no secret, and a key with no webhook secret. Only checked when a key is present, so today's empty configuration still starts. Eight cases in `tests/test_config.py`
+- [ ] Stripe is deferred, so its application can wait
+- [ ] `billing/providers/` — ~~one adapter per provider~~ **the Razorpay adapter first**, against the interface that was designed for two. Stripe stays addable without reshaping anything ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §8.1)
+- [ ] `GET /plans` — public, currency suggested by IP, overridable. ⚠️ **Must filter on `plans.is_public`** — the column exists in migration `0002` and **nothing reads it today**. It is the whole mechanism for retiring `beta` later without touching anyone already on it, and an endpoint that ignores it makes the retirement a no-op
 - [ ] `POST /billing/checkout` → hosted checkout URL
 - [ ] `POST /billing/topup`, `/portal`, `/cancel` with the "you will lose X credits" response
 - [ ] Webhooks: **verify signature → store in `provider_events` → 200 immediately → process async**
 - [ ] Duplicate events collide on the primary key and are dropped
 - [ ] Renewal: sweep `plan` + `facemap`, grant new allowance, **never touch `topup`**, one transaction
 - [ ] Celery beat hourly sweep as the safety net — and the only path for free users
-- [ ] Upgrade immediate + pro rata; downgrade at period end
+- [ ] Upgrade immediate + pro rata; downgrade at period end — **five plans now, so `beta` → `pro` is the upgrade path that will actually get used**
 - [ ] `GET /credits/ledger` with buckets
-- [ ] Cost-per-job metric instrumented ⚠️ — the tiers get re-priced on this
+- [ ] Cost-per-job metric instrumented ⚠️ — **more urgent at $3.99 than it was at $19.99.** The allowance was derived from a price five times higher, and `SECONDS_PER_MINUTE_OF_MEDIA` in `pricing.py` is a heuristic, not a measurement ([`docs/11-m4-notes.md`](docs/11-m4-notes.md) §8). Net of the 15% commission and processing, one subscription clears about **$3.28** to cover a month of transcription, trimming, storage and export
 - [ ] Frontend: pricing page, checkout redirect, **confirming state on return** (never trust the redirect), 30 s polling fallback
 - [ ] Frontend: balances — one number everywhere except billing, cancellation and face mapping
 - [ ] Frontend: paywalls that name the unblock and link to it. **No dead ends**
 - [ ] Frontend: running out mid-project never blocks plain editing and never loses work
+
+### The `beta` plan — new on 25 August 🔗
+
+$3.99 / ₹199, added beside the four tiers and retired once the Discord campaign
+ends. Values and the reasoning for each are in
+[`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) §3.
+
+- [ ] Migration: `ALTER TYPE plan_code ADD VALUE 'beta'` and seed the row — **800 credits · 1080p · watermark `none` · `queue_priority` 0 · 399 cents / 19900 paise · `facemap_seconds` 0 · `fair_use_credits` NULL**
+- [ ] ⚠️ **`queue_priority` is 0, not 5.** Celery's `priority_steps` are `[0, 10, 20, 30]` and `apply_async(priority=…)` passes the plan's value through untranslated. A value between bands is silently mapped to a neighbour
+- [ ] 🔴 **Add `beta` to both dictionaries in [`app/services/plans.py`](backend/app/services/plans.py)** — `CONCURRENCY_LIMITS` and `STORAGE_QUOTA_BYTES` are read with a direct subscript, so a plan missing from either raises `KeyError` on the claim path and the upload path. Use `{"analysis": 2, "render": 1, "inference": 0}` and 25 GB, and **keep the `PLACEHOLDER` marker** — the storage question is still unanswered for every tier
+- [ ] `test_the_four_plans_are_seeded_with_the_documented_values` in `test_schema.py` asserts an exact five-key dictionary — **it will fail, and that is the test working.** Update it with the new row
+
+### Discord referrals — new on 25 August 🔗
+
+Nothing here exists yet: `promo`, `referral`, `coupon` and `affiliate` all return
+zero matches across the backend. **The field is the visible tenth of it** — the
+attribution has to outlive the session, because the commission is owed on a
+subscription that happens later.
+
+- [ ] `promo_codes` table — one code per Discord server owner, activatable and deactivatable
+- [ ] Promo-code field at sign-up, and the attribution **stored on the user permanently**, not in the session. An attribution lost at signup is a commission that can never be paid
+- [ ] The code grants **+300 bonus credits, one off — not a discount.** A discount and a 15% commission on the same $3.99 leave almost nothing, and the free tier already gives 300 credits away, so a code that granted nothing would give the user no reason to type it and the owner nothing to announce
+- [ ] Commission accrual as **ledger rows**, **recomputed on every renewal** rather than once at signup — a one-off commission on a recurring product misaligns the owner's incentive from month two. Money moving is already double-entry and append-only ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §2 principle 6), so this is a new counterparty, not a new financial model
+- [ ] Owner-facing figures: how many signed up, how many subscribed, what is owed
+- [ ] Payout: **accrue from day one, pay the first cohort by hand.** 🔴 The real process — schedule, threshold, channel, tax — is still unowned and is needed by the tenth server owner, not the first
+- [ ] ⚠️ Abuse: self-referral, codes shared outside the server, and a chargeback landing after a commission is paid. One paragraph of thought before launch, not after
+
+### Templates — small, and not an AI tool 🔗
+
+Decided 25 August as **the user's own settings, saved and reapplied** — caption
+style, colour grade, transition defaults, title styling. Not a supplied library:
+that reading is [`vision.md`](vision.md) §Features 04 & 05 and carries a licensed
+music library and the real-person-naming exposure, neither of which has an owner.
+
+- [ ] Save the current project's settings as a named template, on the account
+- [ ] Apply one to another project as **a single `commit`**, so it undoes in one step like every other bulk operation
+- [ ] **No worker, no queue, no credits, no new job type** — it is a subset of the timeline document, so it belongs beside the editing operations rather than in the tools panel
 
 ---
 
@@ -442,7 +557,13 @@ Walk [`docs/02-scope-v1.md`](docs/02-scope-v1.md) §6 end to end, as someone who
 
 ## Deliberately not in phase 1
 
-Face mapping · lip sync · GPU cluster · noise removal · upscaling · stabilisation · clip finder · speaker tracking · templates · music · mobile · multiple video tracks · caption translation · subtitle files · custom LUTs · teams · publishing to TikTok/YouTube/Instagram · invoicing documents · tax configuration
+Face mapping · lip sync · GPU cluster · noise removal · upscaling · stabilisation · clip finder · speaker tracking · ~~templates~~ · music · mobile · multiple video tracks · caption translation · subtitle files · custom LUTs · teams · publishing to TikTok/YouTube/Instagram · invoicing documents · tax configuration
+
+> **Templates moved in on 25 August**, but only the narrow half of it. *Reuse
+> your own project's settings* is phase 1. **A supplied library** — designed
+> templates, licensed music, mood detection — is still out, and it is what the
+> two commercial problems in [`vision.md`](vision.md) §Features 04 & 05 attach
+> to. Reasoning in [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) §4.
 
 If one of these starts feeling necessary, it is a scope conversation, not a task.
 

@@ -19,6 +19,7 @@ from pathlib import PurePosixPath
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import ids
 from app.api.deps import CurrentUser, Session, general_rate_limit
@@ -149,7 +150,7 @@ async def create_upload(
         if seen:
             existing = await assets.get_visible(uuid.UUID(seen))
             if existing is not None:
-                return _upload_response(existing, body, replay=True)
+                return await _upload_response(session, existing, body, replay=True)
 
     asset = await assets.create_pending(
         kind=_kind_for(body.content_type),
@@ -167,15 +168,33 @@ async def create_upload(
         await idempotency.remember(str(user.id), "media-upload", idempotency_key, str(asset.id))
 
     log.info("upload_reserved", asset_id=str(asset.id), size_bytes=body.size_bytes)
-    return _upload_response(asset, body, replay=False)
+    return await _upload_response(session, asset, body, replay=False)
 
 
-def _upload_response(asset: MediaAsset, body: UploadRequest, *, replay: bool) -> UploadResponse:
+async def _upload_response(
+    session: AsyncSession, asset: MediaAsset, body: UploadRequest, *, replay: bool
+) -> UploadResponse:
     presigned = storage.presign_put(asset.storage_key, body.content_type)
 
     multipart: MultipartPlan | None = None
     if body.size_bytes > settings.multipart_threshold_bytes:
-        plan = storage.start_multipart(asset.storage_key, body.content_type, body.size_bytes)
+        if asset.multipart_upload_id:
+            # A replay. The upload id outlives the fifteen-minute part URLs, so
+            # the client gets fresh URLs for the upload it already started —
+            # not a second upload. Starting one here, which this did until
+            # 28 August, orphans every part already uploaded against the first:
+            # they stay in the bucket, billed, with nothing pointing at them.
+            plan = storage.presign_parts(
+                asset.storage_key, asset.multipart_upload_id, body.size_bytes
+            )
+        else:
+            plan = storage.start_multipart(asset.storage_key, body.content_type, body.size_bytes)
+            # Written before the client is told the upload exists. An id we
+            # handed out and did not store is an upload that can never be
+            # completed and never be aborted.
+            asset.multipart_upload_id = plan.upload_id
+            await session.flush()
+
         multipart = MultipartPlan(
             upload_id=plan.upload_id,
             part_size_bytes=plan.part_size_bytes,
@@ -218,9 +237,20 @@ async def complete_upload(
         return _serialise(asset)
 
     if body.parts:
+        # The upload id comes off the row, not the request. It used to be
+        # `str(body.etag or "")` — a real field on the request, and entirely
+        # the wrong one, so S3 was handed an ETag where it expected an upload
+        # id and every multipart completion failed with `NoSuchUpload`. Found
+        # by audit, 27 August 2026; `CompleteUploadRequest` never had an upload
+        # id to pass in the first place.
+        if not asset.multipart_upload_id:
+            raise UnsupportedMediaError(
+                "This upload was not started as a multipart upload.",
+                details={"partsSent": len(body.parts)},
+            )
         storage.complete_multipart(
             asset.storage_key,
-            str(body.etag or ""),
+            asset.multipart_upload_id,
             [{"partNumber": p.part_number, "etag": p.etag} for p in body.parts],
         )
 
@@ -246,9 +276,32 @@ async def complete_upload(
 
     await assets.mark_probing(asset, size_bytes=stored.size_bytes, checksum=None)
 
+    # Committed here, **before** the enqueue — found by audit, 26 August 2026.
+    # This used to send the Celery message first and let `get_session`'s
+    # dependency commit afterwards, once the handler returned. A worker can
+    # start reading the instant the message lands, on its own connection, and
+    # a connection that started before this one committed sees the row still
+    # `pending_upload` — the exact race `POST /jobs` deliberately avoids by
+    # enqueueing after its own commit (see the module docstring on
+    # `app/api/routes/jobs.py`). This endpoint just never got the same fix.
+    await session.commit()
+
     from app.workers.tasks.ingest import process_asset
 
-    process_asset.delay(str(asset.id))
+    try:
+        process_asset.delay(str(asset.id))
+    except Exception:
+        # The row is already committed as `probing`. Unlike a job — where the
+        # sweep can safely re-send a stuck `queued` message because `claim()`
+        # makes a redundant send a no-op — there is no equivalent guarantee for
+        # an asset: `MediaAsset` has no atomic claim, so
+        # `pipeline_reconciliation.py` only *reports* a `probing` asset this
+        # old, it does not re-enqueue it (see that module's docstring). A send
+        # failure here is therefore not self-healing yet; it is loud, at
+        # least, which is the reason this is caught at all rather than left to
+        # the framework's own unhandled-exception log line.
+        log.exception("ingest_enqueue_failed", asset_id=str(asset.id))
+        raise
     log.info("ingest_enqueued", asset_id=str(asset.id))
     return _serialise(asset)
 

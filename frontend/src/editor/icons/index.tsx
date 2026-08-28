@@ -289,3 +289,85 @@ export function IconLogout(props: IconProps) {
     </Icon>
   )
 }
+
+// --------------------------------------------------------------------------
+// Transport — M4.5 item 2
+//
+// The transport moved out of the application header and under the picture, so
+// it needs the marks a transport is expected to have. Frame-step and
+// jump-to-end already existed as keyboard shortcuts with no visible control,
+// which is the half of that item nobody could discover.
+// --------------------------------------------------------------------------
+
+export function IconSkipStart(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 5.5v13L8 12z" strokeLinejoin="round" />
+      <path d="M6 5v14" />
+    </Icon>
+  )
+}
+
+export function IconSkipEnd(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 5.5v13L16 12z" strokeLinejoin="round" />
+      <path d="M18 5v14" />
+    </Icon>
+  )
+}
+
+export function IconStepBack(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M17 6.5v11L9 12z" strokeLinejoin="round" />
+      <path d="M7 6.5v11" />
+    </Icon>
+  )
+}
+
+export function IconStepForward(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 6.5v11L15 12z" strokeLinejoin="round" />
+      <path d="M17 6.5v11" />
+    </Icon>
+  )
+}
+
+// --------------------------------------------------------------------------
+// Mode rail — M4.5 item 4
+//
+// One icon per mode, in the same outline language as everything above. The
+// rail grows by one of these per tool phase 2 adds, which is the property the
+// stacked panels did not have.
+// --------------------------------------------------------------------------
+
+export function IconLibrary(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h3A1.5 1.5 0 0 1 10 5.5v13A1.5 1.5 0 0 1 8.5 20h-3A1.5 1.5 0 0 1 4 18.5z" />
+      <path d="M13 5.5A1.5 1.5 0 0 1 14.5 4h1A1.5 1.5 0 0 1 17 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5z" />
+      <path d="M19.5 6.5l1.4 12" />
+    </Icon>
+  )
+}
+
+export function IconSliders(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 8h10M18 8h2M4 16h4M12 16h8" />
+      <circle cx="16" cy="8" r="2" />
+      <circle cx="10" cy="16" r="2" />
+    </Icon>
+  )
+}
+
+export function IconInfo(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5M12 8h.01" />
+    </Icon>
+  )
+}

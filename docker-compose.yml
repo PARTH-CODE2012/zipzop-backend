@@ -49,8 +49,17 @@ services:
       - "9001:9001"   # web console
     volumes:
       - minio-data:/data
+    # MinIO's own HTTP liveness endpoint rather than `mc ready local`.
+    #
+    # Both work against `minio/minio:latest` today — `mc` ships in the image
+    # and the old check was passing, which is worth stating because the audit
+    # that prompted the change assumed otherwise. The reason to move is
+    # narrower: `mc ready local` depends on the client binary and its bundled
+    # `local` alias both being in an image we pin to `latest`, and MinIO has
+    # shipped images without `mc` before. `/minio/health/live` depends on the
+    # server answering, which is the thing being checked.
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -117,7 +126,7 @@ services:
       target: dev
     # Queues are split by family so a backlog of exports cannot starve
     # captioning — see docs/03-backend-architecture.md §3.
-    command: celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing --concurrency=2
+    command: celery -A app.workers.celery_app worker --loglevel=INFO -Q ingest,analysis,render,billing,reconciliation --concurrency=2
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://zipzop:zipzop@postgres:5432/zipzop

@@ -272,7 +272,7 @@ async def test_a_full_ingest_produces_all_four_outputs(
     the row while the upload failed would leave the editor playing a 404.
     """
     asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
-    assert await run_ingest(db, asset.id) == "ready"
+    assert await run_ingest(db, asset.id, worker_id="test") == "ready"
     await db.refresh(asset)
 
     assert asset.status is AssetStatus.READY
@@ -330,7 +330,7 @@ async def test_the_stored_proxy_is_playable_480p(db: AsyncSession, s3: Any, tmp_
         capture_output=True,
     )
     asset = await _staged(db, s3, big, AssetKind.VIDEO)
-    assert await run_ingest(db, asset.id) == "ready"
+    assert await run_ingest(db, asset.id, worker_id="test") == "ready"
     await db.refresh(asset)
 
     local = tmp_path / "fetched.mp4"
@@ -345,7 +345,7 @@ async def test_unreadable_media_fails_with_a_sentence_a_person_can_read(
     db: AsyncSession, s3: Any, not_a_video: Path
 ) -> None:
     asset = await _staged(db, s3, not_a_video, AssetKind.VIDEO)
-    assert await run_ingest(db, asset.id) == "failed"
+    assert await run_ingest(db, asset.id, worker_id="test") == "failed"
     await db.refresh(asset)
 
     assert asset.status is AssetStatus.FAILED
@@ -354,12 +354,137 @@ async def test_unreadable_media_fails_with_a_sentence_a_person_can_read(
     assert asset.proxy_key is None  # nothing half-written
 
 
+async def test_an_infrastructure_blip_is_retried_not_failed(
+    db: AsyncSession, s3: Any, sample_video: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found by audit, 26 August 2026.
+
+    Before this, any exception here — including an S3 client error unrelated
+    to the file itself — was caught by a bare `except Exception` and written
+    straight to `failed`, telling the user their upload was bad when the truth
+    was that storage blinked. `run_ingest` must now let this class of failure
+    escape as `TransientFailureError`, so the Celery task around it can retry,
+    and the row must be left exactly as it was — `probing`, not `failed` —
+    for a retry to have anything to pick back up.
+    """
+    from app.services.ingest_pipeline import TransientFailureError
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+
+    def _broken_download(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("S3 connection reset")
+
+    monkeypatch.setattr(storage, "download", _broken_download)
+
+    with pytest.raises(TransientFailureError):
+        await run_ingest(db, asset.id, worker_id="test")
+
+    await db.refresh(asset)
+    assert asset.status is AssetStatus.PROBING
+    assert asset.failure_reason is None
+    # And the claim is handed back. Without this the retry — which has to claim
+    # again, `WHERE worker_id IS NULL` — would match nothing and the asset
+    # would sit `probing` for ever holding a claim from an attempt that is over.
+    assert asset.worker_id is None
+    assert asset.ingest_started_at is None
+    # The attempt still counted, though: it is what eventually stops a file
+    # that fails this way every time from being retried indefinitely.
+    assert asset.ingest_attempts == 1
+
+
+# --------------------------------------------------------------------------
+# The claim
+#
+# `media_assets` had no atomic claim until 27 August, which is the whole reason
+# the pipeline sweep could only report a stuck `probing` asset rather than
+# retry it: re-sending could have put a second worker on a file the first was
+# still transcoding. These prove the property that makes re-sending safe.
+# --------------------------------------------------------------------------
+
+
+async def test_only_one_worker_can_claim_an_asset(
+    db: AsyncSession, s3: Any, sample_video: Path
+) -> None:
+    """The whole mechanism, in three lines. Exactly one UPDATE can match."""
+    from app.repositories.media import claim_for_ingest
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+
+    first = await claim_for_ingest(db, asset.id, worker_id="worker-1")
+    second = await claim_for_ingest(db, asset.id, worker_id="worker-2")
+
+    assert first is not None
+    assert second is None
+    assert first.worker_id == "worker-1"
+    assert first.ingest_started_at is not None
+    assert first.ingest_attempts == 1
+
+
+async def test_an_asset_that_is_not_probing_cannot_be_claimed(
+    db: AsyncSession, s3: Any, sample_video: Path
+) -> None:
+    """A redelivered message for an asset that already finished must not start
+    a second transcode over the top of a `ready` row."""
+    from app.repositories.media import claim_for_ingest
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+    asset.status = AssetStatus.READY
+    await db.flush()
+
+    assert await claim_for_ingest(db, asset.id, worker_id="worker-1") is None
+
+
+async def test_releasing_lets_the_next_worker_claim_without_resetting_attempts(
+    db: AsyncSession, s3: Any, sample_video: Path
+) -> None:
+    """What the sweep does to an asset whose worker died. The attempt count
+    surviving is what makes `MAX_INGEST_ATTEMPTS` reachable at all."""
+    from app.repositories.media import claim_for_ingest, release_ingest_claim
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+
+    await claim_for_ingest(db, asset.id, worker_id="worker-that-died")
+    await release_ingest_claim(db, asset.id)
+    second = await claim_for_ingest(db, asset.id, worker_id="worker-2")
+
+    assert second is not None
+    assert second.worker_id == "worker-2"
+    assert second.ingest_attempts == 2
+
+
+async def test_run_ingest_refuses_an_asset_another_worker_holds(
+    db: AsyncSession, s3: Any, sample_video: Path
+) -> None:
+    """The property in the terms that matter: two workers handed the same
+    message do not both transcode the file.
+
+    Committed first, on purpose. `run_ingest` rolls the session back when the
+    claim fails, and the fixtures here only `flush()` — without the commit the
+    rollback would take the asset with it and the test would fail on a missing
+    row rather than on the behaviour it is checking.
+    """
+    from app.repositories.media import claim_for_ingest
+    from app.services.ingest_pipeline import IngestUnavailableError
+
+    asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
+    await claim_for_ingest(db, asset.id, worker_id="worker-1")
+    await db.commit()
+
+    with pytest.raises(IngestUnavailableError):
+        await run_ingest(db, asset.id, worker_id="worker-2")
+
+    await db.refresh(asset)
+    # Still the first worker's, and its attempt count untouched by the loser.
+    assert asset.worker_id == "worker-1"
+    assert asset.ingest_attempts == 1
+
+
 async def test_a_silent_video_still_reaches_ready(
     db: AsyncSession, s3: Any, silent_video: Path
 ) -> None:
     """No audio track is not a failure. Plenty of footage is silent."""
     asset = await _staged(db, s3, silent_video, AssetKind.VIDEO)
-    assert await run_ingest(db, asset.id) == "ready"
+    assert await run_ingest(db, asset.id, worker_id="test") == "ready"
     await db.refresh(asset)
     assert asset.status is AssetStatus.READY
     assert asset.audio_codec is None
@@ -374,7 +499,7 @@ async def test_a_file_over_the_duration_limit_is_refused(
     monkeypatch.setattr(settings, "max_duration_ms", 1000)
     asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
 
-    assert await run_ingest(db, asset.id) == "failed"
+    assert await run_ingest(db, asset.id, worker_id="test") == "failed"
     await db.refresh(asset)
     assert asset.status is AssetStatus.FAILED
     assert "longer than" in (asset.failure_reason or "")
@@ -405,7 +530,7 @@ async def test_an_audio_upload_needs_no_thumbnail(
         capture_output=True,
     )
     asset = await _staged(db, s3, track, AssetKind.AUDIO)
-    assert await run_ingest(db, asset.id) == "ready"
+    assert await run_ingest(db, asset.id, worker_id="test") == "ready"
     await db.refresh(asset)
 
     assert asset.status is AssetStatus.READY
@@ -414,7 +539,7 @@ async def test_an_audio_upload_needs_no_thumbnail(
 
 
 async def test_ingesting_a_missing_asset_is_not_a_crash(db: AsyncSession) -> None:
-    assert await run_ingest(db, uuid.uuid4()) == "missing"
+    assert await run_ingest(db, uuid.uuid4(), worker_id="test") == "missing"
 
 
 # --------------------------------------------------------------------------
@@ -430,7 +555,7 @@ async def test_the_asset_endpoint_serves_the_peaks_it_ingested(
     from app.api import ids
 
     asset = await _staged(db, s3, sample_video, AssetKind.VIDEO)
-    assert await run_ingest(db, asset.id) == "ready"
+    assert await run_ingest(db, asset.id, worker_id="test") == "ready"
 
     registered = (
         await client.post(

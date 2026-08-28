@@ -137,6 +137,8 @@ export interface EditorState {
     clipId: string,
     grade: { lut: string; strength: number; sourceJobId?: string | null },
   ) => void
+  /** Take the look off a clip — the "None" swatch in the Colour panel. */
+  clearColorGrade: (clipId: string) => void
   setTransition: (clipId: string, side: 'in' | 'out', transition: Transition | null) => void
 
   // ------------------------------------------------------------ selection
@@ -370,6 +372,9 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   applyColorGrade: (clipId, grade) => {
     get().commit('Colour grade', (draft) => ops.applyColorGrade(draft, clipId, grade))
+  },
+  clearColorGrade: (clipId) => {
+    get().commit('Remove grade', (draft) => ops.clearColorGrade(draft, clipId))
   },
 
   setClipProperties: (clipId, properties) => {

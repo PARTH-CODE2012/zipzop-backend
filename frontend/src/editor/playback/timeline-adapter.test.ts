@@ -206,3 +206,76 @@ describe('documentToPlaybackTimeline', () => {
     ])
   })
 })
+
+// --------------------------------------------------------------------------
+// Playback length — the bug where the picture looped at the last caption
+// --------------------------------------------------------------------------
+
+/** A document with all three lanes, each ending at a different time. */
+function threeLanes(over: { videoProxy?: boolean } = {}): TimelineDocument {
+  return {
+    schemaVersion: 1,
+    tracks: [
+      {
+        id: 'trk_video',
+        kind: 'video',
+        index: 0,
+        muted: false,
+        locked: false,
+        clips: [clip({ id: 'clp_v', assetId: over.videoProxy === false ? 'ast_pending' : 'ast_1', startMs: 0, durationMs: 9_000 })],
+      },
+      {
+        id: 'trk_audio',
+        kind: 'audio',
+        index: 1,
+        muted: false,
+        locked: false,
+        // The music runs six seconds past the last frame of video.
+        clips: [clip({ id: 'clp_music', assetId: 'ast_music', startMs: 0, durationMs: 15_000 })],
+      },
+      {
+        id: 'trk_text',
+        kind: 'text',
+        index: 2,
+        muted: false,
+        locked: false,
+        clips: [
+          { id: 'clp_cap', kind: 'caption', text: 'last', startMs: 6_400, durationMs: 400,
+            styleId: 'caption_bold', emphasis: 0.2 } as TextClip,
+        ],
+      },
+    ],
+  }
+}
+
+describe('how long the engine thinks the timeline is', () => {
+  it('runs to the end of the document, not to the end of the video track', () => {
+    // The music ends at 15 s and the last frame of video is at 9 s. Stopping at
+    // 9 s cuts the music off and disagrees with the duration the timeline and
+    // the transport both display.
+    const { timeline } = documentToPlaybackTimeline(threeLanes(), lookupReady)
+    expect(timeline.durationMs).toBe(15_000)
+  })
+
+  it('does not shrink to the last caption when no clip has a proxy yet', () => {
+    // **The reported bug.** Playback restarted at 6 800 ms — the end of the last
+    // caption — instead of running to the end of the timeline. Clips whose asset
+    // has no proxy are dropped from `video` on purpose, so with none ready the
+    // only clips left to measure were the text ones, and the engine looped at
+    // the last word while the ruler still read 15 s.
+    //
+    // A clip still being ingested must not shorten the project: it appears when
+    // it is ready, and until then the length of the timeline is unchanged.
+    const { timeline, skipped } = documentToPlaybackTimeline(
+      threeLanes({ videoProxy: false }),
+      (assetId) => (assetId === 'ast_1' ? READY : undefined),
+    )
+    expect(skipped).toHaveLength(1)
+    expect(timeline.video).toHaveLength(0)
+    expect(timeline.durationMs).toBe(15_000)
+  })
+
+  it('is zero for an empty document', () => {
+    expect(documentToPlaybackTimeline({ schemaVersion: 1, tracks: [] }, lookupReady).timeline.durationMs).toBe(0)
+  })
+})

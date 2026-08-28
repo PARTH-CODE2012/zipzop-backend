@@ -3,20 +3,36 @@
 /**
  * Editor shell.
  *
- *   ┌──────────────────────────────────────────┐
- *   │ toolbar — ordinary tools + AI tools (M4) │
- *   ├───────────┬──────────────────────────────┤
- *   │ media bin │ preview (WebGL canvas)       │
- *   │           ├──────────────────────────────┤
- *   │           │ inspector (M3)               │
- *   ├───────────┴──────────────────────────────┤
- *   │ timeline — video track                   │
- *   └──────────────────────────────────────────┘
+ *   ┌────────────────────────────────────────────────────┐
+ *   │ header — account, credits, save state              │
+ *   ├────────────────────────────────────────────────────┤
+ *   │ toolbar — split, duplicate, delete, undo, redo     │
+ *   ├────┬─────────┬───────────────────────┬─────────────┤
+ *   │ ra │ mode    │ preview (WebGL)       │ inspector   │
+ *   │ il │ panel   ├───────────────────────┤             │
+ *   │    │         │ transport             │             │
+ *   ├────┴─────────┴───────────────────────┴─────────────┤
+ *   │ ═══════ draggable divider ═════════════════════════│
+ *   │ timeline — video, audio and text lanes             │
+ *   └────────────────────────────────────────────────────┘
  *
  * M3 adds what makes the milestone's title true: the project is loaded from
  * the server, every edit commits through the store's patch history, and
  * autosave puts it back. The visual charter (docs/08-ui-charter.md) is applied
  * through tokens — there is not a literal colour in this file.
+ *
+ * **M4.5 rearranged it** (docs/12-m4-5-interface-pass.md). Four of the seven
+ * items are visible in the map above:
+ *
+ *  * *item 2* — the transport left the header and sits under the picture it
+ *    plays, next to the playhead it moves;
+ *  * *item 4* — the left panel became a mode rail, and the right panel went
+ *    back to being the inspector and nothing else. The tools panel that used to
+ *    stack beneath it is gone; its three tools are modes on the rail;
+ *  * *item 7* — the timeline's height is the user's to set, and the divider is
+ *    a real control rather than a border;
+ *  * *item 3* — the manual colour and audio controls the toolbar never had now
+ *    have somewhere to live, which is what the rail bought.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -37,8 +53,6 @@ import {
 import {
   IconCopy,
   IconLogout,
-  IconPause,
-  IconPlay,
   IconRedo,
   IconScissors,
   IconSparkles,
@@ -47,12 +61,22 @@ import {
   IconUndo,
 } from '@/editor/icons'
 import { Inspector } from '@/editor/inspector/Inspector'
-import { ToolsPanel } from '@/editor/tools/ToolsPanel'
+import {
+  clampTimelineHeight,
+  DEFAULT_TIMELINE_PX,
+  readStoredHeight,
+  writeStoredHeight,
+} from '@/editor/layout/split'
+import { TimelineSplitter } from '@/editor/layout/TimelineSplitter'
+import { modeById } from '@/editor/rail/modes'
+import { ModeRail } from '@/editor/rail/ModeRail'
+import { ModePanel } from '@/editor/rail/panels'
+import { useRail } from '@/editor/rail/rail-store'
+import { useTools } from '@/editor/tools/jobs-store'
+import { Transport } from '@/editor/transport/Transport'
 import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
 import { Timeline } from '@/editor/timeline/Timeline'
-import { formatTimecode } from '@/editor/timeline/scale'
 import { listMedia } from '@/lib/api/endpoints'
-import { MediaBin } from '@/media/MediaBin'
 
 export function EditorClient({ projectId }: { projectId: string }) {
   const { status, account, signOut } = useSession()
@@ -107,10 +131,44 @@ function Workspace({
   onSignOut: () => void
 }) {
   const clips = useEditor(selectClips)
-  const durationMs = useEditor(selectDurationMs)
-  const isPlaying = useEditor((state) => state.isPlaying)
 
   const persistence = useProjectPersistence(projectId)
+  // Subscribed rather than read once: the project id arrives asynchronously,
+  // and `getState()` in a render would capture the null it had at mount.
+  const openProjectId = useEditor((state) => state.projectId)
+  const mode = modeById(useRail((state) => state.mode))
+
+  /**
+   * The timeline's height — M4.5 item 7.
+   *
+   * Kept here rather than in the editor store because it is not document state:
+   * it does not commit, it is not undoable, and it must never reach a patch or
+   * an autosave. It is remembered in `localStorage`, which is a property of this
+   * person and this screen rather than of the project.
+   */
+  const [timelineHeight, setStoredTimelineHeight] = useState(DEFAULT_TIMELINE_PX)
+  const [viewportHeight, setViewportHeight] = useState(0)
+
+  useEffect(() => {
+    setViewportHeight(window.innerHeight)
+    const onResize = () => setViewportHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Read once on mount, not during render: `localStorage` does not exist on the
+  // server, and reading it in a render body makes the first client paint differ
+  // from the markup Next produced.
+  useEffect(() => {
+    const stored = readStoredHeight(typeof window === 'undefined' ? null : window.localStorage)
+    if (stored !== null) setStoredTimelineHeight(clampTimelineHeight(stored, window.innerHeight))
+  }, [])
+
+  const setTimelineHeight = useCallback((next: number) => {
+    setStoredTimelineHeight(next)
+    writeStoredHeight(typeof window === 'undefined' ? null : window.localStorage, next)
+  }, [])
+
 
   /**
    * Signed proxy URLs, keyed by asset id.
@@ -144,6 +202,23 @@ function Workspace({
       // to play, which it already handles.
     }
   }, [])
+
+  /**
+   * One socket for the editor, opened here rather than by a panel.
+   *
+   * It used to live in `ToolsPanel`, which was fine while every tool was in one
+   * component and wrong the moment they became modes: a socket that opens when
+   * you click Captions and closes when you click Media would drop the progress
+   * of the job you just started. It also re-syncs on every reconnect, which is
+   * how a job that finished while the laptop slept is found rather than waited
+   * for.
+   */
+  useEffect(() => {
+    if (!openProjectId) return
+    const { connect, disconnect } = useTools.getState()
+    connect(openProjectId)
+    return () => disconnect()
+  }, [openProjectId])
 
   useEffect(() => {
     void loadAssets()
@@ -208,9 +283,6 @@ function Workspace({
   }, [persistence])
 
   const readyCount = useMemo(() => assets.size, [assets])
-  // Subscribed rather than read once: the project id arrives asynchronously,
-  // and `getState()` in a render would capture the null it had at mount.
-  const openProjectId = useEditor((state) => state.projectId)
   const save = SAVE_LABEL[persistence.status]
 
   return (
@@ -219,37 +291,21 @@ function Workspace({
         className="flex h-12 shrink-0 items-center gap-4 border-b px-4 text-xs"
         style={{ borderColor: 'var(--color-rule)' }}
       >
-        <button
-          type="button"
-          onClick={() => useEditor.getState().setPlaying(!isPlaying)}
-          disabled={durationMs === 0}
-          className="flex items-center gap-1.5 px-3 py-1 disabled:opacity-40"
-          style={{
-            borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-accent)',
-            color: 'var(--color-accent-ink)',
-            fontWeight: 600,
-          }}
-          data-testid="play"
-          data-playing={isPlaying}
-        >
-          {isPlaying ? <IconPause size={13} aria-hidden="true" /> : <IconPlay size={13} aria-hidden="true" />}
-          {isPlaying ? 'Pause' : 'Play'}
-        </button>
-        <span className="tnum" style={{ color: 'var(--color-ink-2)' }}>
-          {formatTimecode(durationMs, { withMillis: true })}
-        </span>
-
         <span data-testid="save-status" style={{ color: save.token }}>
           {save.text}
         </span>
 
-        <span
-          className="ml-auto uppercase tracking-widest"
-          style={{ color: 'var(--color-ink-3)' }}
+        {/* A way back out. Before M4.5 the editor was reachable only by URL
+            and had no link to anything else, so it was also a dead end once
+            you were in it. */}
+        <a
+          href="/projects"
+          className="ml-auto"
+          style={{ color: 'var(--color-ink-2)' }}
+          data-testid="back-to-projects"
         >
-          Captions · Smart trim · Colour
-        </span>
+          Projects
+        </a>
 
         <span
           className="tnum flex items-center gap-1"
@@ -289,12 +345,17 @@ function Workspace({
       )}
 
       <div className="flex min-h-0 flex-1">
+        <ModeRail />
+
+        {/* The mode's own content, where the media list used to be the only
+            thing that could go. One mode at a time — item 4. */}
         <aside
           className="w-72 shrink-0 border-r"
           style={{ borderColor: 'var(--color-rule)' }}
           data-ready-assets={readyCount}
+          data-testid="mode-content"
         >
-          <MediaBin />
+          <ModePanel mode={mode} />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -305,17 +366,31 @@ function Workspace({
               <Preview assets={assets} />
             </PreviewBoundary>
           </div>
-          <div className="h-44 shrink-0 overflow-hidden">
-            <Inspector />
-          </div>
+          {/* Item 2: under the picture, above the playhead, between the two
+              things it relates to. */}
+          <Transport />
         </div>
 
-        {/* The tools sit next to the clip they act on, and never block it:
-            editing carries on while a job runs. */}
-        <ToolsPanel projectId={openProjectId} />
+        {/* Properties of whatever is selected, and nothing else. It is no
+            longer asked to also hold a scrolling list of tools, which is what
+            makes it scale — item 4. */}
+        <aside
+          className="w-72 shrink-0 overflow-y-auto border-l"
+          style={{ borderColor: 'var(--color-rule)' }}
+        >
+          <Inspector />
+        </aside>
       </div>
 
-      <div className="h-48 shrink-0">
+      <TimelineSplitter
+        heightPx={timelineHeight}
+        viewportPx={viewportHeight}
+        onResize={setTimelineHeight}
+      />
+      {/* The padding is the neon frame's, not decoration for its own sake: the
+          ring and its bloom are drawn outside the timeline's box, and flush
+          against the window they were sheared off on three sides. */}
+      <div className="shrink-0 px-3 pb-3" style={{ height: timelineHeight }}>
         <Timeline />
       </div>
     </div>
@@ -370,13 +445,13 @@ function Toolbar() {
         Redo
       </Tool>
       <span className="mx-1" style={{ width: 1, height: 18, background: 'var(--color-rule)' }} />
-      {/* The tools live in the panel on the right, where they can show a price
-          and a progress bar. These were placeholders while they did not exist;
-          leaving them as dead buttons next to working ones would be worse than
-          the honest "M4" label they used to carry. */}
+      {/* The tools moved to the rail on the left in M4.5, as modes of their
+          own. This line follows them — a label pointing at a panel that no
+          longer exists is worse than no label, and it is the kind of thing only
+          opening the editor finds. */}
       <span className="ml-1 flex items-center gap-1" style={{ color: 'var(--color-ink-faint)' }}>
         <IconSparkles size={12} aria-hidden="true" />
-        AI tools are in the panel on the right
+        Colour, captions and smart trim are on the left
       </span>
     </div>
   )

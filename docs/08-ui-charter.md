@@ -83,6 +83,18 @@ The chrome is translucent white over near-black. The ladder below is the **compo
 
 One accent, one hex. There is no secondary brand colour and no gradient. A2 earns its warmth from a single ambient wash — `radial-gradient(440px 240px at 20% 6%, rgba(255,232,31,0.055), transparent 70%)` on the application background — and that wash is the only gradient in the product.
 
+> ### ⚠️ Amended 28 August 2026 — the vivid frame
+>
+> The project lead asked for a neon frame around the picture and the timeline, from a mockup showing each wrapped in a glowing cyan → magenta → green ring. **That is three hues and a conic gradient, and the paragraph above says there are neither.** The paragraph is amended rather than deleted, because the reason behind it survives intact and is the constraint the new colours are held to:
+>
+> * `--color-vivid-1` `#3DF0FF`, `--color-vivid-2` `#FF3AD2`, `--color-vivid-3` `#46FFA6` are **decoration and nothing else.** No state, no selection, no severity, no data value may be carried in them.
+> * **Yellow is still the only accent that means anything.** `--color-accent` remains active state, primary fill, playhead and live values; §3.4's semantic set still owns every signal.
+> * They appear in exactly two places — the preview frame and the timeline frame — through one class, `.vivid-frame`. A third use is a change to this document, not a styling decision.
+>
+> Each frame is **three layers**, and the third is the one that makes it read as modern rather than merely bright: a masked ring, a blurred bloom drawn from a thicker ring, and a wide low `box-shadow` halo on the frame itself. The halo cannot live on either pseudo-element — `filter` is applied before `mask`, so a `drop-shadow` on the ring is masked away with everything outside the hollow.
+>
+> Rule 3 of §2 — *no state is carried by hue alone* — is what makes this safe. The vivid colours carry no state at all, so they cannot violate it. What they do cost is §6's blur budget: two more composited layers, taking a full editor screen from five to seven. They are static and never re-rasterise, which is why this is recorded rather than refused.
+
 ### 3.4 Semantic colours
 
 | Token | Value | Used for |
@@ -327,6 +339,11 @@ This replaces the `@theme` block in [`../frontend/src/styles/globals.css`](../fr
   --color-accent-line: rgba(255, 232, 31, 0.5);
   --color-accent-glow: rgba(255, 232, 31, 0.22);
 
+  /* Vivid — decoration only, never state. See the §3.3 amendment. */
+  --color-vivid-1: #3df0ff;
+  --color-vivid-2: #ff3ad2;
+  --color-vivid-3: #46ffa6;
+
   /* Semantic */
   --color-danger: #ff5c5c;
   --color-warning: #ff9a2e;
@@ -420,4 +437,5 @@ The timeline is the hardest surface in the product to make accessible and the on
 
 | Version | Date | What |
 |---|---|---|
+| **1.1** | 28 August 2026 | **Amends §3.3**, which forbade a second brand colour and any gradient, to admit the vivid frame the project lead asked for: three neon hues and a conic ring around the picture and the timeline. Held to decoration only — they carry no state, and yellow remains the sole meaningful accent. Adds the three tokens to §13 and notes the cost against §6's blur budget |
 | **1.0** | 17 August 2026 | Written from A2 Studio, approved the same day. Corrects the baseline's label colour to meet 4.5:1 (§3.2), adds the semantic set with warning deliberately not yellow (§3.4), adds `--color-waveform-selected` because the canvas cannot inherit it (§3.5), and resolves the floating-bar overlap on 9:16 (§12) |

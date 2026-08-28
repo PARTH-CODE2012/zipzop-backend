@@ -92,11 +92,26 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------- billing
     # Empty until M6. Absence is checked at call time, not at startup, so the
     # rest of the application runs without payment credentials.
+    #
+    # **Razorpay is the launch provider** (25 August, docs/13-mvp-direction.md).
+    # Stripe is deferred, not dropped: the fields stay so adding the second
+    # adapter is configuration rather than a schema change.
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
+
+    #: Public by design — it ships in the browser bundle, like Stripe's
+    #: publishable key. `rzp_test_…` in test mode, `rzp_live_…` in production.
     razorpay_key_id: str = ""
+    #: **A credential, in test mode as much as in live mode.** Razorpay's own
+    #: dashboard calls this "the test key", which makes it sound like sample
+    #: data; it signs API calls against a real account. Never logged, never
+    #: committed — see docs/07-security.md §2.
     razorpay_key_secret: str = ""
+    #: A *third* secret, and not part of the pair above: it does not exist until
+    #: a webhook endpoint is created in the dashboard, where you choose it.
+    #: Without it the signature check on incoming webhooks cannot run, and that
+    #: check is the whole defence on the billing path (§8.5).
     razorpay_webhook_secret: str = ""
 
     # ------------------------------------------------------------ computed
@@ -143,6 +158,33 @@ def assert_production_safe() -> None:
         problems.append("DEBUG is enabled")
     if settings.s3_access_key_id == "zipzop":
         problems.append("S3 credentials are still the MinIO development pair")
+
+    # ---------------------------------------------------------------- billing
+    #
+    # **Only checked when a key is present.** Billing lands in M6, and until it
+    # does these are empty in every environment — refusing to boot over an
+    # absent payment provider would stop a production deploy of an application
+    # that does not take payments yet.
+    #
+    # Once one *is* configured, the same rule as everything above applies: a
+    # half-configured payment provider is worse than none, because it fails at
+    # the moment a customer is trying to pay rather than at startup.
+    if settings.razorpay_key_id:
+        if settings.razorpay_key_id.startswith("rzp_test_"):
+            # The failure this exists for. Test keys accept a card, return a
+            # success, and move no money — so a deploy with them looks like it
+            # works, right up until someone asks where the revenue is.
+            problems.append("RAZORPAY_KEY_ID is a test key (rzp_test_…) in production")
+        if not settings.razorpay_key_secret:
+            problems.append("RAZORPAY_KEY_ID is set but RAZORPAY_KEY_SECRET is empty")
+        if not settings.razorpay_webhook_secret:
+            # Without it there is no way to tell a real webhook from a forged
+            # one, and webhooks are what grant credits and mark subscriptions
+            # paid. An unverified billing callback is a way to grant a plan for
+            # free (docs/07-security.md §6.7).
+            problems.append(
+                "RAZORPAY_WEBHOOK_SECRET is empty — incoming webhooks could not be verified"
+            )
 
     if problems:
         raise RuntimeError("unsafe production configuration: " + "; ".join(problems))

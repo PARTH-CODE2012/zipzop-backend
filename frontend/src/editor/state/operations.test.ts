@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest'
 import {
   MIN_CLIP_MS,
   appendClip,
+  applyColorGrade,
+  clearColorGrade,
   duplicateClip,
   moveClip,
   removeClips,
@@ -310,6 +312,171 @@ describe('setClipProperties', () => {
   })
 })
 
+/**
+ * ⚠️ **A title could not be moved, trimmed, split or duplicated.**
+ *
+ * Every one of those operations went through a lookup that searched video and
+ * audio tracks only, so the gesture ran, the pointer moved, and the function
+ * returned without touching the document. Nothing errored and nothing changed —
+ * the worst shape a bug can take, because there is nothing to report.
+ *
+ * These are the tests that were missing: the media path was covered from the
+ * first day and the text path was never asked the same questions.
+ */
+describe('text clips are editable like any other', () => {
+  const withTitle = (over: Partial<Record<string, unknown>> = {}) => ({
+    schemaVersion: 1 as const,
+    tracks: [
+      {
+        id: 'trk_text',
+        kind: 'text' as const,
+        index: 0,
+        muted: false,
+        locked: false,
+        clips: [
+          {
+            id: 'clp_t1',
+            kind: 'title' as const,
+            startMs: 2_000,
+            durationMs: 3_000,
+            text: 'Chapter one',
+            styleId: 'caption_bold',
+            emphasis: 0,
+            position: { x: 0.5, y: 0.82, anchor: 'center' as const },
+            ...over,
+          },
+        ],
+      },
+    ],
+  })
+
+  const title = (document: TimelineDocument) => {
+    const track = document.tracks.find((each) => each.kind === 'text')
+    return track?.clips as { id: string; startMs: number; durationMs: number; text: string }[]
+  }
+
+  it('a title can be moved along the timeline', () => {
+    const document = edit(withTitle(), (draft) => {
+      moveClip(draft, 'clp_t1', 7_500)
+    })
+    expect(title(document)?.[0]?.startMs).toBe(7_500)
+  })
+
+  it('a title cannot be moved before zero', () => {
+    const document = edit(withTitle(), (draft) => {
+      moveClip(draft, 'clp_t1', -4_000)
+    })
+    expect(title(document)?.[0]?.startMs).toBe(0)
+  })
+
+  it('a title stops at its neighbour, like every other clip', () => {
+    const document = edit(
+      {
+        schemaVersion: 1,
+        tracks: [
+          {
+            id: 'trk_text',
+            kind: 'text',
+            index: 0,
+            muted: false,
+            locked: false,
+            clips: [
+              {
+                id: 'clp_a',
+                kind: 'title',
+                startMs: 0,
+                durationMs: 2_000,
+                text: 'one',
+                styleId: 'caption_bold',
+                emphasis: 0,
+              },
+              {
+                id: 'clp_b',
+                kind: 'title',
+                startMs: 5_000,
+                durationMs: 2_000,
+                text: 'two',
+                styleId: 'caption_bold',
+                emphasis: 0,
+              },
+            ],
+          },
+        ],
+      } as unknown as TimelineDocument,
+      (draft) => {
+        moveClip(draft, 'clp_b', 0)
+      },
+    )
+    // Invariant 1 holds on the text track exactly as it does on video.
+    expect(title(document)?.find((c) => c.id === 'clp_b')?.startMs).toBe(2_000)
+  })
+
+  it('a title can be trimmed from the right', () => {
+    const document = edit(withTitle(), (draft) => {
+      trimEnd(draft, 'clp_t1', 3_500)
+    })
+    expect(title(document)?.[0]?.durationMs).toBe(1_500)
+  })
+
+  it('a title can be trimmed from the left, and does not slide any media', () => {
+    const document = edit(withTitle(), (draft) => {
+      trimStart(draft, 'clp_t1', 3_000)
+    })
+    const found = title(document)?.[0]
+    expect(found?.startMs).toBe(3_000)
+    expect(found?.durationMs).toBe(2_000)
+    // There is no `sourceInMs` on a title. Nothing to keep in step.
+    expect(found).not.toHaveProperty('sourceInMs')
+  })
+
+  it('a caption may be trimmed shorter than a media clip may', () => {
+    // One spoken word is legitimately brief; a video clip that short is a
+    // frame of noise nobody meant to keep.
+    const document = edit(withTitle({ kind: 'caption', durationMs: 400 }), (draft) => {
+      trimEnd(draft, 'clp_t1', 2_050)
+    })
+    expect(title(document)?.[0]?.durationMs).toBe(80)
+  })
+
+  it('a title can be duplicated', () => {
+    const document = edit(withTitle(), (draft) => {
+      duplicateClip(draft, 'clp_t1')
+    })
+    const clips = title(document)
+    expect(clips).toHaveLength(2)
+    expect(clips?.[1]?.text).toBe('Chapter one')
+    expect(clips?.[1]?.startMs).toBe(5_000)
+  })
+
+  it('a duplicated caption stops claiming it came from a transcription', () => {
+    const document = edit(withTitle({ kind: 'caption', sourceJobId: 'job_1' }), (draft) => {
+      duplicateClip(draft, 'clp_t1')
+    })
+    const clips = title(document) as unknown as { sourceJobId: string | null }[]
+    expect(clips?.[0]?.sourceJobId).toBe('job_1')
+    expect(clips?.[1]?.sourceJobId).toBeNull()
+  })
+
+  it('a title can be split, and both halves keep the words', () => {
+    const document = edit(withTitle(), (draft) => {
+      splitAt(draft, 'clp_t1', 3_500)
+    })
+    const clips = title(document)
+    expect(clips).toHaveLength(2)
+    expect(clips?.[0]).toMatchObject({ startMs: 2_000, durationMs: 1_500, text: 'Chapter one' })
+    expect(clips?.[1]).toMatchObject({ startMs: 3_500, durationMs: 1_500, text: 'Chapter one' })
+  })
+
+  it('the whole text track still validates after being edited', () => {
+    const document = edit(withTitle(), (draft) => {
+      moveClip(draft, 'clp_t1', 9_000)
+      trimEnd(draft, 'clp_t1', 11_000)
+      duplicateClip(draft, 'clp_t1')
+    })
+    expect(violatedInvariants(document)).toEqual([])
+  })
+})
+
 describe('setTransition', () => {
   it('clamps to half the shorter clip it joins', () => {
     const document = edit(
@@ -414,5 +581,63 @@ describe('transitions stay inside invariant 7 after the clips move', () => {
     // 400 <= half of 4000: untouched, and untouched means no Immer patch and
     // therefore no spurious undo step.
     expect(byId(document, 'clp_a')?.transitionOut).toEqual({ type: 'dissolve', durationMs: 400 })
+  })
+})
+
+// --------------------------------------------------------------------------
+
+describe('colour grade', () => {
+  it('writes one effect', () => {
+    const next = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cinematic_warm', strength: 0.6 }),
+    )
+    expect(byId(next, 'clp_a')?.effects).toEqual([
+      { type: 'color_grade', lut: 'cinematic_warm', strength: 0.6, sourceJobId: null },
+    ])
+  })
+
+  it('replaces rather than stacks', () => {
+    // Two LUTs on one clip produce a picture neither of them describes, and the
+    // manual picker in M4.5 makes swapping looks the common case rather than
+    // the rare one.
+    const once = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cinematic_warm', strength: 0.6 }),
+    )
+    const twice = edit(once, (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 0.6 }),
+    )
+    expect(byId(twice, 'clp_a')?.effects).toEqual([
+      { type: 'color_grade', lut: 'cyberpunk', strength: 0.6, sourceJobId: null },
+    ])
+  })
+
+  it('clamps strength into 0-1', () => {
+    const next = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 4 }),
+    )
+    expect(byId(next, 'clp_a')?.effects[0]).toMatchObject({ strength: 1 })
+  })
+})
+
+describe('clearColorGrade', () => {
+  it('removes the entry rather than zeroing its strength', () => {
+    // A clip with no look has no `color_grade` effect, so the renderer never
+    // has to decide whether a zero-strength LUT means anything.
+    const graded = edit(timeline(clip()), (draft) =>
+      applyColorGrade(draft, 'clp_a', { lut: 'cyberpunk', strength: 0.8 }),
+    )
+    const cleared = edit(graded, (draft) => clearColorGrade(draft, 'clp_a'))
+    expect(byId(cleared, 'clp_a')?.effects).toEqual([])
+  })
+
+  it('leaves a clip that was never graded alone', () => {
+    const next = edit(timeline(clip()), (draft) => clearColorGrade(draft, 'clp_a'))
+    expect(byId(next, 'clp_a')?.effects).toEqual([])
+  })
+
+  it('does nothing for a clip that is not there', () => {
+    expect(() =>
+      edit(timeline(clip()), (draft) => clearColorGrade(draft, 'clp_missing')),
+    ).not.toThrow()
   })
 })

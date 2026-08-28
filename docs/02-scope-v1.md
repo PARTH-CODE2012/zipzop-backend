@@ -8,13 +8,21 @@ Everything here is a commitment. Everything not here is not in phase 1, however 
 | **Version** | 1.1 — billing folded in |
 | **Date** | 13 August 2026 |
 | **Depends on** | [`01-product-vision.md`](01-product-vision.md) — the *why* behind every line here |
-| **Status** | **Confirmed.** Tool selection, commercial model, cloud and payment providers all settled. Nothing blocks starting. |
+| **Status** | **Confirmed, and added to on 25 August** — read [`13-mvp-direction.md`](13-mvp-direction.md) alongside it. Nothing here is cut. |
+
+> **Added on 25 August 2026, not replaced.** The project lead's MVP direction
+> means *phase 1 as scoped below*, plus three things this document does not
+> mention: a **fifth plan at $3.99** sold to a Discord audience and removed
+> later, a **promo-code referral scheme** paying server owners 15%, and
+> **templates**. The only line below that moves is *"both providers at launch"*
+> — Razorpay ships first and Stripe is deferred. Everything else stands as
+> written.
 
 ---
 
 ## 1. Phase 1 in one paragraph
 
-A **web** video editor. The user signs up, imports footage, arranges it on a timeline with one video track, one audio track and one text track, previews it in the browser, and exports a finished file. Three AI tools sit in the toolbar: **automatic captions**, **smart trimming**, and **colour grading**. Each analyses the footage on our servers and returns edit decisions that land on the timeline, where the user can adjust or undo them. Editing is free; the AI tools and export spend credits. Users start on a free tier and can subscribe to one of three paid plans, paying through Stripe or Razorpay.
+A **web** video editor. The user signs up, imports footage, arranges it on a timeline with one video track, one audio track and one text track, previews it in the browser, and exports a finished file. Three AI tools sit in the toolbar: **automatic captions**, **smart trimming**, and **colour grading**. Each analyses the footage on our servers and returns edit decisions that land on the timeline, where the user can adjust or undo them. Editing is free; the AI tools and export spend credits. Users start on a free tier and can subscribe to one of ~~three~~ **four** paid plans — a **$3.99 `beta` tier** was added on 25 August for the Discord launch and is removed once that campaign ends ([`13-mvp-direction.md`](13-mvp-direction.md) §3) — paying through ~~Stripe or Razorpay~~ **Razorpay, with Stripe deferred rather than dropped**.
 
 No face mapping. No mobile app. That is phase 2 and phase 3.
 
@@ -40,6 +48,19 @@ No face mapping. No mobile app. That is phase 2 and phase 3.
 ## 3. What ships in phase 1
 
 ### 3.1 Accounts and billing
+
+> **Added 25 August — see [`13-mvp-direction.md`](13-mvp-direction.md) §3 and §6.**
+> Everything in this section stands. On top of it: a **fifth `beta` plan at
+> $3.99 / ₹199** (800 credits, 1080p, no watermark, free-tier queue priority).
+> It is **a beta price, charged while the rest of the product is still being
+> built**, to get paying testers whose feedback is the return on it — which is
+> why it is called `beta`, why the allowance is generous for the price, and why
+> it is retired later by setting `plans.is_public` to false. The column already
+> exists, so nobody loses what they bought. Plus a **promo-code
+> field at sign-up** that attributes the user to a Discord server owner
+> permanently and pays them **15% of every renewal**, and grants the user **+300
+> bonus credits** rather than a discount. **Razorpay ships first; Stripe is
+> deferred, not dropped.**
 
 - Sign up and sign in with email and password
 - Session that survives a page reload
@@ -82,7 +103,7 @@ The 2 GB global default proposed in v1.0 is superseded. The ceiling rising to 5 
 
 | Area | Phase 1 | Not phase 1 |
 |---|---|---|
-| **Projects** | Create, rename, duplicate, delete, autosave, reopen where you left off | Templates, folders, sharing |
+| **Projects** | Create, rename, duplicate, delete, autosave, reopen where you left off · **save a template and reapply it** (added 25 August) | ~~Templates~~ *a supplied template library*, folders, sharing |
 | **Timeline** | One video track, one audio track, one text track. Playhead, zoom, snap, scrub | Multiple video tracks, overlay tracks, track groups |
 | **Clip edits** | Split, trim both ends, move, reorder, duplicate, delete | Ripple/roll edits, magnetic timeline |
 | **Clip properties** | Volume, speed (fixed rate), rotate, flip, crop and reframe to the project aspect ratio | Speed ramps, keyframed properties, motion paths |
@@ -93,9 +114,26 @@ The 2 GB global default proposed in v1.0 is superseded. The ceiling rising to 5 
 | **Preview** | Real-time playback of the whole timeline with everything applied, in the browser, on proxy media | 4K preview, external monitor output |
 | **Export** | 720p/1080p/4K by plan · 9:16, 16:9, 1:1 · MP4/H.264 · watermark by plan · progress and notification | Custom bitrates, ProRes, GIF |
 
+**Templates, added 25 August.** A template is **the user's own settings, saved
+and reapplied** — caption style, colour grade, transition defaults, title
+styling. It is a subset of the timeline document stored against the account, so
+it needs no worker, no queue, no credits and no new job type.
+
+What is still *not* phase 1 is the other meaning of the word: a **supplied
+library** of designed templates with mood detection, which is
+[`vision.md`](../vision.md) §Features 04 & 05 and carries two commercial problems
+with no owner — a licensed music library, and naming templates after real people.
+Reasoning in [`13-mvp-direction.md`](13-mvp-direction.md) §4.
+
 ### 3.4 The three AI tools
 
 All three are **analysis** tools: they return decisions, not media. That is what makes phase 1 shippable without a GPU cluster.
+
+> **Unchanged by the 25 August direction.** All three ship, and two of them
+> already do. **Templates is not a fourth AI tool** — it returns no analysis and
+> runs no job, so it sits in §3.3 with the editor. Keeping this section at three
+> is what keeps the sentence above true, and that sentence is the reason phase 1
+> needs no GPU ([`13-mvp-direction.md`](13-mvp-direction.md) §4).
 
 #### Automatic Captions
 
@@ -225,14 +263,18 @@ Workstreams that can run in parallel once [`05-api-contract.md`](05-api-contract
 
 ## 8. Blocking
 
-**Nothing.** Every decision phase 1 depends on is answered: the tool selection, the tiers and pricing, both payment providers, and AWS on a company account.
+**Still nothing.** The 25 August direction added scope but blocked no work: what
+a template means, what the promo code grants, and how the `beta` plan is
+priced and later retired were all decided on the day
+([`13-mvp-direction.md`](13-mvp-direction.md)).
 
-Two things still need to happen, but neither stops work starting today:
+Three things still need to happen, and none of them stops work:
 
 | | What | Needed by | Owner |
 |---|---|---|---|
-| **1** | Open the Stripe and Razorpay accounts | Before billing can be tested end to end | Project lead — external lead time, start now |
+| **1** | ~~Open the Stripe and Razorpay accounts~~ → **the Razorpay account**, and confirm it can charge in **USD** — $3.99 is a dollar price on an Indian processor and international activation is a separate application. Stripe is deferred, so its application can wait | Before billing can be tested end to end | Project lead — external lead time, start now |
 | **2** | Smart Trim: tighten a recording, or cut it to its best parts? | Before we describe it publicly | Project lead |
+| **3** | 🔴 **How Discord server owners actually get paid** — schedule, threshold, channel, tax | Before the tenth server owner, not the first. Accrual and manual payment of the first cohort are already decided, which is what keeps this off the critical path | **Unowned** — needs one, like the provider applications did |
 
 The credit numbers per tier are proposals derived from estimated costs ([`03-backend-architecture.md`](03-backend-architecture.md) §5.5). They live in one table and one module, so re-pricing once real cost-per-job is measured is a data change, not a rebuild. Build against them as they stand.
 

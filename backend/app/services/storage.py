@@ -131,13 +131,31 @@ def start_multipart(key: str, content_type: str, size_bytes: int) -> MultipartUp
 
     A single PUT of a 2 GB file over a phone connection is one timeout away
     from starting again from zero; a failed part is a retry of 8 MB.
+
+    **Creating the upload and signing its parts are separate on purpose** —
+    `presign_parts` below. An upload id lives until the upload is completed or
+    aborted, but the URLs signed against it expire in fifteen minutes, so a
+    client that comes back for fresh URLs must get them for the upload it
+    already started rather than a new one. Calling this twice for the same
+    asset leaves the first upload's parts in the bucket with nothing pointing
+    at them, billed until something aborts them.
     """
-    part_size = _part_size_for(size_bytes)
     created = client().create_multipart_upload(
         Bucket=settings.s3_bucket, Key=key, ContentType=content_type
     )
-    upload_id = created["UploadId"]
+    return presign_parts(key, str(created["UploadId"]), size_bytes)
 
+
+def presign_parts(key: str, upload_id: str, size_bytes: int) -> MultipartUpload:
+    """Fresh part URLs for an upload that already exists.
+
+    The part size is derived from `size_bytes` rather than stored, so this has
+    to be called with the same size the upload was created for — otherwise the
+    part boundaries move and the parts already uploaded no longer line up.
+    `size_bytes` is on the asset row from the reservation, which is where the
+    caller gets it.
+    """
+    part_size = _part_size_for(size_bytes)
     count = max(1, -(-size_bytes // part_size))  # ceiling division
     parts = [
         {

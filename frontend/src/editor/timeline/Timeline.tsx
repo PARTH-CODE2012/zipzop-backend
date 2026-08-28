@@ -272,10 +272,22 @@ export function Timeline() {
 
   return (
     <section
-      className="no-select flex flex-col"
+      // No `overflow-hidden` here, deliberately: the ring and its bloom are
+      // drawn outside this box, and clipping the box clips them away entirely.
+      className="vivid-frame vivid-frame--wide no-select flex h-full flex-col"
+      // M4.5 item 7. It was *"a fixed-height block at the bottom of the window
+      // with no border and no visual relationship to anything above it"* — all
+      // of its legibility came from inside the component. It is now a raised
+      // surface with its own rule and radius, so it reads as a region of the
+      // editor rather than something parked underneath one. The height it sits
+      // at is the workspace's business, and draggable since the same item.
       style={{
-        borderTop: '1px solid var(--color-rule)',
         background: 'var(--color-surface-2)',
+        // The grey rule and its inset highlight are gone: they were what told
+        // you the timeline was a region of its own, and the neon frame now says
+        // that far louder. Keeping both left a dull line running through a lit
+        // edge.
+        borderRadius: 'var(--radius-sm)',
       }}
       data-testid="timeline"
       data-zoom={zoom}
@@ -293,7 +305,19 @@ export function Timeline() {
         </span>
         <span className="tnum">/ {formatTimecode(durationMs, { withMillis: true })}</span>
         <span className="tnum">{allClips.length} clips</span>
-        <span className="ml-auto">alt suppresses snapping</span>
+        {/* M4.5 item 6, the discoverability half. The precise zoom — ctrl/⌘ +
+            wheel, anchored on the cursor — has existed since M3 and was
+            findable only by reading the source. The complaint was really *"the
+            slider is coarse and I did not know the precise way existed"*, and
+            it goes away the moment the precise way is named on screen.
+
+            Decided 22 August: the behaviour itself does **not** change. Plain
+            wheel keeps scrolling, because horizontal scrolling on a timeline is
+            not optional, and ctrl+wheel-to-zoom is the convention every browser
+            already teaches. */}
+        <span className="ml-auto" style={{ color: 'var(--color-ink-faint)' }}>
+          alt suppresses snapping
+        </span>
         <label className="flex items-center gap-2">
           <span>Zoom</span>
           <input
@@ -303,10 +327,19 @@ export function Timeline() {
             step={1}
             value={zoom}
             onChange={(event) => useEditor.getState().setZoom(Number(event.target.value))}
+            className="w-24"
             data-testid="zoom"
             aria-label="Timeline zoom"
           />
         </label>
+        <span
+          className="whitespace-nowrap"
+          style={{ color: 'var(--color-ink-faint)' }}
+          title="Hold ctrl (or ⌘) and scroll over the timeline to zoom around the pointer"
+          data-testid="zoom-hint"
+        >
+          <kbd style={{ fontFamily: 'inherit' }}>ctrl</kbd> + scroll to zoom here
+        </span>
       </header>
 
       <div className="flex min-h-0 flex-1">
