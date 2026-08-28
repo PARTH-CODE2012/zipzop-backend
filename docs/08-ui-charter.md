@@ -91,7 +91,9 @@ One accent, one hex. There is no secondary brand colour and no gradient. A2 earn
 > * **Yellow is still the only accent that means anything.** `--color-accent` remains active state, primary fill, playhead and live values; §3.4's semantic set still owns every signal.
 > * They appear in exactly two places — the preview frame and the timeline frame — through one class, `.vivid-frame`. A third use is a change to this document, not a styling decision.
 >
-> Each frame is **three layers**, and the third is the one that makes it read as modern rather than merely bright: a masked ring, a blurred bloom drawn from a thicker ring, and a wide low `box-shadow` halo on the frame itself. The halo cannot live on either pseudo-element — `filter` is applied before `mask`, so a `drop-shadow` on the ring is masked away with everything outside the hollow.
+> Each frame is a masked gradient ring, a blurred copy of that ring drawn from a thicker band, and a 1px inset white core. **The glow blends `screen`, not plain `opacity`** — a translucent layer darkens what it tints, so at plain opacity the glow greyed out the panels it reached and two of them compounded into muddy corners. Screen-blended it can only brighten, which is what light does.
+>
+> Three things this got wrong first, all of them visible only up close: a `box-shadow` halo that painted *over* the neighbouring transport bar, pseudo-elements sharing the frame's `border-radius` so their corners were not concentric and a square notch of black showed through, and a green → magenta stop pair that interpolated the short way — through **yellow**, the one hue §3.4 reserves. Each is written up next to the rule it broke in `globals.css`.
 >
 > Rule 3 of §2 — *no state is carried by hue alone* — is what makes this safe. The vivid colours carry no state at all, so they cannot violate it. What they do cost is §6's blur budget: two more composited layers, taking a full editor screen from five to seven. They are static and never re-rasterise, which is why this is recorded rather than refused.
 
