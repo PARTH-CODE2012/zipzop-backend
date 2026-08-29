@@ -166,55 +166,58 @@ body {
 /* ==========================================================================
    The vivid frame — the neon ring around the picture and around the timeline.
 
-   Two rings, not one ring and one fill: `::before` is the same gradient blurred
-   into a bloom, `::after` is the crisp 2px edge on top of it. Both are masked
-   hollow, and that is what makes this safe to put over the picture — a blurred
-   *rectangle* would wash the video out, a blurred *ring* only lights its edge.
+   **The glow is light, not a coloured film, and that is the whole difference
+   between this reading as neon and reading as a sticker.** The first version
+   stacked two translucent layers at plain `opacity` over the interface: a
+   translucent layer *darkens* what is under it as it tints, so the glow greyed
+   out the panels it touched and the two layers doubled up into muddy corners.
+   `mix-blend-mode: screen` makes the glow add to its backdrop the way light
+   does — it can only brighten, never darken, and where two glows meet they sum
+   instead of compounding into sludge.
 
-   No negative `z-index` anywhere here, on purpose. `position: relative` does
-   not open a stacking context, so a `z-index: -1` bloom escapes to whichever
-   ancestor does and paints behind that ancestor's background — which on the
-   preview is an opaque wash, so the glow would simply vanish. Painting both
-   rings above the content and relying on the mask for the hole has no such
-   dependency on what any ancestor happens to be doing.
+   One glow layer, not two plus a `box-shadow` halo. The halo was the worst of
+   it: `.vivid-frame` is positioned, so its shadow painted *over* the transport
+   bar and the panel edges next to it — a 75px coloured wash sitting on top of
+   neighbouring controls. A single screen-blended ring falls off on its own and
+   lands in the dark space the frames are given.
 
-   Cost, stated rather than discovered later: one blurred layer per frame, and
-   the charter's §6 budget is five per screen for the chrome. Two frames takes
-   the screen to seven. They are static — no animation, no transition, nothing
-   that re-rasterises them while the timeline scrolls — which is why this is a
-   note and not a refusal. If a third is ever wanted, measure first.
+   Three details that are easy to get wrong:
+
+   1. **Hue interpolation in OKLCH.** In sRGB, cyan → magenta passes through a
+      dull grey and green → magenta through mud, so the ring had dead stretches
+      between its three colours. OKLCH holds chroma across the transition, so
+      the whole ring stays saturated.
+   2. **No negative `z-index`.** `position: relative` opens no stacking context,
+      so a `z-index: -1` glow escapes to whichever ancestor does and paints
+      behind *that* ancestor's background — on the preview an opaque wash, so
+      the glow would simply vanish. The mask makes the hole instead.
+   3. **`filter` is applied before `mask`.** A `drop-shadow` on the ring is
+      therefore masked away with everything outside the hollow, which is why
+      the spread has to come from a blurred ring rather than a shadow.
+
+   Cost, stated rather than discovered later: one blurred, blended layer per
+   frame against the charter's §6 budget of five per screen for the chrome —
+   seven on a full editor. Static, never re-rasterised while the timeline
+   scrolls. If a third frame is ever wanted, measure first.
    ========================================================================== */
 .vivid-frame {
-  --vivid-ring: 2.5px;
-  /* The bloom is drawn from a *thicker* ring than the crisp edge, and this is
-     the whole trick. Blurring a 2px ring over 20px spreads it so thin it reads
-     as a smudge; blurring a 9px one gives it something to spend. */
-  --vivid-bloom-ring: 9px;
-  --vivid-bloom: 28px;
-  --vivid-bloom-opacity: 1;
-  /* The far halo — §"three layers" below. */
-  --vivid-halo: 34px;
+  --vivid-ring: 2px;
+  /* The glow is drawn from a *thicker* ring than the crisp edge, and this is
+     the trick that makes it a glow at all: blurring a 2px ring over 24px
+     spreads it so thin it reads as a smudge, a 10px one has something to
+     spend. */
+  --vivid-glow-ring: 10px;
+  --vivid-glow-blur: 22px;
+  --vivid-glow-strength: 0.9;
+  --vivid-radius: var(--radius-md);
 
   position: relative;
-  border-radius: var(--radius-md);
+  border-radius: var(--vivid-radius);
 
-  /* **Three layers, not two, and the third is what was missing.** The masked
-     ring and its bloom both stop within about 30px of the edge, which gives a
-     bright line and a tight glow — correct, and flat. What reads as modern is
-     the wide, low ambient wash further out, and it cannot come from either
-     pseudo-element: `filter` is applied *before* `mask` in the rendering
-     model, so a `drop-shadow` on the ring is masked away with everything else
-     outside the hollow.
-
-     So it lives on the frame itself, which has no mask, as an ordinary
-     `box-shadow`. Two hues rather than three: a third is not distinguishable
-     at this opacity and costs another shadow to composite.
-
-     `color-mix` rather than a second set of `rgba()` tokens, so the halo is
-     derived from the colour it belongs to and cannot drift from it. */
-  box-shadow:
-    0 0 var(--vivid-halo) color-mix(in srgb, var(--color-vivid-1) 26%, transparent),
-    0 0 calc(var(--vivid-halo) * 1.7) color-mix(in srgb, var(--color-vivid-2) 15%, transparent);
+  /* The core. Real neon is a bright centre inside a coloured halo, and without
+     this the ring meets the picture as one flat saturated band. Inset, so it
+     cannot spill onto anything outside the frame the way the old halo did. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 14%, transparent);
 }
 
 .vivid-frame::before,
@@ -222,16 +225,38 @@ body {
   content: '';
   position: absolute;
   inset: calc(var(--vivid-ring) * -1);
-  border-radius: inherit;
+  /* **Not `inherit`.** A box pushed 2px outward needs 2px more corner radius to
+     stay concentric with what it surrounds; with the same radius its inner
+     curve is tighter than the picture's and a small square notch of black
+     shows through at every corner. Invisible at 100%, obvious the moment you
+     look at a corner closely, and the first thing that made this read as
+     cheap. */
+  border-radius: calc(var(--vivid-radius) + var(--vivid-ring));
   padding: var(--vivid-ring);
   pointer-events: none;
   /* Conic rather than linear: the hue has to travel *around* the frame, and a
-     linear gradient on a wide timeline leaves the short edges one flat colour. */
+     linear gradient on a wide timeline leaves the short edges one flat colour.
+     The angle puts cyan at the top-left, green down the right and magenta
+     along the bottom, which is the arrangement in the mockup.
+
+     **The blue stop at 58% is load-bearing.** Interpolation takes the shorter
+     way round the hue circle, and green → magenta is shorter through red and
+     yellow than through blue. Going straight from one to the other put a
+     yellow-orange band along the bottom of both frames: ugly, and worse than
+     ugly, because **yellow is the accent that means *active*** — §3.4 of the
+     charter is emphatic that it may not be confused with anything else. A stop
+     between them, mixed from the two ends so it cannot drift from them, splits
+     that arc into two short ones on the blue side, and the ring never reaches
+     yellow or red at all.
+
+     The alternative — returning through cyan — also works and was tried; it
+     leaves cyan on three stops out of five and the ring goes monochrome. */
   background: conic-gradient(
-    from 210deg,
+    from 315deg in oklch,
     var(--color-vivid-1),
-    var(--color-vivid-2) 33%,
-    var(--color-vivid-3) 66%,
+    var(--color-vivid-3) 30%,
+    color-mix(in oklch, var(--color-vivid-1), var(--color-vivid-2)) 58%,
+    var(--color-vivid-2) 76%,
     var(--color-vivid-1)
   );
   /* Fill the padding box only — the hollow that makes it a ring. */
@@ -245,22 +270,23 @@ body {
   mask-composite: exclude;
 }
 
-/* The bloom. First in paint order, so the picture covers its inward half and
-   only the outward glow escapes the frame. */
+/* The glow. First in paint order, so the picture covers its inward half and
+   only the outward light escapes the frame. */
 .vivid-frame::before {
-  inset: calc(var(--vivid-bloom-ring) * -1);
-  padding: var(--vivid-bloom-ring);
-  filter: blur(var(--vivid-bloom));
-  opacity: var(--vivid-bloom-opacity);
+  inset: calc(var(--vivid-glow-ring) * -1);
+  border-radius: calc(var(--vivid-radius) + var(--vivid-glow-ring));
+  padding: var(--vivid-glow-ring);
+  filter: blur(var(--vivid-glow-blur));
+  opacity: var(--vivid-glow-strength);
+  mix-blend-mode: screen;
 }
 
 /* Wider and softer, and squared off at the ends: the timeline spans the window
    and a 16px radius on a 1900px-wide panel reads as a mistake rather than a
    curve. */
 .vivid-frame--wide {
-  --vivid-bloom: 32px;
-  --vivid-halo: 44px;
-  border-radius: var(--radius-sm);
+  --vivid-glow-blur: 26px;
+  --vivid-radius: var(--radius-sm);
 }
 
 /* Every number that changes while the user watches it: timecodes, durations,

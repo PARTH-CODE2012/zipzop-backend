@@ -150,7 +150,10 @@ export function Preview({ assets }: PreviewProps) {
   }, [playheadMs])
 
   return (
-    <div className="relative flex h-full w-full items-center justify-center bg-black/40">
+    // `p-4` belongs to the neon frame: its glow is drawn outside the picture's
+    // box, and with the picture flush to the panel edges the light fell on the
+    // media list and the inspector instead of on dark space.
+    <div className="relative flex h-full w-full items-center justify-center bg-black/40 p-4">
       {/* `vivid-frame` is the neon ring — decoration only, and defined once in
           globals.css so no colour lands in this file. It sits on the picture's
           own box rather than the container so it tracks the 16:9 letterbox
