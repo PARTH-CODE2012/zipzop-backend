@@ -229,7 +229,10 @@ spike-media: ## Generate the M1 compositor spike's test clips and LUT (needs ffm
 
 .PHONY: luts
 luts: ## Generate the five shared .cube grades the browser and the renderer both read
-	python3 scripts/make_luts.py $(FRONTEND)/public/luts
+	$(PYTHON) scripts/make_luts.py $(BACKEND)/app/assets/luts
+	@# The browser's copy. Same script the frontend's own dev/build/test run, so
+	@# there is one way to produce it and it cannot drift from the backend's.
+	cd $(FRONTEND) && node scripts/sync-luts.mjs
 
 # --------------------------------------------------------------------- e2e ---
 # M2's closing condition, checked in a real browser. See frontend/e2e/README.md

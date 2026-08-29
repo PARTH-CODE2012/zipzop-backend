@@ -39,6 +39,12 @@ frontend/src/lib/api/generated.ts
 frontend/public/spike/media/
 frontend/public/spike/luts/
 
+# The browser's copy of the grades. `backend/app/assets/luts/` is the source of
+# truth — the renderer needs them on disk and the image is built from backend/ —
+# and `pnpm dev|build|test` copies them here. Committing both is two files that
+# are meant to be identical and a day when they are not.
+frontend/public/luts/
+
 # The end-to-end fixture, same reasoning: 2 MB of encoded video that no review
 # reads. `make e2e-media` rebuilds it.
 frontend/e2e/fixture.mp4
