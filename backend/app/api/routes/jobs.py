@@ -30,6 +30,7 @@ from app.api.errors import (
     NotFoundError,
     PlanLimitExceededError,
     UnsupportedMediaError,
+    VersionConflictError,
 )
 from app.api.schemas.common import Page
 from app.api.schemas.job import (
@@ -61,6 +62,7 @@ _REJECTION_ERRORS: dict[str, type[APIError]] = {
     "INSUFFICIENT_CREDITS": InsufficientCreditsError,
     "FAIR_USE_EXCEEDED": FairUseExceededError,
     "PLAN_LIMIT_EXCEEDED": PlanLimitExceededError,
+    "VERSION_CONFLICT": VersionConflictError,
 }
 
 
@@ -177,6 +179,7 @@ async def estimate_job(
             topup_credits=user.topup_credits,
             tool=body.tool,
             job_input=body.input,
+            project_id=body.project_id,
         )
     except QuoteRejectionError as rejection:
         _raise(rejection)
@@ -227,6 +230,7 @@ async def create_job(
             topup_credits=user.topup_credits,
             tool=body.tool,
             job_input=body.input,
+            project_id=body.project_id,
         )
     except QuoteRejectionError as rejection:
         _raise(rejection)

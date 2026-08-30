@@ -371,6 +371,9 @@
               },
               {
                 "$ref": "#/components/schemas/ColorAnalysisInput"
+              },
+              {
+                "$ref": "#/components/schemas/ExportInput"
               }
             ],
             "title": "Input"
@@ -559,6 +562,67 @@
           "sufficientBalance"
         ],
         "title": "EstimateResponse",
+        "type": "object"
+      },
+      "ExportInput": {
+        "description": "The one input with no `assetId`: an export is of a *project*, not of a\nclip. `projectId` on the request body carries it.\n\n**`timelineVersion` is not optimistic locking, it is a refusal to guess.**\nEvery other tool reads an asset that cannot change underneath it. An export\nreads the timeline, and a timeline the user has edited since they pressed\nthe button is a render of something they are no longer looking at \u2014 so a\nmismatch is `409 VERSION_CONFLICT` rather than a render of the current\nversion (contract \u00a76.2).",
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/ExportPreset"
+          },
+          "timelineVersion": {
+            "minimum": 1.0,
+            "title": "Timelineversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timelineVersion"
+        ],
+        "title": "ExportInput",
+        "type": "object"
+      },
+      "ExportPreset": {
+        "description": "What the file should be \u2014 contract \u00a76.2.\n\nNames rather than numbers throughout. A preset is a promise about the\noutput, and `resolution: \"1080p\"` still means the same thing next year\nwhile `height: 1080` invites a client to send 1081.",
+        "properties": {
+          "aspectRatio": {
+            "default": "9:16",
+            "enum": [
+              "9:16",
+              "1:1",
+              "16:9"
+            ],
+            "title": "Aspectratio",
+            "type": "string"
+          },
+          "format": {
+            "const": "mp4",
+            "default": "mp4",
+            "title": "Format",
+            "type": "string"
+          },
+          "quality": {
+            "default": "high",
+            "enum": [
+              "draft",
+              "standard",
+              "high"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "resolution": {
+            "default": "1080p",
+            "enum": [
+              "720p",
+              "1080p",
+              "2160p"
+            ],
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "title": "ExportPreset",
         "type": "object"
       },
       "HTTPValidationError": {

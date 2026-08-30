@@ -18,13 +18,30 @@ from app.api.schemas.common import ApiModel
 from app.models import JobFamily, JobStatus, JobTool
 from app.services import languages
 
-#: The tools `POST /jobs` accepts today. `export` is M5 and the phase-2 tools
-#: are phase 2 — listing them here would put endpoints in the contract that
-#: answer 500, and a client generated from that schema would offer buttons that
-#: cannot work.
-PHASE_1_TOOLS = (JobTool.CAPTIONS, JobTool.SMART_TRIM, JobTool.COLOR_ANALYSIS)
+#: The tools `POST /jobs` accepts today. The phase-2 tools are phase 2 —
+#: listing them here would put endpoints in the contract that answer 500, and a
+#: client generated from that schema would offer buttons that cannot work.
+#:
+#: `export` joined on 28 August, in M5.
+PHASE_1_TOOLS = (
+    JobTool.CAPTIONS,
+    JobTool.SMART_TRIM,
+    JobTool.COLOR_ANALYSIS,
+    JobTool.EXPORT,
+)
 
 TRIM_STRENGTHS = ("light", "medium", "aggressive")
+
+#: Export heights, by the name a user sees. Exactly the ladder the seeded plan
+#: ceilings name (`plans.max_export_height` is 720, 1080 or 2160) — offering a
+#: 1440p that no plan's ceiling refers to would be a tier invented in a schema.
+EXPORT_HEIGHTS: dict[str, int] = {"720p": 720, "1080p": 1080, "2160p": 2160}
+
+#: Constant Rate Factor for x264, lower being better. Not exposed as a number:
+#: "18" means nothing to the person choosing, and pinning the mapping here keeps
+#: a preset's meaning the same across every render rather than travelling in the
+#: job payload where an old queued job would render at the old meaning.
+EXPORT_QUALITY_CRF: dict[str, int] = {"draft": 26, "standard": 21, "high": 18}
 
 
 class RangeMs(ApiModel):
@@ -82,16 +99,62 @@ class ColorAnalysisInput(_AssetInput):
     preferred_look: str | None = None
 
 
+class ExportPreset(ApiModel):
+    """What the file should be — contract §6.2.
+
+    Names rather than numbers throughout. A preset is a promise about the
+    output, and `resolution: "1080p"` still means the same thing next year
+    while `height: 1080` invites a client to send 1081.
+    """
+
+    resolution: Literal["720p", "1080p", "2160p"] = "1080p"
+    #: Vertical first: the product is short-form. Nothing here is squeezed —
+    #: the renderer scales to fit and pads, so a 16:9 source in a 9:16 frame
+    #: keeps its geometry (docs/03 §7).
+    aspect_ratio: Literal["9:16", "1:1", "16:9"] = "9:16"
+    quality: Literal["draft", "standard", "high"] = "high"
+    #: One format in phase 1. H.264 in MP4 is the only thing that plays
+    #: everywhere the audience is, and a second container is a second matrix of
+    #: codec support to test.
+    format: Literal["mp4"] = "mp4"
+
+    @property
+    def height(self) -> int:
+        return EXPORT_HEIGHTS[self.resolution]
+
+    @property
+    def crf(self) -> int:
+        return EXPORT_QUALITY_CRF[self.quality]
+
+
+class ExportInput(ApiModel):
+    """The one input with no `assetId`: an export is of a *project*, not of a
+    clip. `projectId` on the request body carries it.
+
+    **`timelineVersion` is not optimistic locking, it is a refusal to guess.**
+    Every other tool reads an asset that cannot change underneath it. An export
+    reads the timeline, and a timeline the user has edited since they pressed
+    the button is a render of something they are no longer looking at — so a
+    mismatch is `409 VERSION_CONFLICT` rather than a render of the current
+    version (contract §6.2).
+    """
+
+    timeline_version: int = Field(ge=1)
+    preset: ExportPreset = Field(default_factory=ExportPreset)
+
+
 #: Smart union, deliberately: the members are structurally close enough that
 #: `left_to_right` would coerce a `SmartTrimInput` into the first one that
 #: accepts it and drop `strength` on the way. Smart mode keeps an exact instance
 #: — which is what `_parse_input_for_tool` below hands it — as itself.
-JobInput = CaptionsInput | SmartTrimInput | ColorAnalysisInput
+JobInput = CaptionsInput | SmartTrimInput | ColorAnalysisInput | ExportInput
 
-_INPUT_MODEL: dict[JobTool, type[_AssetInput]] = {
+#: `ApiModel` and not `_AssetInput`: `ExportInput` deliberately has no asset.
+_INPUT_MODEL: dict[JobTool, type[ApiModel]] = {
     JobTool.CAPTIONS: CaptionsInput,
     JobTool.SMART_TRIM: SmartTrimInput,
     JobTool.COLOR_ANALYSIS: ColorAnalysisInput,
+    JobTool.EXPORT: ExportInput,
 }
 
 
@@ -134,6 +197,17 @@ class CreateJobRequest(ApiModel):
                 f"{self.tool.value} is not available yet; "
                 f"phase 1 ships {', '.join(t.value for t in PHASE_1_TOOLS)}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _export_names_its_project(self) -> "CreateJobRequest":
+        """An export with no project has no timeline to render.
+
+        Caught here rather than in the handler so the client gets a 422 naming
+        the field, instead of a 404 for a project it never mentioned.
+        """
+        if self.tool is JobTool.EXPORT and not self.project_id:
+            raise ValueError("export needs a projectId — it renders a project, not a clip")
         return self
 
 
