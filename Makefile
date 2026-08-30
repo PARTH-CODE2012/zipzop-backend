@@ -276,6 +276,21 @@ e2e: e2e-media ## Prove M2 end to end in a real browser
 	source scripts/ports.sh && zz_load_ports && zz_export_urls && \
 	cd $(FRONTEND) && node e2e/m2.mjs
 
+.PHONY: parity
+parity: ## M5's closing condition: does the export match the preview? (needs the web server up)
+	@# Every grade, at three strengths, and the partial ones are not padding.
+	@# At 1.0 the export skips the blend entirely, so a grade can agree there and
+	@# be wrong at 0.6 — which is roughly the value `color_analysis` actually
+	@# recommends. That is exactly how the blend-order bug survived: full
+	@# strength was right, every partial strength applied the grade at 1-s.
+	@source scripts/ports.sh && zz_load_ports && zz_export_urls && \
+	cd $(FRONTEND) && \
+	for lut in cinematic_warm vlog_clean cyberpunk sun_kissed mono_contrast; do \
+		for strength in 1 0.6 0.3; do \
+			node e2e/lut-parity.mjs --lut $$lut --strength $$strength || exit 1; \
+		done; \
+	done
+
 .PHONY: e2e-headful
 e2e-headful: e2e-media ## The same, with a window you can watch
 	@[ -f $(ZZ_PORTS_FILE) ] && source $(ZZ_PORTS_FILE) || true; \

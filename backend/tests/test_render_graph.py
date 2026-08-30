@@ -102,6 +102,13 @@ def test_the_grade_is_mixed_at_its_strength_and_not_applied_flat() -> None:
     assert "split=2" in plan.filtergraph
     assert "blend=all_mode=normal:all_opacity=0.6000" in plan.filtergraph
     assert "lut3d=file=" in plan.filtergraph
+    # **The graded copy is the first input**, and this is not cosmetic: in
+    # `blend` the first input is the top layer and `all_opacity` applies to it.
+    # The other way round the opacity lands on the *original* and the grade
+    # comes out at `1 - strength`. It shipped that way; `e2e/lut-parity.mjs`
+    # is what caught it, because full strength skips this branch and no
+    # string comparison here could tell the two orders apart on its own.
+    assert "[grade_g][grade_a]blend=" in plan.filtergraph
 
 
 def test_a_full_strength_grade_skips_the_blend() -> None:

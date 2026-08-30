@@ -165,9 +165,19 @@ def _grade_filters(clip: MediaClip, lut_path_for: "LutResolver") -> list[str]:
     # `split` the stream, grade one copy, lay it back over the original at the
     # requested opacity. This is what the browser's shader does with the same
     # number, which is the only reason the two agree.
+    #
+    # **The graded copy goes first, and the order is the whole correctness of
+    # this line.** In `blend`, the *first* input is the top layer and it is the
+    # one `all_opacity` applies to. Written the intuitive way round —
+    # original, then grade — the opacity lands on the *original*, so the grade
+    # is applied at `1 - strength`. It shipped that way and no test could see
+    # it: full strength skips this branch entirely, so the graph tests passed
+    # and only a comparison against the preview caught it. On a desaturating
+    # look at 0.6 the blue channel was 41 levels out. Found by
+    # `e2e/lut-parity.mjs`, 30 August, which is the test that exists for it.
     return [
         f"split=2[grade_a][grade_b];[grade_b]lut3d=file={path}[grade_g];"
-        f"[grade_a][grade_g]blend=all_mode=normal:all_opacity={grade.strength:.4f}"
+        f"[grade_g][grade_a]blend=all_mode=normal:all_opacity={grade.strength:.4f}"
     ]
 
 
