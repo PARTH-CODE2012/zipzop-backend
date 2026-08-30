@@ -16,6 +16,7 @@ can apply.
 """
 
 import subprocess
+from typing import Any
 
 import pytest
 
@@ -164,3 +165,32 @@ def test_a_grade_actually_changes_the_picture() -> None:
 
     moved = {look for look, value in graded.items() if abs(value - plain) > 0.5}
     assert moved, f"no grade changed a mid-blue at all (plain YAVG {plain}, graded {graded})"
+
+
+# --------------------------------------------------------------------------
+# The catalogue endpoint
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_the_catalogue_endpoint_lists_the_renderable_looks(client: Any) -> None:
+    """Contract §10, and promised by §4.4 since M2 without being implemented.
+
+    The client hardcoded these five names and a test compared two copies of the
+    same list by hand. Serving them makes the server the single source, so a
+    look added on one side and not the other is impossible rather than merely
+    caught.
+    """
+    response = await client.get("/v1/catalog/luts")
+
+    assert response.status_code == 200
+    names = {entry["name"] for entry in response.json()["luts"]}
+    assert names == set(LOOKS)
+
+
+@pytest.mark.anyio
+async def test_the_catalogue_is_public(client: Any) -> None:
+    """No `Authorization` header. The catalogue is the same for everyone and
+    says nothing about an account — and the pricing page has to be able to show
+    what the product does before anyone signs up."""
+    assert (await client.get("/v1/catalog/luts")).status_code == 200

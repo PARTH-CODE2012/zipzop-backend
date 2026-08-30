@@ -893,6 +893,44 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "LutCatalogue": {
+        "properties": {
+          "luts": {
+            "items": {
+              "$ref": "#/components/schemas/LutEntry"
+            },
+            "title": "Luts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "luts"
+        ],
+        "title": "LutCatalogue",
+        "type": "object"
+      },
+      "LutEntry": {
+        "description": "One look. `scene` is what the grade is *for*, which is what makes a\npicker choosable rather than five names and a shrug.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scene": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Scene",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "scene"
+        ],
+        "title": "LutEntry",
+        "type": "object"
+      },
       "MeResponse": {
         "properties": {
           "createdAt": {
@@ -2490,6 +2528,28 @@
         "summary": "Create an account",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/v1/catalog/luts": {
+      "get": {
+        "description": "Only the looks with a `.cube` on this server's disk.\n\nFiltered rather than listed from `LOOKS` alone, because a name without a\nfile is precisely the failure this endpoint exists to prevent: the client\nwould offer it, the browser would fetch a 404, and the picture would not\nchange. `tests/test_luts.py` asserts the two agree, so in a healthy\ndeployment this filter removes nothing \u2014 it is here for the deployment that\nis not healthy, where it degrades to a shorter list instead of a broken\ngrade.",
+        "operationId": "list_luts_v1_catalog_luts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LutCatalogue"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The colour looks we can render",
+        "tags": [
+          "catalog"
         ]
       }
     },
