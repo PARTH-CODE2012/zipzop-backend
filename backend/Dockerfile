@@ -11,9 +11,19 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# `fonts-noto-core` is not cosmetic and not optional. The export renderer draws
+# captions with libass, and **Hindi is the product's stated edge**: without a
+# font carrying the Devanagari block, every Hindi caption renders as empty boxes
+# however correct the shaping is. What ffmpeg pulls in on its own is DejaVu,
+# which covers Latin and no Indic script at all — so a Latin caption test passes
+# and Hindi ships broken. `fc-cache` so fontconfig can resolve the family name
+# the ASS script asks for.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         curl \
+        fontconfig \
+        fonts-noto-core \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

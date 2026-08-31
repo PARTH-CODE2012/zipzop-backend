@@ -29,7 +29,13 @@ void main() {
 }
 `
 
-const FRAGMENT_SRC = `#version 300 es
+/**
+ * Exported so the export-parity harness can run the *real* shader rather than a
+ * copy of it. A second copy of this string is a second grade, and the whole
+ * point of the parity check is that there is exactly one — see
+ * `e2e/lut-parity.mjs`.
+ */
+export const FRAGMENT_SRC = `#version 300 es
 precision highp float;
 precision highp sampler3D;
 

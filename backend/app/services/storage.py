@@ -47,6 +47,22 @@ def peaks_key(user_id: str, asset_id: str) -> str:
     return f"peaks/{user_id}/{asset_id}/peaks.json"
 
 
+def export_key(user_id: str, job_id: str, extension: str = "mp4") -> str:
+    """Where a finished render lands — §6.3's `exports/{user_id}/{job_id}/`.
+
+    **Keyed by job, not by asset, and that is the deliberate part.** Every other
+    prefix here is keyed by the asset it belongs to, because the file *is* the
+    asset. An export is the output of one render of one timeline at one moment:
+    exporting the same project twice gives two files that are both correct and
+    both worth keeping, and an asset-keyed path would have the second silently
+    overwrite the first.
+
+    It also makes the 30-day expiry a lifecycle rule on a prefix rather than a
+    sweep that has to reason about which asset rows are exports.
+    """
+    return f"exports/{user_id}/{job_id}/final{_dot(extension)}"
+
+
 def _dot(extension: str) -> str:
     if not extension:
         return ""

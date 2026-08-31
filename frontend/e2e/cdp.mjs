@@ -7,7 +7,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-export async function launch({ port = 9222, headless = true, extraArgs = [], wrapper = null } = {}) {
+export async function launch({
+  port = 9222,
+  headless = true,
+  extraArgs = [],
+  wrapper = null,
+  // The binary to run. `chromium` is the apt name and is what CI has; Windows
+  // and macOS have no such command, so `$CHROME` names the browser there
+  // rather than every caller reimplementing the lookup.
+  browser = process.env.CHROME ?? null,
+} = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'zipzop-cdp-'))
   const args = [
     headless ? '--headless=new' : '--new-window',
@@ -24,8 +33,9 @@ export async function launch({ port = 9222, headless = true, extraArgs = [], wra
     'about:blank',
   ]
 
-  const command = wrapper === null ? 'chromium' : wrapper[0]
-  const commandArgs = wrapper === null ? args : [...wrapper.slice(1), 'chromium', ...args]
+  const exe = browser ?? 'chromium'
+  const command = wrapper === null ? exe : wrapper[0]
+  const commandArgs = wrapper === null ? args : [...wrapper.slice(1), exe, ...args]
   const child = spawn(command, commandArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
   const stderr = []
   child.stderr.on('data', (d) => stderr.push(String(d)))

@@ -16,6 +16,13 @@ Generated rather than committed as data: five files of 4,913 lines each is
 25,000 lines nothing reviews. The *grades* are reviewed here, in thirty lines of
 arithmetic each, which is the part a person can actually judge.
 
+Written to `backend/app/assets/luts/`, which is the source of truth: the export
+renderer hands FFmpeg a path on disk and cannot fetch one over HTTP, and the
+container is built from the `backend/` context so anything outside it is not in
+the image. The browser needs the same bytes under `frontend/public/luts/`, and
+gets them by a copy — `make luts` does it, and so does every `pnpm` script that
+needs them, so the two can never be different files.
+
 Regenerate with `make luts`.
 
 Format follows the Adobe Cube specification: RED varies fastest, then green,
@@ -171,7 +178,10 @@ def write_lut(name: str, out_dir: Path) -> Path:
 
 
 def main() -> int:
-    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("frontend/public/luts")
+    # The backend, not the frontend. The renderer is the side that cannot work
+    # without these — `lut3d=file=…` needs a path on the worker's disk — and
+    # the browser's copy is made from this one by `make luts`.
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("backend/app/assets/luts")
     out_dir.mkdir(parents=True, exist_ok=True)
     for name in LOOKS:
         path = write_lut(name, out_dir)

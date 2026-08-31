@@ -31,7 +31,7 @@ machine and export is another worker on it.
 | `plans.max_export_height`, `plans.watermark` | `models/billing.py`, seeded | ✅ Columns exist, values seeded for four plans, already returned by `GET /me` |
 | Timeline validation, all 8 invariants | `services/timeline.py` | ✅ The renderer can trust the document it is handed |
 | `RENDER_FAILED`, `VERSION_CONFLICT` | `api/errors.py` | ✅ Defined, unused |
-| Five `.cube` files | `frontend/public/luts/` | ⚠️ They exist and are committed — but see §3 |
+| Five `.cube` files | ~~`frontend/public/luts/`~~ `backend/app/assets/luts/` | ✅ **Moved 28 August** — inside the build context, resolved by `app/services/luts.py`. §3 is what this was |
 
 **The contract needs no changes.** [§6.2](05-api-contract.md) specifies the
 `export` payload, the plan gating, the `409` on a stale `timelineVersion`, the
@@ -99,6 +99,31 @@ from the backend** — the direction the current test does not cover.
 
 > **Do this before writing any of the filter graph.** It is an hour, and every
 > hour after it spent on rendering assumes it.
+
+> ### ✅ Done 28 August, and it was B
+>
+> The grades live in `backend/app/assets/luts/`, inside the build context, and
+> `app/services/luts.py` resolves a look to a path. The browser's copy under
+> `frontend/public/luts/` is **generated and gitignored** — `pnpm dev|build|test`
+> and `make luts` both run `frontend/scripts/sync-luts.mjs`, so there is one
+> source of truth and the two cannot be different files. Committing both was the
+> obvious alternative and was rejected: two copies meant to be identical is a day
+> when they are not.
+>
+> Two things this section did not anticipate:
+>
+> * **`lut3d=file=…` is a filter option, so its path needs the same two-level
+>   escaping `movie=` does.** That escaping was one level short until 27 August
+>   ([`17-first-real-test-run.md`](17-first-real-test-run.md) §2.3) and was
+>   private to `color_analysis`. It moved to `app/services/ffmpeg_filters.py`,
+>   because a second private copy is how the first one's bug comes back somewhere
+>   nobody has looked.
+> * **The test had to run FFmpeg, not a parser.** A `.cube` our own reader likes
+>   proves our reader agrees with our writer, which is a closed loop. Each grade
+>   is handed to `lut3d` and then measured: a mid-blue reads YAVG 103 ungraded
+>   and 88–108 through the five, so the tables demonstrably do something. An
+>   identity LUT would have passed every structural check and produced exports
+>   indistinguishable from ungraded ones.
 
 ---
 

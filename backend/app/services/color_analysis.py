@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from app.logging import get_logger
+from app.services.ffmpeg_filters import escape_path
 
 log = get_logger(__name__)
 
@@ -55,11 +56,12 @@ class FrameStats:
 #: rather than deleted, because the property it guarded still matters: *a
 #: recommendation the browser cannot render is worse than no recommendation.*
 #:
-#: ⚠️ **What is still true is worse, and it is M5's problem.** The files live in
-#: `frontend/public/luts/`, and this service can name a look it has no way to
-#: read: the backend has no path to a `.cube` at all, and the container is built
-#: from the `backend/` context so the files are not even in the image. The export
-#: renderer needs them for FFmpeg's `lut3d`. See docs/15-m5-readiness.md §3.
+#: ~~⚠️ What is still true is worse, and it is M5's problem: the files live in
+#: `frontend/public/luts/` and the backend has no path to a `.cube` at all~~ —
+#: **fixed 28 August, as M5's first task.** They live in `app/assets/luts/` now,
+#: inside the build context, and `app.services.luts` resolves a name to a file.
+#: `tests/test_luts.py` asserts every name below has one FFmpeg will accept, so
+#: a look added here without a grade fails the suite rather than an export.
 LOOKS: Final[dict[str, dict[str, Any]]] = {
     "cinematic_warm": {"exposure": "normal", "whiteBalance": "cool", "contrast": "flat"},
     "vlog_clean": {"exposure": "normal", "whiteBalance": "neutral", "contrast": "normal"},
@@ -200,30 +202,8 @@ def _clamp01(value: float) -> float:
 
 
 def _escape(path: Path) -> str:
-    """`movie=` is a filter argument, so colons and backslashes in the path are
-    syntax — and they are unescaped **twice** on the way in, not once.
-
-    The filtergraph parser strips one level before the filter's own option
-    parser ever sees the string, so a single `\\:` arrives as a bare `:` and the
-    path splits at it. One level is what this did until 27 August, and nothing
-    ever caught it: every scratch path on Linux is colon-free, so the escaping
-    was dead code that happened to be wrong. The first path with a colon in it
-    — every Windows path, `C:` — proved it.
-
-    Both levels are applied to the path as it is, with no platform branch. An
-    earlier version of this fix rewrote Windows separators to forward slashes,
-    which ffmpeg accepts and which keeps a drive path from carrying four
-    backslashes per separator — but a backslash is a legal character in a POSIX
-    *filename*, so that rewrite would have turned `/tmp/od\\d/a.mp4` into a path
-    to somewhere else, and it made the function's behaviour untestable on the
-    platform it was not running on. Escaping is correct on both; verified
-    against ffmpeg 9.0.1 on Windows and against the POSIX cases below in
-    `tests/test_analysis.py`.
-
-    A path needing no escaping comes out byte-identical to what went in.
-    """
-    s = str(path)
-    # Level 1 — the filter's own option parser.
-    s = s.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
-    # Level 2 — the filtergraph parser, which unescapes before level 1 runs.
-    return s.replace("\\", "\\\\")
+    """Kept as a name because `sample_frames` and the tests both use it; the
+    implementation moved to `ffmpeg_filters` on 28 August, when the export
+    renderer turned out to need exactly the same escaping for `lut3d=file=…`.
+    Two private copies of this is how the bug it had gets reintroduced."""
+    return escape_path(path)

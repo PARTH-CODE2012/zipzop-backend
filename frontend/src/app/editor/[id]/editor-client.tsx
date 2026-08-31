@@ -75,6 +75,7 @@ import { useRail } from '@/editor/rail/rail-store'
 import { useTools } from '@/editor/tools/jobs-store'
 import { Transport } from '@/editor/transport/Transport'
 import { useProjectPersistence, type SaveStatus } from '@/editor/state/use-persistence'
+import { ExportDialog } from '@/editor/export/ExportDialog'
 import { Timeline } from '@/editor/timeline/Timeline'
 import { listMedia } from '@/lib/api/endpoints'
 
@@ -178,6 +179,9 @@ function Workspace({
    * kept out of the timeline document for the same reason.
    */
   const [assets, setAssets] = useState<Map<string, ResolvedAsset>>(new Map())
+
+  /** The export dialog. Not document state — it never commits and never saves. */
+  const [exportOpen, setExportOpen] = useState(false)
 
   const loadAssets = useCallback(async () => {
     try {
@@ -287,6 +291,7 @@ function Workspace({
 
   return (
     <div className="no-select flex h-screen flex-col" data-testid="workspace">
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
       <header
         className="flex h-12 shrink-0 items-center gap-4 border-b px-4 text-xs"
         style={{ borderColor: 'var(--color-rule)' }}
@@ -322,6 +327,22 @@ function Workspace({
         >
           {email}
         </span>
+        {/* Export is a header action rather than a rail mode: the rail is one
+            mode at a time and each acts on a selection, while an export acts
+            on the whole project (readiness §5). */}
+        <button
+          type="button"
+          onClick={() => setExportOpen(true)}
+          className="flex items-center gap-1.5 px-2 py-1 font-semibold"
+          style={{
+            background: 'var(--color-accent)',
+            color: 'var(--color-accent-ink)',
+            borderRadius: 'var(--radius-sm)',
+          }}
+          data-testid="open-export"
+        >
+          Export
+        </button>
         <button
           type="button"
           onClick={onSignOut}

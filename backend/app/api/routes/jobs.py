@@ -30,6 +30,7 @@ from app.api.errors import (
     NotFoundError,
     PlanLimitExceededError,
     UnsupportedMediaError,
+    VersionConflictError,
 )
 from app.api.schemas.common import Page
 from app.api.schemas.job import (
@@ -61,6 +62,7 @@ _REJECTION_ERRORS: dict[str, type[APIError]] = {
     "INSUFFICIENT_CREDITS": InsufficientCreditsError,
     "FAIR_USE_EXCEEDED": FairUseExceededError,
     "PLAN_LIMIT_EXCEEDED": PlanLimitExceededError,
+    "VERSION_CONFLICT": VersionConflictError,
 }
 
 
@@ -138,15 +140,32 @@ def _enqueue(job: Job) -> None:
     periodic sweep re-sends the same `apply_async` call, and re-sending it for
     a job a worker already claimed is a harmless no-op (`claim()`'s
     `WHERE status='queued'` matches nothing the second time).
+
+    Routed by **family**, not by tool. A render holds a worker for minutes and
+    saturates a CPU while an analysis job is seconds of ffprobe, and the queues
+    have been separated since M4 for exactly that reason — sending an export to
+    the analysis queue would block every caption behind it. Until 30 August this
+    function sent everything to `run_analysis`, which has no `export` branch, so
+    an export was charged for and then failed.
     """
+    from app.models import JobFamily
     from app.workers.tasks.analysis import run_analysis
+    from app.workers.tasks.render import run_export
+
+    task = run_export if job.family is JobFamily.RENDER else run_analysis
 
     try:
-        run_analysis.apply_async(args=[str(job.id)], priority=job.priority)
+        task.apply_async(args=[str(job.id)], priority=job.priority)
     except Exception:
         log.exception("job_enqueue_failed", job_id=str(job.id), tool=job.tool.value)
         raise
-    log.info("job_enqueued", job_id=str(job.id), tool=job.tool.value, priority=job.priority)
+    log.info(
+        "job_enqueued",
+        job_id=str(job.id),
+        tool=job.tool.value,
+        queue=job.family.value,
+        priority=job.priority,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -177,6 +196,7 @@ async def estimate_job(
             topup_credits=user.topup_credits,
             tool=body.tool,
             job_input=body.input,
+            project_id=body.project_id,
         )
     except QuoteRejectionError as rejection:
         _raise(rejection)
@@ -227,6 +247,7 @@ async def create_job(
             topup_credits=user.topup_credits,
             tool=body.tool,
             job_input=body.input,
+            project_id=body.project_id,
         )
     except QuoteRejectionError as rejection:
         _raise(rejection)
