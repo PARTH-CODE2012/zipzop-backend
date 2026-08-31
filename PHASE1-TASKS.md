@@ -433,6 +433,11 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 
 *Ends when: you hit the free limit, subscribe, and the new allowance appears within seconds.*
 
+> **Start at [`docs/20-m6-readiness.md`](docs/20-m6-readiness.md), written 31 August.**
+> More of M6 is already built than this checklist suggests — the tables, the
+> credit ledger and the plan gating all ship — and the readiness note carries the
+> four traps that are cheap to avoid now and expensive to find in production.
+
 > **Grew on 25 August — read [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).**
 > Everything below still ships. **Razorpay first** removes the second adapter for
 > now; the **fifth `beta` plan** and the **promo-code and commission** block at
