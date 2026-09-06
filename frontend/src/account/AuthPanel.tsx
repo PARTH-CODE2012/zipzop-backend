@@ -7,9 +7,10 @@
  * been delivered, so the form is a form.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { describe, useSession } from '@/account/session'
+import { previewPromo } from '@/lib/api/endpoints'
 
 export function AuthPanel() {
   const { signIn, signUp } = useSession()
@@ -17,8 +18,46 @@ export function AuthPanel() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [promoCode, setPromoCode] = useState('')
+  const [promoNote, setPromoNote] = useState<{ valid: boolean; message: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  /**
+   * Check the code **while they can still fix it**.
+   *
+   * The attribution is written once, at registration, and never revisited — so
+   * a code discovered to be wrong afterwards can never be applied, and the
+   * commission it would have earned can never be paid. A line under the field
+   * costs one request; the alternative costs a customer and a server owner's
+   * trust.
+   *
+   * Debounced, because this fires on every keystroke of something people type
+   * by hand from a chat message.
+   */
+  useEffect(() => {
+    const typed = promoCode.trim()
+    if (mode !== 'register' || typed.length < 3) {
+      setPromoNote(null)
+      return
+    }
+    let live = true
+    const timer = setTimeout(() => {
+      previewPromo(typed)
+        .then((result) => {
+          if (live) setPromoNote({ valid: result.valid, message: result.message })
+        })
+        .catch(() => {
+          // The check is a convenience, not a gate. A network blip here must
+          // not stop somebody registering.
+          if (live) setPromoNote(null)
+        })
+    }, 400)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [promoCode, mode])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -26,7 +65,13 @@ export function AuthPanel() {
     setBusy(true)
     try {
       if (mode === 'sign-in') await signIn(email, password)
-      else await signUp(email, password, displayName || undefined)
+      else
+        await signUp({
+          email,
+          password,
+          ...(displayName ? { displayName } : {}),
+          ...(promoCode.trim() ? { promoCode: promoCode.trim() } : {}),
+        })
     } catch (cause) {
       setError(describe(cause))
     } finally {
@@ -89,6 +134,35 @@ export function AuthPanel() {
           autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
         />
       </label>
+
+      {mode === 'register' && (
+        <label className="flex flex-col gap-1">
+          <span style={{ color: 'var(--color-ink-2)' }}>
+            Promo code <span style={{ color: 'var(--color-ink-3)' }}>(optional)</span>
+          </span>
+          <input
+            type="text"
+            value={promoCode}
+            onChange={(event) => setPromoCode(event.target.value)}
+            className="rounded border px-2 py-1.5"
+            style={{ borderColor: 'var(--color-rule)', background: 'var(--color-surface-2)' }}
+            data-testid="promo-code"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {promoNote && (
+            <span
+              className="text-xs"
+              data-testid="promo-note"
+              style={{
+                color: promoNote.valid ? 'var(--color-success)' : 'var(--color-ink-3)',
+              }}
+            >
+              {promoNote.message}
+            </span>
+          )}
+        </label>
+      )}
 
       {error && (
         <p role="alert" data-testid="auth-error" className="text-xs">

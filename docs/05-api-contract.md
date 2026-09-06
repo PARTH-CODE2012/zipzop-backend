@@ -726,6 +726,17 @@ When a result exceeds 256 KB, `result` is `null` and `resultUrl` carries a signe
 
 ## 7. Billing
 
+> **Amended 31 August, when M6 was built.** Three changes, each marked ⚠️ below
+> and each forced by something the contract could not have known before an
+> adapter existed:
+>
+> * `portalUrl` is **nullable** — Razorpay hosts no customer portal;
+> * `checkoutUrl` is **nullable** — a downgrade is scheduled, not sold;
+> * `suggestedCurrency` comes from an **edge header**, because there is no GeoIP
+>   database in the deployment and there should not be one.
+>
+> The rest of the section stands as written.
+
 The client never touches card details. Every payment happens on the provider's own hosted page, reached through a redirect. That keeps card data entirely out of our system, which is the only sane position to hold.
 
 ### `GET /plans`
@@ -767,6 +778,8 @@ Public — no authentication. Prices in the caller's suggested currency, with ev
 
 `suggestedCurrency` comes from the caller's IP. **It is a suggestion, not a decision** — the client must let the user change it, because VPNs, travellers and expatriates make IP unreliable. Pass `?currency=USD` to override.
 
+⚠️ **Where the country actually comes from.** There is no GeoIP database in this deployment, and there should not be: one that has to be refreshed monthly to keep a *suggestion* accurate is a maintenance burden out of all proportion to what it buys. The country is read from whatever the edge network set — `CF-IPCountry`, `X-Vercel-IP-Country`, `X-AppEngine-Country`, `X-Country-Code` — and `XX`/`T1` are discarded, because Cloudflare uses them for "unknown" and for Tor and treating either as a country suggests a currency at random. Behind no CDN the fallback is USD, which is right for local development and wrong for nobody, since the client offers the override regardless.
+
 `approxVideosPerMonth` is the marketing figure, derived from `monthlyCredits` and a reference ten-minute video. **Credits are the real unit**; this exists so the pricing page can say something a person understands. `queueLabel` is deliberately a word, not a time — priority is relative, and we do not publish an SLA we have not measured.
 
 ### `POST /billing/checkout`
@@ -785,7 +798,15 @@ Start a subscription or change plan.
 
 The client redirects. The subscription is **not** active when the user comes back — it activates when the provider's webhook arrives, usually within seconds. On return, poll `GET /me` until `subscription.plan` changes, with a short "confirming your payment" state. Never assume success from the redirect alone: the user can land on `returnUrl` by pressing back.
 
-The provider is chosen from the currency and cannot be picked directly — INR goes to Razorpay, everything else to Stripe.
+The provider is chosen from the currency and cannot be picked directly — INR goes to Razorpay, everything else to Stripe. **Until the Stripe adapter exists, dollars route to Razorpay too** — that is what "Razorpay first" (25 August) means in practice, and it is one environment variable to switch back.
+
+⚠️ **`checkoutUrl` is nullable, and a null is a success.** A **downgrade** is not sold: §8.3 applies it at the next period boundary so nobody loses credits they are half way through using, and sending the user to a payment page to receive less would be absurd. That response carries `scheduledPlan` and `effectiveAt` instead:
+
+```json
+{ "checkoutUrl": null, "scheduledPlan": "beta", "effectiveAt": "2026-09-30T00:00:00Z" }
+```
+
+The client has one path for "your plan changed": follow `checkoutUrl` if there is one, otherwise show `effectiveAt`. Reporting it as an error was the first shape this took and it was wrong twice — a scheduled downgrade is a success, and the state change was written and then rolled back by the error handler.
 
 ### `POST /billing/topup`
 
@@ -797,6 +818,16 @@ Buy credits that never expire, independent of any subscription.
 
 Returns the same `checkoutUrl` shape. Top-up credits land in the `topup` bucket and survive plan changes, cancellation and period rollovers.
 
+### `GET /billing/topup-packs`
+
+Added 31 August. `packCode` above had no source: a client that hardcodes pack codes breaks the day a pack is renamed, and the prices belong beside the plans rather than in a bundle.
+
+```json
+{ "currency": "USD", "packs": [ { "code": "credits_5000", "displayName": "5,000 credits", "credits": 5000, "priceMinor": 4499, "currency": "USD" } ] }
+```
+
+🟠 The pack prices are a **placeholder** — no document states what a pack costs. They are derived from the plan prices and marked in `billing/catalogue.py`; they need the project lead's sign-off before launch.
+
 ### `POST /billing/portal`
 
 ```json
@@ -804,6 +835,14 @@ Returns the same `checkoutUrl` shape. Top-up credits land in the `topup` bucket 
 ```
 
 `200` with a `portalUrl` to the provider's hosted management page — update card, view invoices, cancel. We do not rebuild any of that.
+
+⚠️ **`portalUrl` is nullable.** Stripe hosts a customer portal; **Razorpay does not.** Rather than invent a URL that 404s — or rebuild card management, which the paragraph above explicitly declines to do — the absence is reported with a sentence the client can show:
+
+```json
+{ "portalUrl": null, "reason": "Razorpay does not host a customer portal; manage the subscription here." }
+```
+
+A free account with no provider gets the same shape. The client offers what does exist: cancel here, invoices by the provider's own email.
 
 ### `POST /billing/cancel`
 
@@ -841,6 +880,26 @@ The response is written to be shown to the user before they confirm. Losing 1,84
 ```
 
 Every movement, with its bucket. This is what a support conversation about "where did my credits go" is answered from, so it is a first-class endpoint rather than an admin tool.
+
+### `GET /promo/{code}`
+
+Added 31 August for the Discord campaign. Public, and always `200` — a 404 would let anyone enumerate which codes exist, and the client renders the same thing either way.
+
+```json
+{ "code": "launchday", "valid": true, "bonusCredits": 300, "message": "300 bonus credits when you sign up." }
+```
+
+Checked at the **sign-up form**, not after registering: the attribution is written to the account once and never revisited, so a mistyped code discovered afterwards can never be applied — and the commission it would have earned can never be paid.
+
+`POST /auth/register` accordingly gains an optional `promoCode`. An unknown or retired code does **not** fail registration; the account is created and the field is left empty.
+
+### `GET /promo/{code}/stats`
+
+What a code has brought in, for whoever owns it. `404` for a code somebody else owns, so the response cannot be used to discover that a code exists. Amounts are minor units **per currency** and never summed across them — a code can bring in rupee and dollar subscribers, and one number covering both would be invented.
+
+### `GET /templates` · `PUT /templates` · `DELETE /templates/{id}`
+
+Saved editing settings — caption style, colour grade, transition defaults, title styling. `PUT` rather than `POST`: saving under a name that already exists **replaces** it, which is what "save my settings as Podcast" means the second time. `settings` is opaque JSON the server stores and returns without interpreting; its shape belongs to the editor.
 
 ### Webhooks — server to server
 

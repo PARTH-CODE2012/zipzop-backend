@@ -10,12 +10,21 @@ subscriptions, payments, provider_events, credit_ledger.
 """
 
 from app.db import Base
-from app.models.billing import Payment, Plan, ProviderEvent, Subscription
+from app.models.billing import (
+    CommissionLedgerEntry,
+    Payment,
+    Plan,
+    PromoCode,
+    ProviderEvent,
+    ProviderPlan,
+    Subscription,
+)
 from app.models.credit import CreditLedgerEntry
 from app.models.enums import (
     ENUM_TYPES,
     AssetKind,
     AssetStatus,
+    CommissionReason,
     CreditBucket,
     JobFamily,
     JobStatus,
@@ -34,6 +43,7 @@ from app.models.job import Job
 from app.models.media import MediaAsset
 from app.models.mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
 from app.models.project import Project, ProjectAsset
+from app.models.template import Template
 from app.models.user import RefreshToken, User
 
 __all__ = [
@@ -41,6 +51,8 @@ __all__ = [
     "AssetKind",
     "AssetStatus",
     "Base",
+    "CommissionLedgerEntry",
+    "CommissionReason",
     "CreditBucket",
     "CreditLedgerEntry",
     "Job",
@@ -57,11 +69,14 @@ __all__ = [
     "PlanCode",
     "Project",
     "ProjectAsset",
+    "PromoCode",
     "ProviderEvent",
+    "ProviderPlan",
     "RefreshToken",
     "SoftDeleteMixin",
     "SubStatus",
     "Subscription",
+    "Template",
     "TimestampMixin",
     "UUIDPrimaryKey",
     "User",

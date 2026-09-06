@@ -21,11 +21,27 @@ import type { MeResponse } from '@/lib/api/endpoints'
 
 type Status = 'restoring' | 'signed-in' | 'signed-out'
 
+export interface SignUpOptions {
+  email: string
+  password: string
+  displayName?: string
+  /**
+   * A Discord server owner's code.
+   *
+   * **Sent only here, and only once.** The attribution is written to the
+   * account at registration and never revisited, because a code that can be
+   * added later is one that can be claimed after the fact by whoever asks
+   * loudest (docs/13-mvp-direction.md §6). A wrong code does not fail the
+   * sign-up — the form checks it beforehand instead.
+   */
+  promoCode?: string
+}
+
 interface Session {
   status: Status
   account: MeResponse | null
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, displayName?: string) => Promise<void>
+  signUp: (options: SignUpOptions) => Promise<void>
   signOut: () => Promise<void>
   refreshAccount: () => Promise<void>
 }
@@ -71,8 +87,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   )
 
   const signUp = useCallback(
-    async (email: string, password: string, displayName?: string) => {
-      await endpoints.register({ email, password, displayName: displayName ?? null })
+    async ({ email, password, displayName, promoCode }: SignUpOptions) => {
+      await endpoints.register({
+        email,
+        password,
+        displayName: displayName ?? null,
+        promoCode: promoCode ?? null,
+      })
       await load()
     },
     [load],

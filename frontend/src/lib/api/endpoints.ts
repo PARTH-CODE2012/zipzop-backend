@@ -251,3 +251,113 @@ export async function readJobResult<T = unknown>(job: JobResponse): Promise<T | 
   if (!response.ok) return null
   return (await response.json()) as T
 }
+
+// ------------------------------------------------------------------ billing
+
+export type PlansResponse = Schemas['PlansResponse']
+export type PlanOfferOut = Schemas['PlanOfferOut']
+export type CheckoutRequest = Schemas['CheckoutRequest']
+export type CheckoutResponse = Schemas['CheckoutResponse']
+export type TopupRequest = Schemas['TopupRequest']
+export type TopupPacksResponse = Schemas['TopupPacksResponse']
+export type PortalResponse = Schemas['PortalResponse']
+export type CancelResponse = Schemas['CancelResponse']
+export type LedgerResponse = Schemas['LedgerResponse']
+export type LedgerEntryOut = Schemas['LedgerEntryOut']
+export type PromoPreviewResponse = Schemas['PromoPreviewResponse']
+
+/**
+ * Public — no account needed.
+ *
+ * `currency` is optional and overrides the server's IP-based suggestion. The
+ * client **must** offer that override: contract §7 is explicit that the
+ * suggestion is a default and not a decision, because VPNs, travellers and
+ * expatriates make IP unreliable.
+ */
+export function listPlans(currency?: string): Promise<PlansResponse> {
+  const suffix = currency ? `?currency=${encodeURIComponent(currency)}` : ''
+  return api.get<PlansResponse>(`/plans${suffix}`)
+}
+
+export function listTopupPacks(currency?: string): Promise<TopupPacksResponse> {
+  const suffix = currency ? `?currency=${encodeURIComponent(currency)}` : ''
+  return api.get<TopupPacksResponse>(`/billing/topup-packs${suffix}`)
+}
+
+/**
+ * Start a subscription or change plan.
+ *
+ * 🔴 **The redirect is never proof of payment.** The subscription activates on
+ * the provider's webhook, usually within seconds. On return the client polls
+ * `GET /me` behind a "confirming your payment" state — see `billing/confirming.ts`
+ * — because a user can land on `returnUrl` simply by pressing back.
+ *
+ * `checkoutUrl` may be null: a downgrade is scheduled for the next period
+ * boundary rather than sold, and there is nothing to pay for it.
+ */
+export function startCheckout(body: CheckoutRequest): Promise<CheckoutResponse> {
+  return api.post<CheckoutResponse>('/billing/checkout', body)
+}
+
+export function startTopup(body: TopupRequest): Promise<CheckoutResponse> {
+  return api.post<CheckoutResponse>('/billing/topup', body)
+}
+
+/** `portalUrl` may be null — Razorpay hosts no customer portal (contract §7). */
+export function openPortal(returnUrl: string): Promise<PortalResponse> {
+  return api.post<PortalResponse>('/billing/portal', { returnUrl })
+}
+
+/**
+ * Stop the subscription renewing.
+ *
+ * The response is written to be shown **before** the user confirms, so call it
+ * from the confirmation step and put `creditsLostAtPeriodEnd` in front of them.
+ */
+export function cancelSubscription(atPeriodEnd = true): Promise<CancelResponse> {
+  return api.post<CancelResponse>('/billing/cancel', { atPeriodEnd })
+}
+
+/** Every credit movement with its bucket — what "where did my credits go" is answered from. */
+export function creditLedger(
+  params: { limit?: number; cursor?: string } = {},
+): Promise<LedgerResponse> {
+  const query = new URLSearchParams()
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.cursor) query.set('cursor', params.cursor)
+  const suffix = query.toString() ? `?${query}` : ''
+  return api.get<LedgerResponse>(`/credits/ledger${suffix}`)
+}
+
+/**
+ * Is this promo code real, and what does it give?
+ *
+ * Checked at the sign-up form and not after registering: the attribution is
+ * written once and never revisited, so a mistyped code discovered afterwards
+ * can never be applied.
+ */
+export function previewPromo(code: string): Promise<PromoPreviewResponse> {
+  return api.get<PromoPreviewResponse>(`/promo/${encodeURIComponent(code)}`)
+}
+
+// ---------------------------------------------------------------- templates
+
+export type TemplateResponse = Schemas['TemplateResponse']
+export type TemplateBody = Schemas['TemplateBody']
+
+export function listTemplates(): Promise<{ items: TemplateResponse[] }> {
+  return api.get<{ items: TemplateResponse[] }>('/templates')
+}
+
+/**
+ * `PUT`, and that is the semantics rather than a preference: saving under a
+ * name that already exists **replaces** it, which is what "save my settings as
+ * Podcast" means the second time somebody does it.
+ */
+export function saveTemplate(body: TemplateBody): Promise<TemplateResponse> {
+  return request<TemplateResponse>('/templates', { method: 'PUT', body })
+}
+
+export function deleteTemplate(templateId: string): Promise<void> {
+  return api.delete<void>(`/templates/${templateId}`)
+}

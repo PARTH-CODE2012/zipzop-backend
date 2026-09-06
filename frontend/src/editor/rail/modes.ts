@@ -21,7 +21,15 @@
  */
 
 /** Every mode the rail can show. Order is the order they appear, top to bottom. */
-export const MODE_IDS = ['media', 'titles', 'audio', 'colour', 'captions', 'trim'] as const
+export const MODE_IDS = [
+  'media',
+  'titles',
+  'audio',
+  'colour',
+  'templates',
+  'captions',
+  'trim',
+] as const
 
 export type ModeId = (typeof MODE_IDS)[number]
 
@@ -72,6 +80,15 @@ export const MODES: readonly Mode[] = [
     costsCredits: false,
   },
   {
+    id: 'templates',
+    label: 'Templates',
+    // Deliberately here and not among the tools below the divider: a template
+    // is a subset of the timeline document, applied as one edit. No worker, no
+    // queue, no credits, no new job type (docs/13-mvp-direction.md §4).
+    hint: 'Save this project’s look and reuse it on another',
+    costsCredits: false,
+  },
+  {
     id: 'captions',
     label: 'Captions',
     hint: 'Transcribe the speech and put every word on the text track',
@@ -105,5 +122,5 @@ export function modeById(id: ModeId): Mode {
  * disappears when nothing is selected is a mode nobody finds.
  */
 export function needsSelection(id: ModeId): boolean {
-  return id !== 'media' && id !== 'titles'
+  return id !== 'media' && id !== 'titles' && id !== 'templates'
 }

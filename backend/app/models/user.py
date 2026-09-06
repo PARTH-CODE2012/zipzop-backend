@@ -48,10 +48,23 @@ class User(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # BIGINT: a single account can hold more than 2 GB, which is where INTEGER stops.
     storage_bytes_used: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
 
+    # Which Discord server owner brought this account in, kept **permanently**
+    # and not in the session. The commission is owed on a subscription that may
+    # not happen for months, so an attribution lost at sign-up is a commission
+    # that can never be paid (docs/13-mvp-direction.md §6).
+    promo_code: Mapped[str | None] = mapped_column(
+        CITEXT, ForeignKey("promo_codes.code", ondelete="SET NULL"), nullable=True
+    )
+    promo_code_applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     __table_args__ = (
         CheckConstraint("plan_credits >= 0", name="plan_credits_non_negative"),
         CheckConstraint("topup_credits >= 0", name="topup_credits_non_negative"),
         CheckConstraint("facemap_seconds >= 0", name="facemap_seconds_non_negative"),
+        # Partial: the only query is "everyone this code brought in".
+        Index("ix_users_promo_code", "promo_code", postgresql_where="promo_code IS NOT NULL"),
     )
 
     @property

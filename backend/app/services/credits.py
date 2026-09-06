@@ -133,6 +133,7 @@ class CreditLedger:
         delta: int,
         reason: LedgerReason,
         job_id: uuid.UUID | None,
+        payment_id: uuid.UUID | None = None,
         note: str | None = None,
     ) -> None:
         """One ledger row and the cached balance it explains, together."""
@@ -152,6 +153,7 @@ class CreditLedger:
                 delta=delta,
                 reason=reason,
                 job_id=job_id,
+                payment_id=payment_id,
                 balance_after=balance_after,
                 note=note,
             )
@@ -281,3 +283,148 @@ class CreditLedger:
 
         await self._session.flush()
         return returned
+
+    # ------------------------------------------------------------- billing
+    #
+    # Everything below is M6. It lives here, beside reserve and refund, because
+    # the three cached balances on `users` are only ever written in this class —
+    # which is what makes the nightly reconciliation's alarm mean something. A
+    # grant written from the billing service would be a second place to look,
+    # and the reconciliation would have nothing useful to say about which one
+    # was wrong.
+
+    async def roll_period(
+        self,
+        *,
+        user: User,
+        plan_credits: int,
+        facemap_seconds: int,
+        note: str | None = None,
+    ) -> dict[str, int]:
+        """Sweep what expired, grant the new allowance. One transaction.
+
+        docs/03-backend-architecture.md §8.4, and the ordering matters: the
+        sweep is written before the grant so the ledger reads as a period
+        boundary rather than as an unexplained jump in the balance.
+
+        🔴 **`topup` is never touched, and that is the whole point.** Those
+        credits were bought separately and never expire; sweeping them at a
+        renewal would be taking money already paid. There is no branch here that
+        could reach them — the bucket is not named — and
+        `test_billing_renewal.py` asserts it against a real balance anyway,
+        because the guarantee is worth more than the argument that it holds.
+
+        Returns what moved, per bucket, for the caller to log.
+        """
+        moved: dict[str, int] = {}
+
+        for bucket, column in (
+            (CreditBucket.PLAN, "plan_credits"),
+            (CreditBucket.FACEMAP, "facemap_seconds"),
+        ):
+            remaining = int(getattr(user, column))
+            if remaining > 0:
+                await self._write(
+                    user=user,
+                    bucket=bucket,
+                    delta=-remaining,
+                    reason=LedgerReason.PLAN_EXPIRY,
+                    job_id=None,
+                    note=note,
+                )
+                moved[f"{bucket.value}_expired"] = remaining
+
+        for bucket, amount in (
+            (CreditBucket.PLAN, plan_credits),
+            (CreditBucket.FACEMAP, facemap_seconds),
+        ):
+            if amount > 0:
+                await self._write(
+                    user=user,
+                    bucket=bucket,
+                    delta=amount,
+                    reason=LedgerReason.PLAN_GRANT,
+                    job_id=None,
+                    note=note,
+                )
+                moved[f"{bucket.value}_granted"] = amount
+
+        await self._session.flush()
+        return moved
+
+    async def grant_upgrade_difference(
+        self,
+        *,
+        user: User,
+        plan_credits: int,
+        facemap_seconds: int,
+        note: str | None = None,
+    ) -> dict[str, int]:
+        """Top the balances up to a richer plan's allowance, mid-period.
+
+        §8.3: *upgrades apply immediately and grant the difference in allowance
+        pro rata.* The difference and not the whole allowance — someone who
+        upgrades having already spent half of Pro's credits should not be handed
+        Business's full month on top of what they have left, which would make
+        upgrading twice in a month a way to print credits.
+
+        Never negative: a downgrade does not claw anything back, it waits for
+        the period boundary (which is why there is no matching `take_` here).
+        """
+        moved: dict[str, int] = {}
+        for bucket, column, target in (
+            (CreditBucket.PLAN, "plan_credits", plan_credits),
+            (CreditBucket.FACEMAP, "facemap_seconds", facemap_seconds),
+        ):
+            difference = target - int(getattr(user, column))
+            if difference > 0:
+                await self._write(
+                    user=user,
+                    bucket=bucket,
+                    delta=difference,
+                    reason=LedgerReason.PLAN_GRANT,
+                    job_id=None,
+                    note=note,
+                )
+                moved[bucket.value] = difference
+        await self._session.flush()
+        return moved
+
+    async def grant_topup(
+        self,
+        *,
+        user: User,
+        credits: int,
+        payment_id: uuid.UUID | None,
+        note: str | None = None,
+    ) -> None:
+        """Credits that were bought. They land in `topup` and never expire."""
+        await self._write(
+            user=user,
+            bucket=CreditBucket.TOPUP,
+            delta=credits,
+            reason=LedgerReason.TOPUP_PURCHASE,
+            job_id=None,
+            payment_id=payment_id,
+            note=note,
+        )
+        await self._session.flush()
+
+    async def grant_promo_bonus(self, *, user: User, credits: int, code: str) -> None:
+        """The one-off bonus a promo code carries.
+
+        Into `topup` rather than `plan`, deliberately: `plan` is swept at every
+        period boundary, so a bonus granted there would silently vanish at the
+        end of the user's first month. A gift that expires before it is noticed
+        is worse than no gift — it is the kind of thing that gets posted in the
+        Discord server the code came from.
+        """
+        await self._write(
+            user=user,
+            bucket=CreditBucket.TOPUP,
+            delta=credits,
+            reason=LedgerReason.PROMO_GRANT,
+            job_id=None,
+            note=f"promo code {code}",
+        )
+        await self._session.flush()

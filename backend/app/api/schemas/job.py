@@ -258,6 +258,13 @@ class EstimateResponse(ApiModel):
     `blockedBy` carries the error code the real call would return, so the client
     can put "Not enough credits" on the button itself rather than after a failed
     click (contract §6.1).
+
+    `blockedDetails` carries **the same `details` the failed call would have
+    sent** — `requiredPlan`, `required`, `available`. Without it the client can
+    say *that* something is blocked and not *what to do about it*: naming the
+    upgrade needs the plan, and a frontend that hardcoded one would have sent a
+    free user to Pro at $19.99 for a 1080p export that `beta` covers at $3.99.
+    The server reads it from the plans table, so it follows a repricing.
     """
 
     credits: int
@@ -265,6 +272,7 @@ class EstimateResponse(ApiModel):
     estimated_seconds: int
     sufficient_balance: bool
     blocked_by: str | None = None
+    blocked_details: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobProgressEvent(BaseModel):

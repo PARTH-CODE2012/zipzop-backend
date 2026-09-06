@@ -51,12 +51,16 @@ async def _user(db: AsyncSession, email: str | None = None) -> User:
 # --------------------------------------------------------------------------
 
 
-async def test_the_four_plans_are_seeded_with_the_documented_values(db: AsyncSession) -> None:
-    """docs/03-backend-architecture.md §5.5, exactly.
+async def test_the_five_plans_are_seeded_with_the_documented_values(db: AsyncSession) -> None:
+    """docs/03-backend-architecture.md §5.5 and docs/13-mvp-direction.md §3, exactly.
 
     Hard-coded rather than read from the migration, so that editing the
     migration's numbers by accident fails here instead of silently repricing
     every account.
+
+    An exact dictionary comparison, deliberately: a plan added to the migration
+    and not to this list fails here, which is how the `beta` row was forced to
+    arrive with its documented values rather than approximately them.
     """
     rows = (await db.execute(sa.select(Plan).order_by(Plan.queue_priority))).scalars().all()
     got = {
@@ -74,6 +78,9 @@ async def test_the_four_plans_are_seeded_with_the_documented_values(db: AsyncSes
     }
     assert got == {
         PlanCode.FREE: (300, 0, None, 720, "forced", 0, None, None),
+        # `queue_priority` 0, the same band as free: this tier buys volume,
+        # resolution and no watermark, not a place in the queue.
+        PlanCode.BETA: (800, 0, None, 1080, "none", 0, 399, 19900),
         PlanCode.PRO: (2500, 300, None, 1080, "none", 10, 1999, 99900),
         PlanCode.BUSINESS: (8000, 1200, None, 2160, "none", 20, 4999, 199900),
         PlanCode.STUDIO: (30000, 3600, 30000, 2160, "custom", 30, 9999, 299900),

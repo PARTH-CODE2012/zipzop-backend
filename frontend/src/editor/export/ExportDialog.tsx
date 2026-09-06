@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 
 import {
   createJob,
@@ -34,6 +35,7 @@ import {
   type EstimateResponse,
   type JobResponse,
 } from '@/lib/api/endpoints'
+import { paywallFor } from '@/billing/paywall'
 import { useEditor } from '@/editor/state/store'
 
 export const RESOLUTIONS = [
@@ -115,6 +117,11 @@ export function ExportDialog({ open, onClose, onStarted }: ExportDialogProps) {
   }, [open, projectId, request])
 
   const blocked = useMemo(() => blockedReason(estimate), [estimate])
+  // The way out of the block, from the same code the sentence came from.
+  const wall = useMemo(
+    () => paywallFor(estimate?.blockedBy ?? null, estimate?.blockedDetails ?? {}),
+    [estimate],
+  )
 
   async function submit() {
     if (!projectId) return
@@ -173,9 +180,27 @@ export function ExportDialog({ open, onClose, onStarted }: ExportDialogProps) {
         />
 
         {blocked && (
-          <p className="text-xs" style={{ color: 'var(--color-warning)' }} data-testid="export-blocked">
-            {blocked}
-          </p>
+          <div
+            className="flex flex-col gap-1 text-xs"
+            style={{ color: 'var(--color-warning)' }}
+            data-testid="export-blocked"
+          >
+            <span>{blocked}</span>
+            {/* **No dead ends.** A greyed-out button with a sentence and
+                nowhere to press is where somebody decides the product is not
+                worth it. `paywallFor` reads the plan the *server* named, so
+                this link follows a repricing without being edited. */}
+            {wall && (
+              <Link
+                href={wall.href}
+                className="self-start underline"
+                style={{ color: 'var(--color-accent)' }}
+                data-testid="export-unblock"
+              >
+                {wall.action}
+              </Link>
+            )}
+          </div>
         )}
         {error && (
           <p className="text-xs" style={{ color: 'var(--color-danger)' }} data-testid="export-error">

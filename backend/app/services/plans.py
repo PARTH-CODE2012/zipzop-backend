@@ -10,15 +10,43 @@ rather than something marketing changes. Job costs (§5.5) are per *tool*, for
 the same reason.
 """
 
+from collections.abc import Mapping
 from typing import Final
 
 from app.models import PlanCode
+
+
+def _for_plan[ValueT](table: Mapping[PlanCode, ValueT], plan: PlanCode, what: str) -> ValueT:
+    """Read a per-plan table, and say what to do when a plan is missing.
+
+    Both tables below were read with a bare subscript until the fifth plan was
+    added, so a tier present in the enum and the database but absent here raised
+    `KeyError: <PlanCode.BETA>` on **the job-claim path and the upload path** —
+    the two places a user notices immediately, and for a new plan, the users who
+    have just paid.
+
+    `test_plans.py` asserts every `PlanCode` is covered, so this should be
+    unreachable. It exists for the deployment where it is not: a message naming
+    the file to edit costs nothing and turns a puzzling 500 into a one-line fix.
+    """
+    try:
+        return table[plan]
+    except KeyError:
+        raise RuntimeError(
+            f"no {what} for plan {plan.value!r} — add it to app/services/plans.py. "
+            "Every PlanCode needs an entry in both tables there."
+        ) from None
+
 
 #: Per-user, per-family concurrency. Beyond the limit a job stays `queued` and
 #: starts as slots free up — the request still succeeds, so the client never
 #: has to handle "try again later" (§5.3).
 CONCURRENCY_LIMITS: Final[dict[PlanCode, dict[str, int]]] = {
     PlanCode.FREE: {"analysis": 1, "render": 1, "inference": 0},
+    # Above Free's 1 and below Pro's 3, matching where the plan sits. Queue
+    # priority is what Pro sells (docs/13-mvp-direction.md §3), so this tier is
+    # deliberately not given Pro's parallelism either.
+    PlanCode.BETA: {"analysis": 2, "render": 1, "inference": 0},
     PlanCode.PRO: {"analysis": 3, "render": 2, "inference": 1},
     PlanCode.BUSINESS: {"analysis": 5, "render": 3, "inference": 2},
     PlanCode.STUDIO: {"analysis": 8, "render": 5, "inference": 3},
@@ -26,7 +54,7 @@ CONCURRENCY_LIMITS: Final[dict[PlanCode, dict[str, int]]] = {
 
 
 def concurrency_for(plan: PlanCode) -> dict[str, int]:
-    return dict(CONCURRENCY_LIMITS[plan])
+    return dict(_for_plan(CONCURRENCY_LIMITS, plan, "concurrency limit"))
 
 
 _GB: Final = 1024**3
@@ -46,6 +74,7 @@ _GB: Final = 1024**3
 #: small change. **They must not ship as-is.**
 STORAGE_QUOTA_BYTES: Final[dict[PlanCode, int]] = {
     PlanCode.FREE: 5 * _GB,
+    PlanCode.BETA: 25 * _GB,
     PlanCode.PRO: 100 * _GB,
     PlanCode.BUSINESS: 500 * _GB,
     PlanCode.STUDIO: 2048 * _GB,
@@ -53,4 +82,4 @@ STORAGE_QUOTA_BYTES: Final[dict[PlanCode, int]] = {
 
 
 def storage_quota_for(plan: PlanCode) -> int:
-    return STORAGE_QUOTA_BYTES[plan]
+    return _for_plan(STORAGE_QUOTA_BYTES, plan, "storage quota")

@@ -429,77 +429,65 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 
 ---
 
-## M6 · Money
+## M6 · Money ✅
 
 *Ends when: you hit the free limit, subscribe, and the new allowance appears within seconds.*
 
-> **Start at [`docs/20-m6-readiness.md`](docs/20-m6-readiness.md), written 31 August.**
-> More of M6 is already built than this checklist suggests — the tables, the
-> credit ledger and the plan gating all ship — and the readiness note carries the
-> four traps that are cheap to avoid now and expensive to find in production.
-
-> **Grew on 25 August — read [`docs/13-mvp-direction.md`](docs/13-mvp-direction.md).**
-> Everything below still ships. **Razorpay first** removes the second adapter for
-> now; the **fifth `beta` plan** and the **promo-code and commission** block at
-> the end of this section are added. Net: bigger than it was.
+> **Built 31 August.** Notes in [`docs/21-m6-notes.md`](docs/21-m6-notes.md) —
+> what shipped, the defects the tests found, and the two things still outside
+> the repository. The readiness note that preceded it is
+> [`docs/20-m6-readiness.md`](docs/20-m6-readiness.md).
+>
+> 🔴 **Two items below stay unticked on purpose.** Neither is code, and neither
+> can be closed from here: the webhook secret does not exist until an endpoint
+> is created in the Razorpay dashboard, and whether the account may charge USD
+> is an activation matter. Everything depending on them is written and tested
+> against a secret of our own choosing; **nothing has met a live delivery.**
 
 - [~] ~~Stripe and~~ **Razorpay account opened** 🔗 — **test key pair received 25 August**, in the developer's `.env` and nowhere else. Two things still outstanding:
-  - [ ] **The webhook secret**, which is a *third* secret and does not exist until a webhook endpoint is created in the dashboard. Until then the signature check cannot be exercised, and an untested signature check is indistinguishable from none. ✅ The application now **refuses to boot in production without it**
-  - [ ] ⚠️ **Confirm the account may charge USD.** $3.99 is a dollar price on an Indian processor, and currency availability is an account-activation matter rather than an API capability. ✅ `make razorpay-check ARGS=--currency` probes it — **a refusal in test mode is conclusive and arrives now**; an acceptance leaves it open until the account goes live
-- [x] **Production cannot boot with test keys** — `assert_production_safe()` refuses `rzp_test_…` in production, a key with no secret, and a key with no webhook secret. Only checked when a key is present, so today's empty configuration still starts. Eight cases in `tests/test_config.py`
+  - [ ] 🔴 **The webhook secret**, which is a *third* secret and does not exist until a webhook endpoint is created in the dashboard. ✅ The application **refuses to boot in production without it**, and the signature check is written and exercised against a test secret — six cases in `tests/test_billing_razorpay.py`, including that an **unconfigured verifier fails closed**. What is missing is a real delivery
+  - [ ] 🔴 ⚠️ **Confirm the account may charge USD.** ✅ `make razorpay-check ARGS=--currency` probes it — a refusal in test mode is conclusive; an acceptance leaves it open until the account goes live. ✅ Meanwhile `BILLING_PROVIDER_FOR_USD` routes dollars to Razorpay, and switching to Stripe is that one variable
+- [x] **Production cannot boot with test keys** — eight cases in `tests/test_config.py`
 - [ ] Stripe is deferred, so its application can wait
-- [ ] `billing/providers/` — ~~one adapter per provider~~ **the Razorpay adapter first**, against the interface that was designed for two. Stripe stays addable without reshaping anything ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §8.1)
-- [ ] `GET /plans` — public, currency suggested by IP, overridable. ⚠️ **Must filter on `plans.is_public`** — the column exists in migration `0002` and **nothing reads it today**. It is the whole mechanism for retiring `beta` later without touching anyone already on it, and an endpoint that ignores it makes the retirement a no-op
-- [ ] `POST /billing/checkout` → hosted checkout URL
-- [ ] `POST /billing/topup`, `/portal`, `/cancel` with the "you will lose X credits" response
-- [ ] Webhooks: **verify signature → store in `provider_events` → 200 immediately → process async**
-- [ ] Duplicate events collide on the primary key and are dropped
-- [ ] Renewal: sweep `plan` + `facemap`, grant new allowance, **never touch `topup`**, one transaction
-- [ ] Celery beat hourly sweep as the safety net — and the only path for free users
-- [ ] Upgrade immediate + pro rata; downgrade at period end — **five plans now, so `beta` → `pro` is the upgrade path that will actually get used**
-- [ ] `GET /credits/ledger` with buckets
-- [ ] Cost-per-job metric instrumented ⚠️ — **more urgent at $3.99 than it was at $19.99.** The allowance was derived from a price five times higher, and `SECONDS_PER_MINUTE_OF_MEDIA` in `pricing.py` is a heuristic, not a measurement ([`docs/11-m4-notes.md`](docs/11-m4-notes.md) §8). Net of the 15% commission and processing, one subscription clears about **$3.28** to cover a month of transcription, trimming, storage and export
-- [ ] Frontend: pricing page, checkout redirect, **confirming state on return** (never trust the redirect), 30 s polling fallback
-- [ ] Frontend: balances — one number everywhere except billing, cancellation and face mapping
-- [ ] Frontend: paywalls that name the unblock and link to it. **No dead ends**
-- [ ] Frontend: running out mid-project never blocks plain editing and never loses work
+- [x] `billing/providers/` — **the Razorpay adapter**, against the interface designed for two. `base.py` holds the vocabulary and nothing above it knows which provider a user came through. **Eighteen tests, all on our side of the boundary** — the signature, the normalisation, which of our users an event names — because that is the part a live account would not have proved anyway
+- [x] `GET /plans` — public, currency suggested by an **edge header** (there is no GeoIP database, and there should not be one), overridable with `?currency=`. ✅ **Filters on `plans.is_public`, and so does the checkout**: hiding a plan from the list without refusing to sell it leaves a bookmarked pricing page still selling it
+- [x] `POST /billing/checkout` → hosted checkout URL. A **downgrade returns `checkoutUrl: null`** with `scheduledPlan` and `effectiveAt` rather than a payment page
+- [x] `POST /billing/topup`, `/portal`, `/cancel` with the "you will lose X credits" response. ✅ `GET /billing/topup-packs` added — `packCode` had no source, and a client that hardcodes pack codes breaks the day one is renamed. ⚠️ `portalUrl` is **nullable**: Razorpay hosts no customer portal, and saying so beats opening a page that does not exist
+- [x] Webhooks: **verify signature → store in `provider_events` → 200 immediately → process async**
+- [x] Duplicate events collide on the primary key and are dropped
+- [x] Renewal: sweep `plan` + `facemap`, grant the new allowance, **never touch `topup`**, one transaction. ✅ Pinned by a test that was verified by widening the sweep to three buckets and watching five tests fail
+- [x] Celery beat hourly sweep as the safety net — and the only path free users have. **One subscription per transaction**, so one bad row cannot roll back five hundred good renewals
+- [x] Upgrade immediate and grants **the difference, not the allowance** (stacking would make upgrading twice a way to print credits); downgrade at the period boundary through `subscriptions.pending_plan`
+- [x] `GET /credits/ledger` with buckets, cursor-paged
+- [x] Cost-per-job metric instrumented ✅ — `jobs.media_duration_ms` records what each job actually chewed through, and `make job-costs` reports the **measured** seconds-per-minute against what `pricing.py` assumes. Median rather than mean, and it **reports without adjusting**. Jobs from before the column are deliberately not backfilled: a guess would be indistinguishable from a measurement in the one report that has to be trusted
+- [x] Frontend: pricing page, checkout redirect, **confirming state on return** (never trust the redirect), 30 s fallback that never calls a slow confirmation a failure
+- [x] Frontend: balances — one number everywhere except billing, cancellation and face mapping
+- [x] Frontend: paywalls that name the unblock and link to it. **No dead ends** — `blockedDetails` was added to the estimate so the client names the plan the *server* chose rather than one hardcoded in the frontend
+- [x] Frontend: running out mid-project never blocks plain editing and never loses work
 
-### The `beta` plan — new on 25 August 🔗
+### The `beta` plan — new on 25 August ✅
 
-$3.99 / ₹199, added beside the four tiers and retired once the Discord campaign
-ends. Values and the reasoning for each are in
-[`docs/13-mvp-direction.md`](docs/13-mvp-direction.md) §3.
+- [x] Migration: `ALTER TYPE plan_code ADD VALUE 'beta'` and the seeded row — **800 credits · 1080p · watermark `none` · `queue_priority` 0 · 399 cents / 19900 paise**. Written `IF NOT EXISTS … AFTER 'free'`, because migration `0002` builds the type from the *live* Python enum: without the guard this passes on a developer's machine and fails on a fresh CI database
+- [x] ⚠️ **`queue_priority` is 0, not 5** — and a test now asserts *every* plan's band is one Celery actually has, so the trap cannot return with plan six
+- [x] 🔴 **`beta` in both dictionaries in `app/services/plans.py`** — `{"analysis": 2, "render": 1, "inference": 0}` and 25 GB, `PLACEHOLDER` marker kept. ✅ Both accessors now raise a message naming the file to edit, and `tests/test_plans.py` asserts every `PlanCode` is covered — that guard is about plan six, not this one
+- [x] `test_the_four_plans_are_seeded_with_the_documented_values` updated and renamed for five
+- [x] **`_plan_for_height` now reads the plans table.** It was a hard-coded ladder that would have sent a free user to Pro at $19.99 for a 1080p export `beta` covers at $3.99 — and would have kept naming `beta` after `is_public` retired it
 
-- [ ] Migration: `ALTER TYPE plan_code ADD VALUE 'beta'` and seed the row — **800 credits · 1080p · watermark `none` · `queue_priority` 0 · 399 cents / 19900 paise · `facemap_seconds` 0 · `fair_use_credits` NULL**
-- [ ] ⚠️ **`queue_priority` is 0, not 5.** Celery's `priority_steps` are `[0, 10, 20, 30]` and `apply_async(priority=…)` passes the plan's value through untranslated. A value between bands is silently mapped to a neighbour
-- [ ] 🔴 **Add `beta` to both dictionaries in [`app/services/plans.py`](backend/app/services/plans.py)** — `CONCURRENCY_LIMITS` and `STORAGE_QUOTA_BYTES` are read with a direct subscript, so a plan missing from either raises `KeyError` on the claim path and the upload path. Use `{"analysis": 2, "render": 1, "inference": 0}` and 25 GB, and **keep the `PLACEHOLDER` marker** — the storage question is still unanswered for every tier
-- [ ] `test_the_four_plans_are_seeded_with_the_documented_values` in `test_schema.py` asserts an exact five-key dictionary — **it will fail, and that is the test working.** Update it with the new row
+### Discord referrals — new on 25 August ✅ (except the payout)
 
-### Discord referrals — new on 25 August 🔗
+- [x] `promo_codes` table — one code per server owner; `is_active` retires one without deleting it, so the attributions pointing at it keep resolving
+- [x] Promo-code field at sign-up, checked **before** submitting through `GET /promo/{code}`, and the attribution **stored on the user permanently**. A mistyped code does not fail registration
+- [x] The code grants **+300 bonus credits into `topup`** — the bucket that never expires, because a bonus in `plan` would silently vanish at the end of the user's first month
+- [x] Commission accrual as **ledger rows**, signed and append-only, **recomputed on every renewal**. A unique index on `(payment_id, reason)` makes a double accrual impossible; a payout is a negative row rather than a status flip, so what is owed is a `SUM` and the history survives
+- [x] Owner-facing figures: `GET /promo/{code}/stats` — signups, subscribers, accrued, paid, owed, **per currency and never summed across them**
+- [ ] 🔴 Payout: **accrue from day one, pay the first cohort by hand.** The real process — schedule, threshold, channel, tax — is **still unowned**, and is needed by the tenth server owner rather than the first
+- [ ] ⚠️ Abuse: self-referral, codes shared outside the server, and a chargeback landing after a commission is paid. `CommissionReason.REVERSAL` exists for the third; **the paragraph of thought is still owed**
 
-Nothing here exists yet: `promo`, `referral`, `coupon` and `affiliate` all return
-zero matches across the backend. **The field is the visible tenth of it** — the
-attribution has to outlive the session, because the commission is owed on a
-subscription that happens later.
+### Templates — small, and not an AI tool ✅
 
-- [ ] `promo_codes` table — one code per Discord server owner, activatable and deactivatable
-- [ ] Promo-code field at sign-up, and the attribution **stored on the user permanently**, not in the session. An attribution lost at signup is a commission that can never be paid
-- [ ] The code grants **+300 bonus credits, one off — not a discount.** A discount and a 15% commission on the same $3.99 leave almost nothing, and the free tier already gives 300 credits away, so a code that granted nothing would give the user no reason to type it and the owner nothing to announce
-- [ ] Commission accrual as **ledger rows**, **recomputed on every renewal** rather than once at signup — a one-off commission on a recurring product misaligns the owner's incentive from month two. Money moving is already double-entry and append-only ([`docs/03-backend-architecture.md`](docs/03-backend-architecture.md) §2 principle 6), so this is a new counterparty, not a new financial model
-- [ ] Owner-facing figures: how many signed up, how many subscribed, what is owed
-- [ ] Payout: **accrue from day one, pay the first cohort by hand.** 🔴 The real process — schedule, threshold, channel, tax — is still unowned and is needed by the tenth server owner, not the first
-- [ ] ⚠️ Abuse: self-referral, codes shared outside the server, and a chargeback landing after a commission is paid. One paragraph of thought before launch, not after
-
-### Templates — small, and not an AI tool 🔗
-
-Decided 25 August as **the user's own settings, saved and reapplied** — caption
-style, colour grade, transition defaults, title styling. Not a supplied library:
-that reading is [`vision.md`](vision.md) §Features 04 & 05 and carries a licensed
-music library and the real-person-naming exposure, neither of which has an owner.
-
-- [ ] Save the current project's settings as a named template, on the account
-- [ ] Apply one to another project as **a single `commit`**, so it undoes in one step like every other bulk operation
-- [ ] **No worker, no queue, no credits, no new job type** — it is a subset of the timeline document, so it belongs beside the editing operations rather than in the tools panel
+- [x] Save the current project's settings as a named template, on the account. `PUT`, so saving over a name replaces it rather than leaving two rows reading identically
+- [x] Apply one to another project as **a single `commit`**, so it undoes in one step. Applied through `operations.ts`, so a saved 2-second dissolve landing on a 1-second clip is **clamped** rather than producing a document the server rejects on the next autosave — which would lose the edit just made
+- [x] **No worker, no queue, no credits, no new job type** — a `templates` mode on the rail, beside the editing operations
 
 ---
 

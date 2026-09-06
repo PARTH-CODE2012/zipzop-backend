@@ -353,6 +353,17 @@ export function IconLibrary(props: IconProps) {
   )
 }
 
+/** Stacked sheets — a set of settings lifted off one project onto another. */
+export function IconLayers(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.5 3.5 8l8.5 4.5L20.5 8z" />
+      <path d="M3.5 12.5 12 17l8.5-4.5" />
+      <path d="M3.5 17 12 21.5l8.5-4.5" />
+    </Icon>
+  )
+}
+
 export function IconSliders(props: IconProps) {
   return (
     <Icon {...props}>
