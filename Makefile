@@ -303,6 +303,10 @@ e2e-headful: e2e-media ## The same, with a window you can watch
 razorpay-check: ## Check the Razorpay keys authenticate, and which currencies the account takes
 	bash scripts/razorpay-check.sh $(ARGS)
 
+.PHONY: job-costs
+job-costs: ## What jobs actually cost, against what the prices assume (M6)
+	cd $(BACKEND) && ./$(VBIN)/python -m app.scripts.job_costs $(ARGS)
+
 .PHONY: openapi
 openapi: ## Regenerate openapi.json from FastAPI
 	cd $(BACKEND) && ./$(VBIN)/python -m app.scripts.dump_openapi ../openapi.json

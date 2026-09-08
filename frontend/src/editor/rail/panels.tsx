@@ -24,6 +24,7 @@ import { NumberField } from '@/editor/controls/NumberField'
 import { IconSparkles, IconTypography, IconVolume } from '@/editor/icons'
 import { LUT_NAMES } from '@/editor/playback/lut-catalogue'
 import { needsSelection, type Mode, type ModeId } from '@/editor/rail/modes'
+import { TemplatesPanel } from '@/editor/templates/TemplatesPanel'
 import { selectSelectedAnyClip, useEditor } from '@/editor/state/store'
 import type { AnyClip, MediaClip } from '@/editor/state/timeline-document'
 import { estimateKey, isRunning, useTools, type ToolName } from '@/editor/tools/jobs-store'
@@ -57,6 +58,8 @@ export function ModePanel({ mode }: { mode: Mode }) {
         <AudioPanel clip={media} />
       ) : mode.id === 'colour' && media ? (
         <ColourPanel clip={media} />
+      ) : mode.id === 'templates' ? (
+        <TemplatesPanel />
       ) : media ? (
         <ToolPanel mode={mode} clipId={media.id} />
       ) : null}

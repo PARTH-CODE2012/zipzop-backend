@@ -114,11 +114,32 @@ class Settings(BaseSettings):
     #: check is the whole defence on the billing path (§8.5).
     razorpay_webhook_secret: str = ""
 
+    #: Who processes dollars.
+    #:
+    #: §8.2's destination is Stripe. Stripe is **deferred, not dropped**, and
+    #: until its adapter exists the only implemented provider has to take both
+    #: currencies — which is what "Razorpay first" means in practice. Switching
+    #: on the day Stripe lands is this one variable.
+    billing_provider_for_usd: Literal["razorpay", "stripe"] = "razorpay"
+
     # ------------------------------------------------------------ computed
     @computed_field  # type: ignore[prop-decorator]
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def billing_return_url_origins(self) -> list[str]:
+        """Where a checkout may send the user back to.
+
+        `returnUrl` arrives in the request body, so it is attacker-controlled:
+        an open redirect on the billing path is a phishing page a customer
+        reaches from a genuine payment. Only these origins are accepted, and
+        they are the CORS list because that is already the set of places this
+        application is served from — a second list would drift from the first.
+        """
+        return self.cors_origin_list
 
     @computed_field  # type: ignore[prop-decorator]
     @property

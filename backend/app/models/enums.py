@@ -96,6 +96,11 @@ class CreditBucket(enum.StrEnum):
 
 class LedgerReason(enum.StrEnum):
     SIGNUP_GRANT = "signup_grant"
+    #: The one-off bonus a promo code grants. Its own reason and not
+    #: `signup_grant`: the ledger is what a support conversation about "where
+    #: did my credits come from" is answered from, and two rows both saying
+    #: `signup_grant` cannot answer it.
+    PROMO_GRANT = "promo_grant"
     PLAN_GRANT = "plan_grant"
     PLAN_EXPIRY = "plan_expiry"
     TOPUP_PURCHASE = "topup_purchase"
@@ -106,7 +111,17 @@ class LedgerReason(enum.StrEnum):
 
 
 class PlanCode(enum.StrEnum):
+    """The five tiers, in price order.
+
+    `beta` was added 31 August for the Discord launch (docs/13-mvp-direction.md
+    §3) and is expected to be retired once that campaign ends — through
+    `plans.is_public`, not by removing it. **A member is never deleted from this
+    enum**: Postgres cannot drop an enum label that any row still uses, and the
+    rows that use it are the accounts of the people who paid first.
+    """
+
     FREE = "free"
+    BETA = "beta"
     PRO = "pro"
     BUSINESS = "business"
     STUDIO = "studio"
@@ -142,6 +157,21 @@ class PaymentStatus(enum.StrEnum):
     REFUNDED = "refunded"
 
 
+class CommissionReason(enum.StrEnum):
+    """Movements in what a Discord server owner is owed.
+
+    Append-only and signed, exactly like `credit_ledger`: a payout is a negative
+    row rather than a status flipped on the accrual. What is owed is then a
+    `SUM`, the history of how it got there survives, and a reversal after a
+    chargeback is a row somebody can read rather than a number that quietly
+    changed (docs/13-mvp-direction.md §6).
+    """
+
+    ACCRUAL = "accrual"  # a subscription was paid for; commission is owed
+    PAYOUT = "payout"  # we paid it — negative
+    REVERSAL = "reversal"  # chargeback or refund took the payment back — negative
+
+
 #: Every enum type, in the order a migration must create them, paired with the
 #: SQL type name. `create_all_types` / `drop_all_types` in the M2 migration walk
 #: this so a new enum cannot be added to the application and forgotten in the
@@ -161,6 +191,7 @@ ENUM_TYPES: list[tuple[str, type[enum.Enum]]] = [
     ("payment_provider", PaymentProvider),
     ("payment_kind", PaymentKind),
     ("payment_status", PaymentStatus),
+    ("commission_reason", CommissionReason),
 ]
 
 

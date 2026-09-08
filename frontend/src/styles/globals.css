@@ -325,3 +325,20 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* A single rotating ring, used by the "confirming your payment" state.
+   Its own keyframe rather than a library: one spinner does not justify a
+   dependency, and `prefers-reduced-motion` has to be honoured either way —
+   somebody waiting on a payment should not be given a moving object they
+   cannot switch off. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*='animation: spin'] {
+    animation: none !important;
+  }
+}

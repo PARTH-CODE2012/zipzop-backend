@@ -28,6 +28,7 @@ from app.models import (
     LedgerReason,
     MediaAsset,
     Plan,
+    PlanCode,
     Subscription,
     SubStatus,
 )
@@ -293,7 +294,7 @@ async def _quote_export(
             {
                 "requested": job_input.preset.height,
                 "allowed": ceiling,
-                "requiredPlan": _plan_for_height(job_input.preset.height),
+                "requiredPlan": await _plan_for_height(session, job_input.preset.height),
             },
         )
 
@@ -335,17 +336,35 @@ async def _quote_export(
 _FREE_EXPORT_HEIGHT = 720
 
 
-def _plan_for_height(height: int) -> str:
-    """The cheapest seeded plan whose ceiling covers this height.
+async def _plan_for_height(session: AsyncSession, height: int) -> str:
+    """The cheapest **public** plan whose ceiling covers this height.
 
     Named in the error so the client can say *which* upgrade, which is what
     contract §6.2's `requiredPlan` is for.
+
+    **Read from the table, not from a ladder in code.** This was three `if`
+    statements until the `beta` plan arrived, and a hard-coded ladder is wrong
+    twice over the moment a fifth tier exists: it sent a free user wanting 1080p
+    to Pro at $19.99 when `beta` covers the same height for $3.99, and it would
+    keep naming `beta` after the campaign ended and `is_public` retired it.
+    Both failures are silent — the message is still grammatical, just wrong.
+
+    `is_public` is filtered here for the same reason `GET /plans` filters it: a
+    plan nobody can see is a plan nobody can be told to buy.
+
+    Ordering assumes a NULL `price_usd_cents` means free rather than
+    "priced only in rupees", which is true of every seeded row and is the
+    reason `monthly_credits` is the tie-break rather than the sort key.
     """
-    if height <= 720:
-        return "free"
-    if height <= 1080:
-        return "pro"
-    return "business"
+    code = await session.scalar(
+        sa.select(Plan.code)
+        .where(Plan.max_export_height >= height, Plan.is_public.is_(True))
+        .order_by(sa.func.coalesce(Plan.price_usd_cents, 0), Plan.monthly_credits)
+        .limit(1)
+    )
+    # No public plan reaches that height — 8K, say. The client still needs a
+    # string, and the most capable tier is the only honest thing to point at.
+    return code.value if code is not None else PlanCode.STUDIO.value
 
 
 def _analysed_duration_ms(asset: MediaAsset, job_input: AssetJobInput) -> int:

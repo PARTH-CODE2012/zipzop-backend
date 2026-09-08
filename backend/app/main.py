@@ -12,7 +12,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
-from app.api.routes import auth, catalog, health, jobs, media, projects, ws
+from app.api.routes import (
+    auth,
+    billing,
+    catalog,
+    health,
+    jobs,
+    media,
+    projects,
+    templates,
+    webhooks,
+    ws,
+)
 from app.config import assert_production_safe, settings
 from app.db import engine
 from app.logging import RequestContextMiddleware, configure_logging, get_logger
@@ -68,7 +79,13 @@ def create_app() -> FastAPI:
     app.include_router(projects.router, prefix="/v1")
     app.include_router(jobs.router, prefix="/v1")
     app.include_router(ws.router, prefix="/v1")
-    # app.include_router(billing.router, prefix="/v1")    # M6
+    app.include_router(billing.router, prefix="/v1")
+    app.include_router(templates.router, prefix="/v1")
+    # Server-to-server, unauthenticated by necessity and signature-verified.
+    # Under /v1 like everything else so a provider's configured URL does not
+    # have to change when the API version does — contract §7 lists them as
+    # `/v1/webhooks/…`.
+    app.include_router(webhooks.router, prefix="/v1")
 
     return app
 

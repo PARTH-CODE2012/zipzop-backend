@@ -213,6 +213,7 @@ async def estimate_job(
         estimated_seconds=assessment.estimated_seconds,
         sufficient_balance=allocation is not None,
         blocked_by=assessment.rejection.code if assessment.rejection else None,
+        blocked_details=assessment.rejection.details if assessment.rejection else {},
     )
 
 
@@ -297,6 +298,9 @@ async def create_job(
         priority=assessment.priority,
         job_input=job_input,
         credits_reserved=assessment.credits,
+        # The measurement half of the cost report. `assessment` already knows
+        # it: pricing is a function of the tool and this number.
+        media_duration_ms=assessment.duration_ms,
         project_id=project_uuid,
         idempotency_key=idempotency_key,
     )

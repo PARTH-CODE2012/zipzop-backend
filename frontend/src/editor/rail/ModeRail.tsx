@@ -17,6 +17,7 @@
 import {
   IconMessage,
   IconLibrary,
+  IconLayers,
   IconPalette,
   IconSliders,
   IconTypography,
@@ -30,6 +31,7 @@ const GLYPHS: Record<ModeId, React.ReactNode> = {
   titles: <IconTypography size={17} />,
   audio: <IconSliders size={17} />,
   colour: <IconPalette size={17} />,
+  templates: <IconLayers size={17} />,
   captions: <IconMessage size={17} />,
   trim: <IconWand size={17} />,
 }

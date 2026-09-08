@@ -34,7 +34,7 @@ from app.config import settings
 from app.logging import get_logger
 from app.models import User
 from app.repositories.user import RefreshTokenRepository, UserRepository
-from app.services import security
+from app.services import promo, security
 from app.services.plans import concurrency_for
 
 log = get_logger(__name__)
@@ -143,7 +143,13 @@ async def register(
         hashed_password=security.hash_password(body.password),
         display_name=body.display_name,
     )
-    log.info("registered", user_id=str(user.id))
+    # In the same transaction as the account. A bonus granted afterwards is a
+    # bonus that can be lost between two commits, and a promo attribution
+    # written afterwards is one that can be missing from an account that quoted
+    # the code — which is a commission nobody can ever pay.
+    bonus = await promo.attach_at_signup(session, user=user, code=body.promo_code)
+
+    log.info("registered", user_id=str(user.id), promo_bonus=bonus)
     return await _start_session(request, response, session, user)
 
 

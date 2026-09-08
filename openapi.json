@@ -185,6 +185,63 @@
         "title": "AssetResponse",
         "type": "object"
       },
+      "CancelRequest": {
+        "properties": {
+          "atPeriodEnd": {
+            "default": true,
+            "title": "Atperiodend",
+            "type": "boolean"
+          }
+        },
+        "title": "CancelRequest",
+        "type": "object"
+      },
+      "CancelResponse": {
+        "description": "Written to be shown *before* the user confirms \u2014 contract \u00a77.",
+        "properties": {
+          "accessUntil": {
+            "format": "date-time",
+            "title": "Accessuntil",
+            "type": "string"
+          },
+          "cancelAtPeriodEnd": {
+            "title": "Cancelatperiodend",
+            "type": "boolean"
+          },
+          "creditsKept": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Creditskept",
+            "type": "object"
+          },
+          "creditsLostAtPeriodEnd": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Creditslostatperiodend",
+            "type": "object"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan",
+          "status",
+          "cancelAtPeriodEnd",
+          "accessUntil",
+          "creditsLostAtPeriodEnd",
+          "creditsKept"
+        ],
+        "title": "CancelResponse",
+        "type": "object"
+      },
       "CaptionsInput": {
         "properties": {
           "assetId": {
@@ -222,6 +279,102 @@
           "assetId"
         ],
         "title": "CaptionsInput",
+        "type": "object"
+      },
+      "CheckoutRequest": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "returnUrl": {
+            "maxLength": 2048,
+            "title": "Returnurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan",
+          "returnUrl"
+        ],
+        "title": "CheckoutRequest",
+        "type": "object"
+      },
+      "CheckoutResponse": {
+        "description": "What a plan change produced.\n\n**`checkoutUrl` is nullable, which is an amendment to contract \u00a77.** The\nendpoint is specified as *\"start a subscription or change plan\"*, and one\nkind of plan change costs nothing now: a downgrade applies at the next\nperiod boundary (\u00a78.3) so nobody loses credits they are half way through\nusing. There is no page to pay on, and sending the user to one would be\nasking them to pay in order to receive less.\n\nReporting that as an error was the first shape this took, and it was wrong\ntwice: a scheduled downgrade is a success, and \u2014 worse \u2014 the state change\nwas written and then thrown away, because `get_session` rolls back on any\nexception. The client now has one path for \"your plan changed\": follow\n`checkoutUrl` if there is one, otherwise show `effectiveAt`.",
+        "properties": {
+          "checkoutUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkouturl"
+          },
+          "effectiveAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effectiveat"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "scheduledPlan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduledplan"
+          }
+        },
+        "title": "CheckoutResponse",
         "type": "object"
       },
       "ColorAnalysisInput": {
@@ -526,7 +679,7 @@
         "type": "object"
       },
       "EstimateResponse": {
-        "description": "What `POST /jobs` would charge, without creating anything.\n\n`blockedBy` carries the error code the real call would return, so the client\ncan put \"Not enough credits\" on the button itself rather than after a failed\nclick (contract \u00a76.1).",
+        "description": "What `POST /jobs` would charge, without creating anything.\n\n`blockedBy` carries the error code the real call would return, so the client\ncan put \"Not enough credits\" on the button itself rather than after a failed\nclick (contract \u00a76.1).\n\n`blockedDetails` carries **the same `details` the failed call would have\nsent** \u2014 `requiredPlan`, `required`, `available`. Without it the client can\nsay *that* something is blocked and not *what to do about it*: naming the\nupgrade needs the plan, and a frontend that hardcoded one would have sent a\nfree user to Pro at $19.99 for a 1080p export that `beta` covers at $3.99.\nThe server reads it from the plans table, so it follows a repricing.",
         "properties": {
           "blockedBy": {
             "anyOf": [
@@ -538,6 +691,11 @@
               }
             ],
             "title": "Blockedby"
+          },
+          "blockedDetails": {
+            "additionalProperties": true,
+            "title": "Blockeddetails",
+            "type": "object"
           },
           "credits": {
             "title": "Credits",
@@ -873,6 +1031,105 @@
         ],
         "title": "JobTool",
         "type": "string"
+      },
+      "LedgerEntryOut": {
+        "properties": {
+          "balanceAfter": {
+            "title": "Balanceafter",
+            "type": "integer"
+          },
+          "bucket": {
+            "title": "Bucket",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "delta": {
+            "title": "Delta",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "jobId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobid"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "paymentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paymentid"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bucket",
+          "delta",
+          "reason",
+          "balanceAfter",
+          "createdAt"
+        ],
+        "title": "LedgerEntryOut",
+        "type": "object"
+      },
+      "LedgerResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LedgerResponse",
+        "type": "object"
       },
       "LoginRequest": {
         "properties": {
@@ -1338,6 +1595,134 @@
         "title": "PlanLimits",
         "type": "object"
       },
+      "PlanOfferOut": {
+        "description": "One row of the pricing table.\n\n`approxVideosPerMonth` is the marketing figure and `queueLabel` is a word\nrather than a time \u2014 contract \u00a77 is explicit about both. **Credits are the\nreal unit**; these two exist so a pricing page can say something a person\nunderstands without publishing an SLA nobody has measured.",
+        "properties": {
+          "approxVideosPerMonth": {
+            "title": "Approxvideospermonth",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "facemapSeconds": {
+            "title": "Facemapseconds",
+            "type": "integer"
+          },
+          "maxExportHeight": {
+            "title": "Maxexportheight",
+            "type": "integer"
+          },
+          "monthlyCredits": {
+            "title": "Monthlycredits",
+            "type": "integer"
+          },
+          "priceMinor": {
+            "title": "Priceminor",
+            "type": "integer"
+          },
+          "queueLabel": {
+            "title": "Queuelabel",
+            "type": "string"
+          },
+          "watermark": {
+            "title": "Watermark",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "priceMinor",
+          "currency",
+          "monthlyCredits",
+          "approxVideosPerMonth",
+          "facemapSeconds",
+          "maxExportHeight",
+          "watermark",
+          "queueLabel"
+        ],
+        "title": "PlanOfferOut",
+        "type": "object"
+      },
+      "PlansResponse": {
+        "properties": {
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PlanOfferOut"
+            },
+            "title": "Plans",
+            "type": "array"
+          },
+          "suggestedCurrency": {
+            "title": "Suggestedcurrency",
+            "type": "string"
+          },
+          "suggestedProvider": {
+            "title": "Suggestedprovider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestedCurrency",
+          "suggestedProvider",
+          "plans"
+        ],
+        "title": "PlansResponse",
+        "type": "object"
+      },
+      "PortalRequest": {
+        "properties": {
+          "returnUrl": {
+            "maxLength": 2048,
+            "title": "Returnurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "returnUrl"
+        ],
+        "title": "PortalRequest",
+        "type": "object"
+      },
+      "PortalResponse": {
+        "description": "`portalUrl` is nullable, which is an amendment to contract \u00a77.\n\nStripe hosts a customer portal; **Razorpay does not**. Rather than invent a\nURL that 404s or rebuild card management \u2014 which \u00a77 explicitly declines to\ndo \u2014 the absence is reported, with a sentence the client can show and the\nactions that *are* available beside it. Recorded in the contract.",
+        "properties": {
+          "portalUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portalurl"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "PortalResponse",
+        "type": "object"
+      },
       "ProjectAssetRef": {
         "description": "One asset the timeline references, with URLs signed for an hour.\n\n*\"`assets` is a convenience: every asset the timeline references, with fresh\nsigned URLs, so opening a project is one request rather than one per clip.\"*\n\n`thumbnailUrl` is an addition to the contract's example, which lists `id`,\n`proxyUrl`, `peaksUrl` and `durationMs`. Without it the media bin has to\ncall `/media` immediately after opening a project, which is the second\nrequest this field exists to avoid. Additive, so no client breaks.",
         "properties": {
@@ -1539,6 +1924,88 @@
         "title": "ProjectSummary",
         "type": "object"
       },
+      "PromoPreviewResponse": {
+        "description": "What a code is worth, before an account exists.\n\nChecked at the sign-up form so a mistyped code is a message under the field\nrather than a silent nothing after registering \u2014 at which point it can never\nbe applied, because the attribution is written once.",
+        "properties": {
+          "bonusCredits": {
+            "default": 0,
+            "title": "Bonuscredits",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "valid",
+          "message"
+        ],
+        "title": "PromoPreviewResponse",
+        "type": "object"
+      },
+      "PromoStatsResponse": {
+        "description": "What a Discord server owner is owed, for the owner.\n\nAmounts are minor units and per currency, because a code can bring in both\nrupee and dollar subscribers and summing them would be a made-up number.",
+        "properties": {
+          "accruedMinor": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Accruedminor",
+            "type": "object"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "owedMinor": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Owedminor",
+            "type": "object"
+          },
+          "paidMinor": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Paidminor",
+            "type": "object"
+          },
+          "signups": {
+            "title": "Signups",
+            "type": "integer"
+          },
+          "subscribers": {
+            "title": "Subscribers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "isActive",
+          "signups",
+          "subscribers",
+          "owedMinor",
+          "accruedMinor",
+          "paidMinor"
+        ],
+        "title": "PromoStatsResponse",
+        "type": "object"
+      },
       "RangeMs": {
         "description": "A window inside the asset, in **asset** time \u2014 never timeline time.\n\nThe distinction is the one that makes captions land in the wrong place when\nit is got wrong: a clip trimmed to start at 4 s and played at 2x has a\ndifferent clock from the timeline it sits on (contract \u00a76.2).",
         "properties": {
@@ -1602,6 +2069,18 @@
             "minLength": 8,
             "title": "Password",
             "type": "string"
+          },
+          "promoCode": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promocode"
           }
         },
         "required": [
@@ -1758,6 +2237,79 @@
           "limits"
         ],
         "title": "SubscriptionSummary",
+        "type": "object"
+      },
+      "TemplateBody": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "settings"
+        ],
+        "title": "TemplateBody",
+        "type": "object"
+      },
+      "TemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TemplateListResponse",
+        "type": "object"
+      },
+      "TemplateResponse": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "settings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "TemplateResponse",
         "type": "object"
       },
       "TextClip": {
@@ -2018,6 +2570,92 @@
           }
         },
         "title": "TimelineDocument",
+        "type": "object"
+      },
+      "TopupPackOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "priceMinor": {
+            "title": "Priceminor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "credits",
+          "priceMinor",
+          "currency"
+        ],
+        "title": "TopupPackOut",
+        "type": "object"
+      },
+      "TopupPacksResponse": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "packs": {
+            "items": {
+              "$ref": "#/components/schemas/TopupPackOut"
+            },
+            "title": "Packs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "currency",
+          "packs"
+        ],
+        "title": "TopupPacksResponse",
+        "type": "object"
+      },
+      "TopupRequest": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "packCode": {
+            "title": "Packcode",
+            "type": "string"
+          },
+          "returnUrl": {
+            "maxLength": 2048,
+            "title": "Returnurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "packCode",
+          "returnUrl"
+        ],
+        "title": "TopupRequest",
         "type": "object"
       },
       "Transform": {
@@ -2531,6 +3169,224 @@
         ]
       }
     },
+    "/v1/billing/cancel": {
+      "post": {
+        "description": "One request, no funnel, and the cost stated in the response.\n\nThe body is written to be shown to the user *before* they confirm: losing\n1,840 credits is worth knowing about in advance, and saying so plainly at\nthe moment of cancelling is both fairer and better retention than\ndiscovering it a week later. There is deliberately no retention offer here\nand no extra step \u2014 the competitor research that prompted this milestone was\nabout exactly that (docs/20-m6-readiness.md \u00a75).",
+        "operationId": "cancel_v1_billing_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop the subscription renewing",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/billing/checkout": {
+      "post": {
+        "description": "A hosted page to pay on. **The provider is derived, never chosen.**\n\nA downgrade does not go through checkout at all: it is scheduled for the\nnext period boundary so nobody loses credits they are half way through\nusing (\u00a78.3), and sending the user to a payment page for it would be asking\nthem to pay to receive less.",
+        "operationId": "checkout_v1_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a subscription or change plan",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "description": "`portalUrl` may be null, and that is a real answer.\n\nRazorpay hosts no customer portal. The client shows what *is* available \u2014\ncancel here, invoices by email \u2014 rather than opening a page that does not\nexist. Amendment recorded in contract \u00a77.",
+        "operationId": "portal_v1_billing_portal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manage the subscription on the provider's own page",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/billing/topup": {
+      "post": {
+        "operationId": "topup_v1_billing_topup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Buy credits that never expire",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/billing/topup-packs": {
+      "get": {
+        "description": "What `POST /billing/topup` will accept.\n\nContract \u00a77 names `credits_5000` in its example without saying where the\nlist comes from. A client that has to hardcode pack codes is a client that\nbreaks the day a pack is renamed.",
+        "operationId": "list_topup_packs_v1_billing_topup_packs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopupPacksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Credit packs that never expire",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/v1/catalog/luts": {
       "get": {
         "description": "Only the looks with a `.cube` on this server's disk.\n\nFiltered rather than listed from `LOOKS` alone, because a name without a\nfile is precisely the failure this endpoint exists to prevent: the client\nwould offer it, the browser would fetch a 404, and the picture would not\nchange. `tests/test_luts.py` asserts the two agree, so in a healthy\ndeployment this filter removes nothing \u2014 it is here for the deployment that\nis not healthy, where it degrades to a shorter list instead of a broken\ngrade.",
@@ -2550,6 +3406,69 @@
         "summary": "The colour looks we can render",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/v1/credits/ledger": {
+      "get": {
+        "description": "A first-class endpoint, not an admin tool.\n\nThis is what a support conversation about *\"where did my credits go\"* is\nanswered from, and it is the reason the ledger records a bucket on every\nrow rather than a single balance.",
+        "operationId": "credit_ledger_v1_credits_ledger_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Every credit movement, with its bucket",
+        "tags": [
+          "billing"
         ]
       }
     },
@@ -3157,6 +4076,57 @@
         ]
       }
     },
+    "/v1/plans": {
+      "get": {
+        "description": "Public \u2014 no authentication.\n\nDeliberately so: a pricing page that needs an account to show a price asks\npeople to sign up before they know what it costs.\n\n`suggestedCurrency` comes from whatever the edge network worked out about\nthe caller's country. **It is a suggestion, not a decision** \u2014 the client\nmust let the user change it with `?currency=`, because VPNs, travellers and\nexpatriates make IP unreliable.",
+        "operationId": "list_plans_v1_plans_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The plans anyone can buy",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/v1/projects": {
       "get": {
         "description": "Summaries only \u2014 **no timelines**. Twenty projects carrying twenty\ndocuments would be megabytes to draw a page of titles.",
@@ -3425,6 +4395,251 @@
         "summary": "Copy a project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/v1/promo/{code}": {
+      "get": {
+        "description": "Public, and checked at the sign-up form rather than after registering.\n\nThe attribution is written once and never revisited, so a mistyped code\ndiscovered afterwards can never be applied. A message under the field costs\none request; the alternative costs a customer and a commission.\n\nAlways `200`. A 404 here would let anyone enumerate which codes exist, and\nthe client's rendering is the same either way.",
+        "operationId": "preview_promo_v1_promo__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Is this code real, and what does it give?",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/promo/{code}/stats": {
+      "get": {
+        "description": "Only the owner sees it.\n\nA code's numbers say how many people from a particular Discord server signed\nup and how many pay us \u2014 which is commercial information about somebody\nelse's community, not ours to publish. 404 rather than 403 for a code\nsomebody else owns, so the response cannot be used to discover that a code\nexists.",
+        "operationId": "promo_stats_v1_promo__code__stats_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoStatsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What this code has brought in, for whoever owns it",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/v1/templates": {
+      "get": {
+        "operationId": "list_templates_v1_templates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Your saved settings",
+        "tags": [
+          "templates"
+        ]
+      },
+      "put": {
+        "description": "`PUT`, not `POST`, and that is the semantics rather than a preference.\n\nSaving under a name that already exists **replaces** it \u2014 which is what\n\"save my settings as Podcast\" means the second time somebody does it. A\n`POST` that created a second row would leave two entries reading identically\nin the list, and the user with no way to tell which is which.",
+        "operationId": "save_template_v1_templates_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save the current settings under a name",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/v1/templates/{template_id}": {
+      "delete": {
+        "operationId": "delete_template_v1_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a saved template",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/v1/webhooks/razorpay": {
+      "post": {
+        "operationId": "razorpay_webhook_v1_webhooks_razorpay_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Razorpay server-to-server callback",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/webhooks/stripe": {
+      "post": {
+        "description": "Listed because the contract lists it. Stripe is deferred, not dropped \u2014\nthere is no adapter yet, so this refuses rather than pretending.",
+        "operationId": "stripe_webhook_v1_webhooks_stripe_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stripe server-to-server callback",
+        "tags": [
+          "webhooks"
         ]
       }
     }

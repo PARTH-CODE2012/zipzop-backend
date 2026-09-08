@@ -25,6 +25,7 @@ from app.models import (
     User,
     UserStatus,
 )
+from app.services.periods import add_a_month
 
 
 class UserRepository:
@@ -89,7 +90,7 @@ class UserRepository:
                 status=SubStatus.ACTIVE,
                 provider=None,  # free tier has no provider
                 current_period_start=now,
-                current_period_end=_add_a_month(now),
+                current_period_end=add_a_month(now),
             )
         )
 
@@ -204,22 +205,3 @@ class RefreshTokenRepository:
         old.revoked_at = datetime.now(UTC)
         await self._session.flush()
         return fresh
-
-
-def _add_a_month(moment: datetime) -> datetime:
-    """The renewal boundary.
-
-    Calendar months, not 30 days: someone who signs up on the 31st renews on
-    the 28th, 30th or 31st as the next month allows, rather than drifting a day
-    earlier every month for a year.
-    """
-    year = moment.year + (moment.month // 12)
-    month = moment.month % 12 + 1
-    day = min(moment.day, _days_in_month(year, month))
-    return moment.replace(year=year, month=month, day=day)
-
-
-def _days_in_month(year: int, month: int) -> int:
-    import calendar
-
-    return calendar.monthrange(year, month)[1]

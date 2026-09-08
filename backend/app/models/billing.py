@@ -15,7 +15,9 @@ from typing import Any
 
 from sqlalchemy import (
     CHAR,
+    BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -23,13 +25,15 @@ from sqlalchemy import (
     SmallInteger,
     Text,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import CITEXT, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models.enums import (
+    CommissionReason,
     PaymentKind,
     PaymentProvider,
     PaymentStatus,
@@ -99,6 +103,15 @@ class Subscription(UUIDPrimaryKey, TimestampMixin, Base):
     provider_customer_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
+
+    #: What this subscription becomes at the next period boundary.
+    #:
+    #: §8.3: upgrades apply immediately and grant the difference pro rata,
+    #: **downgrades apply at the next boundary** so nobody loses credits they
+    #: are half way through using. NULL means "stay on `plan`".
+    pending_plan: Mapped[PlanCode | None] = mapped_column(
+        pg_enum(PlanCode, "plan_code"), ForeignKey("plans.code"), nullable=True
+    )
 
     current_period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     current_period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -196,3 +209,129 @@ class ProviderEvent(Base):
     )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ProviderPlan(Base):
+    """A plan of ours, as the provider knows it.
+
+    Both providers want a plan created on their own side before a subscription
+    can reference one, and both hand back an opaque id. Keyed by currency as
+    well as plan, because a provider plan carries one price in one currency.
+
+    Created lazily on the first checkout for that combination, so the ids cannot
+    be known when the environment file is written — which is why this is a table
+    and not configuration.
+    """
+
+    __tablename__ = "provider_plans"
+
+    provider: Mapped[PaymentProvider] = mapped_column(
+        pg_enum(PaymentProvider, "payment_provider"), primary_key=True
+    )
+    plan_code: Mapped[PlanCode] = mapped_column(
+        pg_enum(PlanCode, "plan_code"), ForeignKey("plans.code"), primary_key=True
+    )
+    currency: Mapped[str] = mapped_column(CHAR(3), primary_key=True)
+    provider_plan_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PromoCode(Base):
+    """One code per Discord server owner.
+
+    CITEXT because people type these by hand from a chat message, and `ZIPZOP`
+    and `zipzop` being two different codes would be a support ticket a week.
+
+    `is_active` retires a code without deleting it, for the same reason
+    `plans.is_public` retires a plan: the attributions pointing at it have to
+    keep resolving, and the commission owed on them has to keep being payable.
+    """
+
+    __tablename__ = "promo_codes"
+
+    code: Mapped[str] = mapped_column(CITEXT, primary_key=True)
+    #: Who this is, in words. Present even when `owner_user_id` is not, because
+    #: the first server owners are recruited before they have an account.
+    owner_label: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    #: A one-off grant, **not a discount**. A discount plus a commission on the
+    #: same $3.99 leaves almost nothing, and the free tier already gives 300
+    #: credits away — so a code that granted nothing would give the user no
+    #: reason to type it (docs/13-mvp-direction.md §6).
+    bonus_credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="300")
+    #: Basis points. 15% is 1500, never 0.15 — a rate held as a float is a
+    #: rounding argument with a server owner waiting on the other end of it.
+    commission_bps: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1500")
+
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("bonus_credits >= 0", name="bonus_credits_non_negative"),
+        CheckConstraint("commission_bps BETWEEN 0 AND 10000", name="commission_bps_is_a_rate"),
+    )
+
+
+class CommissionLedgerEntry(Base):
+    """What a server owner is owed, as movements rather than a balance.
+
+    The same shape as `credit_ledger`, deliberately: append-only, signed, and
+    with a unique index that makes a double accrual impossible rather than
+    merely unlikely. Commission is money moving, and money here has been
+    double-entry since M2 — this is a new counterparty, not a new financial
+    model (docs/03-backend-architecture.md §2 principle 6).
+
+    **Recomputed on every renewal, not once at sign-up.** A commission paid once
+    on a recurring product misaligns the owner's incentive from month two.
+    """
+
+    __tablename__ = "commission_ledger"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(CITEXT, ForeignKey("promo_codes.code"), nullable=False)
+    #: The subscriber whose payment earned it — not the owner. The owner is
+    #: reached through `code`, and a code can outlive an owner's account.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[CommissionReason] = mapped_column(
+        pg_enum(CommissionReason, "commission_reason"), nullable=False
+    )
+    #: Minor units. Positive for an accrual, negative for a payout or reversal,
+    #: so what is owed is a SUM and the history of how it got there survives.
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    #: The rate this row was computed at, kept with the row. Changing the rate
+    #: later must not silently restate what was already earned.
+    rate_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount_minor <> 0", name="amount_is_never_zero"),
+        Index("ix_commission_ledger_code_created_at", "code", text("created_at DESC")),
+        # One accrual and at most one payout per payment. A webhook redelivered
+        # a week later cannot pay a server owner twice: the second insert
+        # collides.
+        Index(
+            "uq_commission_ledger_payment_id_reason",
+            "payment_id",
+            "reason",
+            unique=True,
+            postgresql_where="payment_id IS NOT NULL",
+        ),
+    )

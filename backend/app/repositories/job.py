@@ -52,6 +52,7 @@ class JobRepository(ScopedRepository[Job]):
         priority: int,
         job_input: dict[str, Any],
         credits_reserved: int,
+        media_duration_ms: int | None,
         project_id: uuid.UUID | None,
         idempotency_key: str | None,
     ) -> Job:
@@ -64,6 +65,7 @@ class JobRepository(ScopedRepository[Job]):
             priority=priority,
             input=job_input,
             credits_reserved=credits_reserved,
+            media_duration_ms=media_duration_ms,
             idempotency_key=idempotency_key,
         )
         self._session.add(job)

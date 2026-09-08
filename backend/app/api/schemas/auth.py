@@ -17,6 +17,18 @@ class RegisterRequest(ApiModel):
     email: EmailStr
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
     display_name: str | None = Field(default=None, max_length=120)
+    #: A Discord server owner's code, typed by hand from a chat message.
+    #:
+    #: **This is the only moment it can be given.** The attribution is written
+    #: to the user row once and never revisited: an attribution that can be set
+    #: later is one that can be claimed after the fact by whoever asks loudest,
+    #: and it would let one server owner take a customer another one brought in
+    #: (docs/13-mvp-direction.md §6).
+    #:
+    #: An unknown code does not fail registration — it is left empty and the
+    #: account is created. `GET /promo/{code}` is what tells the user
+    #: beforehand, under the field, while they can still fix a typo.
+    promo_code: str | None = Field(default=None, max_length=64)
 
 
 class LoginRequest(ApiModel):

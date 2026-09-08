@@ -73,6 +73,19 @@ class Job(UUIDPrimaryKey, Base):
         nullable=True,
     )
 
+    #: How much media this job actually processed, in milliseconds.
+    #:
+    #: 🟠 Written so `SECONDS_PER_MINUTE_OF_MEDIA` can stop being a heuristic.
+    #: Every tier's allowance derives from it, and at $3.99 an error there is no
+    #: longer absorbed (docs/11-m4-notes.md §8). Recorded at pricing time
+    #: because that is when the number is already known — the quote computes it
+    #: in order to charge for it.
+    #:
+    #: NULL on every job that ran before M6, and deliberately not backfilled: a
+    #: guess would be indistinguishable from a measurement in the report this
+    #: feeds.
+    media_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     credits_reserved: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     credits_settled: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
