@@ -405,3 +405,93 @@ async def test_an_upgrade_never_takes_credits_away(db: AsyncSession) -> None:
     await service.apply_upgrade(db, user=user, subscription=subscription, plan=pro)
 
     assert user.plan_credits == 9_000
+
+
+# --------------------------------------------------------------------------
+# 🔴 The launch path: subscribing minutes after signing up
+# --------------------------------------------------------------------------
+
+
+async def test_a_brand_new_account_can_subscribe_immediately(db: AsyncSession) -> None:
+    """🔴 The bug every test in this file was built to miss.
+
+    Registration gives each account a subscription whose period starts **now**.
+    The idempotency check compared the incoming period against that one, decided
+    the month had already been granted, and dropped it — so somebody arriving
+    from a Discord announcement, creating an account and subscribing straight
+    away **paid and stayed on free**.
+
+    The hourly sweep could not rescue them either: it only looks at
+    subscriptions whose period has *ended*, which was a month away.
+
+    Every other test here builds an account whose period began thirty-one days
+    earlier, which is why none of them could see it. It was found by signing a
+    webhook with the real dashboard key and watching a new account not get what
+    it paid for.
+    """
+    user, subscription = await _subscriber(
+        db, plan=PlanCode.FREE, plan_credits=300, topup_credits=0, period_days_ago=0
+    )
+    beta = await db.get(Plan, PlanCode.BETA)
+    assert beta is not None
+
+    now = datetime.now(UTC)
+    granted = await service.grant_period(
+        db,
+        user=user,
+        subscription=subscription,
+        plan=beta,
+        period_start=now,
+        period_end=now + timedelta(days=30),
+        note="subscription.charged, seconds after signing up",
+    )
+
+    assert granted is True, "the account paid and was given nothing"
+    assert subscription.plan is PlanCode.BETA
+    assert user.plan_credits == beta.monthly_credits
+
+
+async def test_an_upgrade_mid_period_is_not_mistaken_for_a_repeat(db: AsyncSession) -> None:
+    """The same rule, one step along: a plan change is never a duplicate.
+
+    Someone on `beta` who upgrades to `pro` a week in has a period that started
+    seven days ago — well inside no tolerance at all, but the *plan* differs, and
+    that is what makes it a purchase rather than a redelivery.
+    """
+    user, subscription = await _subscriber(
+        db, plan=PlanCode.BETA, plan_credits=400, period_days_ago=7
+    )
+    pro = await db.get(Plan, PlanCode.PRO)
+    assert pro is not None
+
+    granted = await service.grant_period(
+        db,
+        user=user,
+        subscription=subscription,
+        plan=pro,
+        period_start=subscription.current_period_start,
+        period_end=datetime.now(UTC) + timedelta(days=30),
+        note="upgrade",
+    )
+
+    assert granted is True
+    assert user.plan_credits == pro.monthly_credits
+
+
+async def test_the_same_plan_and_period_is_still_dropped(db: AsyncSession) -> None:
+    """And the guard still guards. Loosening idempotency to fix the launch path
+    would have traded a plan nobody received for a month granted twice."""
+    user, subscription = await _subscriber(db, plan=PlanCode.PRO, period_days_ago=0)
+    pro = await db.get(Plan, PlanCode.PRO)
+    assert pro is not None
+
+    again = await service.grant_period(
+        db,
+        user=user,
+        subscription=subscription,
+        plan=pro,
+        period_start=subscription.current_period_start + timedelta(seconds=3),
+        period_end=datetime.now(UTC) + timedelta(days=30),
+        note="redelivery",
+    )
+    assert again is False

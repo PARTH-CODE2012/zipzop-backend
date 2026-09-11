@@ -433,9 +433,9 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 
 *Ends when: you hit the free limit, subscribe, and the new allowance appears within seconds.*
 
-> **Built 31 August.** Notes in [`docs/21-m6-notes.md`](docs/21-m6-notes.md) —
-> what shipped, the defects the tests found, and the two things still outside
-> the repository. The readiness note that preceded it is
+> **Built 31 August; webhook key received and verified 12 September.** Notes in
+> [`docs/21-m6-notes.md`](docs/21-m6-notes.md) — what shipped, the six defects,
+> and what is still outside the repository. The readiness note that preceded it is
 > [`docs/20-m6-readiness.md`](docs/20-m6-readiness.md).
 >
 > 🔴 **Two items below stay unticked on purpose.** Neither is code, and neither
@@ -445,7 +445,7 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 > against a secret of our own choosing; **nothing has met a live delivery.**
 
 - [~] ~~Stripe and~~ **Razorpay account opened** 🔗 — **test key pair received 25 August**, in the developer's `.env` and nowhere else. Two things still outstanding:
-  - [ ] 🔴 **The webhook secret**, which is a *third* secret and does not exist until a webhook endpoint is created in the dashboard. ✅ The application **refuses to boot in production without it**, and the signature check is written and exercised against a test secret — six cases in `tests/test_billing_razorpay.py`, including that an **unconfigured verifier fails closed**. What is missing is a real delivery
+  - [~] **The webhook secret — received 12 September** and in `.env` (gitignored). ✅ Verified *with the real key*, end to end: a correctly signed body is accepted, one byte changed is refused, a forged signature is refused, a redelivery is dropped rather than 500ing, and the plan is granted exactly once. 🔴 **That round trip found the launch-path bug in `docs/21-m6-notes.md` §2.5** — a brand-new account subscribing within an hour of signing up paid and stayed on free. Still open: a delivery **from Razorpay itself**, which needs the real hosting URL
   - [ ] 🔴 ⚠️ **Confirm the account may charge USD.** ✅ `make razorpay-check ARGS=--currency` probes it — a refusal in test mode is conclusive; an acceptance leaves it open until the account goes live. ✅ Meanwhile `BILLING_PROVIDER_FOR_USD` routes dollars to Razorpay, and switching to Stripe is that one variable
 - [x] **Production cannot boot with test keys** — eight cases in `tests/test_config.py`
 - [ ] Stripe is deferred, so its application can wait

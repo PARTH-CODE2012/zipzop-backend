@@ -1,4 +1,4 @@
-# M6 — money, and the five things that were wrong
+# M6 — money, and the six things that were wrong
 
 **Built 31 August 2026**, against [`20-m6-readiness.md`](20-m6-readiness.md) and
 in the order that note suggested. Everything in the M6 checklist ships except
@@ -6,14 +6,15 @@ two items that are not code and one paragraph of thought that is still owed
 (§6).
 
 This note is the part worth reading afterwards: **what the readiness note got
-right, what it missed, and the five defects that only appeared once something
-was running** — three the tests found, and two they could not have. The feature list is in
+right, what it missed, and the six defects that only appeared once something
+was running** — three the tests found, two they could not have, and one that
+waited for the real webhook key to arrive. The feature list is in
 [`../PHASE1-TASKS.md`](../PHASE1-TASKS.md) and there is no value in repeating it
 here.
 
 | | |
 |---|---|
-| Backend tests | **315 → 444** |
+| Backend tests | **315 → 447** |
 | Frontend tests | **319 → 352** |
 | Migrations | `0005` … `0008` |
 | Contract | §7 amended in three places, all marked ⚠️ |
@@ -63,7 +64,7 @@ reader of that column, and the reason the retirement will actually work.
 
 ---
 
-## 2. Five defects, and where each of them was hiding
+## 2. Six defects, and where each of them was hiding
 
 ### 2.1 A downgrade that was announced and never written
 
@@ -147,6 +148,45 @@ The same lesson [`12-m4-5-interface-pass.md`](12-m4-5-interface-pass.md) recorde
 under *"found by looking, not by testing"*, and it cost the same ninety seconds to
 find again.
 
+### 2.5 🔴 The one that only the real key could find
+
+**12 September.** The webhook secret arrived from the dashboard. Putting it in
+`.env` is a one-line change, but having a real key made one thing possible that
+444 tests could not do: sign a payload the way Razorpay signs it and push it
+through the whole stack against a real account.
+
+The signature verified. The event stored. The redelivery was dropped. And then
+the worker reported `already_granted` **on an account created three seconds
+earlier** — one that had never been granted anything at all. It had paid and
+received nothing.
+
+`_already_granted` compared only the period:
+
+```python
+return period_start <= subscription.current_period_start + SAME_PERIOD_TOLERANCE
+```
+
+Registration gives every account a subscription whose period starts **now**. So
+for any account less than an hour old, the incoming period was inside the
+tolerance of its own signup, the month was judged already granted, and the grant
+was dropped. **Somebody arriving from a Discord announcement, creating an account
+and subscribing straight away would pay and stay on free.** That is not an edge
+case — it is the launch path, and the entire point of the campaign.
+
+The hourly sweep could not rescue them either: it only picks up subscriptions
+whose period has *ended*, which was a month away. They would have been on free,
+having paid, for a month.
+
+The fix is that **idempotency is about `(plan, period)`, never the period
+alone**. `free → beta` is a purchase; `beta → pro` mid-period is a purchase; only
+the same plan over the same period is the duplicate the guard exists for.
+
+*Why no test saw it.* Every test in `test_billing_renewal.py` built its account
+with `period_days_ago=31`, because the file was written about renewals — where a
+period by definition began a month ago. Not one of them described somebody
+buying a plan on the day they signed up. Three tests now do, and they were
+confirmed by putting the bug back and watching two of them fail.
+
 ---
 
 ## 3. What was designed rather than decided
@@ -212,8 +252,19 @@ by whoever ran the script.
 
 Unchanged from the readiness note, because neither can be closed from here.
 
-**The webhook secret does not exist.** It is issued when a webhook endpoint is
-created in the Razorpay dashboard. Everything on our side is written and tested
+**The webhook secret arrived on 12 September** and is in `.env`. Everything
+on our side is now verified *with it*: a body signed the way Razorpay signs
+one is accepted, a body altered by one byte is refused, a forged signature is
+refused, a redelivery is dropped, and the plan is granted exactly once. That
+round trip found §2.5.
+
+What is still missing is a delivery **from Razorpay itself**. The webhook is
+registered against a placeholder URL until hosting is decided, so nothing has
+yet proved that Razorpay signs the way we verify. Everything on our side of
+that line is now closed.
+
+*The original wording, for the record:* it is issued when a webhook endpoint
+is created in the Razorpay dashboard. Everything on our side is written and tested
 against a secret of our own choosing — including that an unconfigured verifier
 **fails closed**, which is the case that matters, because a check returning
 quietly when it has no secret is indistinguishable from a working one. What has

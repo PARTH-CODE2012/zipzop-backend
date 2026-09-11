@@ -148,6 +148,64 @@ asks Python to execute, and names the fallback when only `python` works.
 
 ---
 
+## 3.1 Windows can take port 5432 away from you — added 12 September
+
+`make up` failed with a message that reads like a permissions problem and is not:
+
+```
+Error response from daemon: ports are not available: exposing port TCP 0.0.0.0:5432
+listen tcp 0.0.0.0:5432: An attempt was made to access a socket in a way
+forbidden by its access permissions.
+```
+
+Nothing was holding the port. Windows had **reserved a range containing it**:
+
+```
+netsh int ipv4 show excludedportrange protocol=tcp
+...
+      5401        5500
+```
+
+Hyper-V and WSL claim dynamic port ranges at boot, and the ranges move. Any day
+the range happens to cover 5432, Postgres cannot bind and the whole stack looks
+broken for a reason that has nothing to do with the project.
+
+**The fix, in an *administrator* terminal:**
+
+```
+net stop winnat
+net start winnat
+```
+
+That releases the reservations. To stop it recurring, reserve 5432 for yourself
+before Hyper-V can take it — also as administrator, and it survives reboots:
+
+```
+netsh int ipv4 add excludedportrange protocol=tcp startport=5432 numberofports=1
+```
+
+**Without admin rights** the working answer is to publish Postgres on another
+port for the session, with an override file kept *outside* the repository:
+
+```yaml
+# pg-port-override.yml — note `!override`, without which Compose merges the
+# lists and 5432 stays published, so the conflict persists.
+services:
+  postgres:
+    ports: !override
+      - "55432:5432"
+```
+
+```
+docker compose -f docker-compose.yml -f pg-port-override.yml up -d postgres
+DATABASE_URL=postgresql+asyncpg://zipzop:zipzop@localhost:55432/zipzop_test pytest
+```
+
+Worth knowing before spending an hour on it: the error names a permission, and
+the cause is an allocation.
+
+---
+
 ## 4. What was installed
 
 | | |
