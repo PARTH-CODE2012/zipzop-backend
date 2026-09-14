@@ -403,15 +403,35 @@ async def live_subscription(session: AsyncSession, user_id: uuid.UUID) -> Subscr
     return result.scalar_one_or_none()
 
 
-def _already_granted(subscription: Subscription, period_start: datetime) -> bool:
-    """Has this period already been paid out?
+def _already_granted(subscription: Subscription, plan: PlanCode, period_start: datetime) -> bool:
+    """Has **this plan** already been paid out for **this period**?
 
     Out-of-order delivery is normal and both providers retry for days, so a
     grant for a period we have already granted is dropped rather than doubled
     (§8.5 step 4). The tolerance absorbs the difference between the provider's
     clock and ours; without it the hourly sweep and the webhook would each grant
     the same month a few seconds apart.
+
+    🔴 **The plan is half of the question, and leaving it out broke the launch
+    path.** Every account is given a subscription at registration, with a period
+    starting *now* — so for a free account this compared the incoming period
+    against one that began seconds ago, decided the month was already granted,
+    and dropped it. Somebody arriving from a Discord announcement, creating an
+    account and subscribing straight away paid and stayed on free. The hourly
+    sweep could not rescue them either: it only looks at subscriptions whose
+    period has *ended*, which was a month away.
+
+    Found by signing a webhook with the real key and watching a brand-new
+    account not get what it paid for. Every test in the suite built an account
+    whose period had started thirty-one days earlier, so none of them could see
+    it.
+
+    A change of plan is never a repeat: `free → beta` is a purchase, and so is
+    `beta → pro` mid-period. Only the same plan over the same period is the
+    duplicate this guards against.
     """
+    if subscription.plan is not plan:
+        return False
     current = subscription.current_period_start
     if current.tzinfo is None:  # pragma: no cover - the column is timezone-aware
         current = current.replace(tzinfo=UTC)
@@ -437,7 +457,7 @@ async def grant_period(
     never expire, and a renewal that swept them would be taking money already
     paid.
     """
-    if _already_granted(subscription, period_start):
+    if _already_granted(subscription, plan.code, period_start):
         return False
 
     ledger = CreditLedger(session)
