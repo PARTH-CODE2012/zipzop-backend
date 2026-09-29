@@ -40,10 +40,25 @@ setup: ## First run: copy .env, install both sides, generate the API types
 	@echo "Next: make infra && make migrate && make dev-all"
 
 .PHONY: install-backend
-install-backend: ## Install Python dependencies into backend/.venv
+install-backend: ## Install Python dependencies into backend/.venv, exactly as locked
+	@# From the lockfile, hashes checked, then the project itself without
+	@# resolving anything: the same two steps CI and the image take, so a
+	@# developer's environment is the one that was reviewed (M7, §5.4).
 	cd $(BACKEND) && $(PYTHON) -m venv .venv && \
-		./$(VBIN)/pip install --upgrade pip && \
-		./$(VBIN)/pip install -e ".[dev]"
+		./$(VBIN)/python -m pip install --upgrade pip && \
+		./$(VBIN)/python -m pip install --require-hashes -r requirements-dev.lock && \
+		./$(VBIN)/python -m pip install --no-deps -e .
+
+.PHONY: lock
+lock: ## Re-pin every Python dependency after editing pyproject.toml
+	@# Universal: one file valid on Windows (development) and Linux (CI, the
+	@# image), with a hash for every wheel. Commit both files with the change
+	@# to pyproject.toml that caused them.
+	cd $(BACKEND) && \
+		./$(VBIN)/python -m uv pip compile pyproject.toml --universal --python-version 3.12 \
+			--generate-hashes --quiet -o requirements.lock && \
+		./$(VBIN)/python -m uv pip compile pyproject.toml --extra dev --universal \
+			--python-version 3.12 --generate-hashes --quiet -o requirements-dev.lock
 
 .PHONY: install-frontend
 install-frontend: ## Install Node dependencies
@@ -348,3 +363,38 @@ format: ## Auto-format both sides
 
 .PHONY: check
 check: lint test contract-check ## Everything CI runs
+
+# ---------------------------------------------------------------- security --
+# docs/07-security.md §7: the gates that stay after M7. Each of these also runs
+# in .github/workflows/security.yml on every pull request and every night; this
+# is the same set, runnable before pushing. The last three run from pinned
+# container images so the local result is the CI result — they need Docker.
+GITLEAKS_IMAGE := ghcr.io/gitleaks/gitleaks:v8.30.1
+SEMGREP_IMAGE  := semgrep/semgrep:1.178.0
+TRIVY_IMAGE    := aquasec/trivy:0.74.0
+# Docker on Windows needs a Windows path for a bind mount; `pwd -W` gives one
+# under Git Bash and does not exist elsewhere, where plain `pwd` is right.
+REPO_MOUNT = $(shell pwd -W 2>/dev/null || pwd)
+
+.PHONY: security
+security: ## Every security gate: bandit, pip-audit, pnpm audit, gitleaks, semgrep, trivy
+	cd $(BACKEND) && ./$(VBIN)/python -m bandit -c pyproject.toml -r app -q
+	cd $(BACKEND) && ./$(VBIN)/python -m pip_audit -r requirements.lock --require-hashes --disable-pip
+	cd $(BACKEND) && ./$(VBIN)/python -m pip_audit -r requirements-dev.lock --require-hashes --disable-pip
+	cd $(FRONTEND) && pnpm audit
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(REPO_MOUNT):/repo" $(GITLEAKS_IMAGE) \
+		git /repo --redact --no-banner --log-opts=--all
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(REPO_MOUNT):/src" -w /src $(SEMGREP_IMAGE) \
+		semgrep scan $(SEMGREP_ARGS)
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(REPO_MOUNT):/repo" $(TRIVY_IMAGE) \
+		fs $(TRIVY_FS_ARGS) /repo
+
+# One definition of what each scanner is asked, shared with the workflow's
+# comments so the two cannot quietly drift.
+SEMGREP_ARGS := --config p/python --config p/owasp-top-ten --config p/react \
+	--config p/typescript --error --metrics=off --quiet \
+	--exclude frontend/node_modules --exclude backend/.venv --exclude backend/tests \
+	--exclude "*.test.ts"
+TRIVY_FS_ARGS := --scanners vuln,misconfig,secret --severity HIGH,CRITICAL \
+	--ignore-unfixed --exit-code 1 --skip-dirs frontend/node_modules \
+	--skip-dirs backend/.venv --skip-files .env

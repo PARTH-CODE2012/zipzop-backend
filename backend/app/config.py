@@ -30,12 +30,26 @@ class Settings(BaseSettings):
     # machine, and another project holding one produced a stack that failed
     # three different ways depending on which half won. `scripts/ports.sh`
     # resolves them for the dev flow; these are the fallbacks when nothing has.
-    api_host: str = "0.0.0.0"
+    # Container default; the dev flow binds 127.0.0.1 and prod sits behind the ALB.
+    api_host: str = "0.0.0.0"  # nosec B104
     api_port: int = 8123
     #: Both spellings of the same origin — a browser sent to `127.0.0.1` and one
     #: sent to `localhost` present different `Origin` headers, and a list with
     #: only one of them rejects half the ways of opening the app.
     cors_origins: str = "http://localhost:3123,http://127.0.0.1:3123"
+    #: How many reverse proxies in front of this process append to
+    #: `X-Forwarded-For` — **1 behind a single ALB, 0 when nothing is**.
+    #:
+    #: The address rate limits count against is the entry that many places
+    #: from the *right* of the chain: a proxy appends what it saw, so everything
+    #: to the left of our own proxies' entries was written by the client and can
+    #: say anything. 0 ignores the header altogether.
+    #:
+    #: ⚠️ Getting it wrong fails in two opposite directions. Too high, and a
+    #: client-written entry is trusted again (docs/07-security.md §6.10). Left at
+    #: 0 behind an ALB, every user shares the ALB's own address and one
+    #: rate-limit bucket — 100 requests a minute for the whole product.
+    trusted_proxy_hops: int = 0
 
     # ------------------------------------------------------------- database
     database_url: str = "postgresql+asyncpg://zipzop:zipzop@localhost:5432/zipzop"
@@ -171,7 +185,8 @@ def assert_production_safe() -> None:
         return
 
     problems: list[str] = []
-    if settings.jwt_secret_key == "dev-only-change-me":
+    # This compares against the dev default in order to refuse it; not a secret.
+    if settings.jwt_secret_key == "dev-only-change-me":  # nosec B105
         problems.append("JWT_SECRET_KEY is still the development default")
     if settings.jwt_algorithm == "HS256":
         problems.append("JWT_ALGORITHM should be RS256 in production")

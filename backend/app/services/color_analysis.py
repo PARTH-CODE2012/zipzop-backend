@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from app.logging import get_logger
-from app.services.ffmpeg_filters import escape_path
+from app.services.ffmpeg_filters import (
+    USER_MEDIA_PROTOCOLS,
+    escape_path,
+    input_protocol_args,
+)
 
 log = get_logger(__name__)
 
@@ -95,15 +99,26 @@ def sample_frames(source: Path, duration_ms: int) -> FrameStats:
     # One frame every N seconds, expressed as an fps filter rather than N seeks:
     # seeking is what makes this slow on a long file.
     every_seconds = max(1.0, (duration_ms / 1000) / SAMPLE_FRAMES)
+    # The lavfi `movie=` source opens the file through its *own* demuxer, which
+    # the top-level `-protocol_whitelist` does not reach — so the allowlist is
+    # pinned on the filter itself, as a `format_opts`. `source` is the user's
+    # upload, and without this the movie source falls back to FFmpeg's build
+    # default; with it, a container that references a URL is refused exactly as
+    # `probe()` refuses it upstream (§6.4). `\\=` so the `=` is one option's
+    # value rather than a filtergraph separator; `escape_path` handles the path.
+    movie = f"movie={_escape(source)}:format_opts=protocol_whitelist\\={USER_MEDIA_PROTOCOLS}"
     result = _run(
         [
             "ffprobe",
             "-v",
             "quiet",
+            # Belt and braces: constrains the lavfi input device itself. The
+            # `format_opts` above is what actually binds the `movie=` demuxer.
+            *input_protocol_args(),
             "-f",
             "lavfi",
             "-i",
-            f"movie={_escape(source)},fps=1/{every_seconds:.3f},signalstats",
+            f"{movie},fps=1/{every_seconds:.3f},signalstats",
             "-show_entries",
             "frame_tags=lavfi.signalstats.YAVG,lavfi.signalstats.UAVG,"
             "lavfi.signalstats.VAVG,lavfi.signalstats.YDIF",

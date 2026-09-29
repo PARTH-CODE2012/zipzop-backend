@@ -78,7 +78,8 @@ class JobRepository(ScopedRepository[Job]):
     async def by_idempotency_key(self, key: str) -> Job | None:
         """Replay returns the original job rather than charging twice."""
         result = await self._session.execute(self._select().where(Job.idempotency_key == key))
-        return result.scalar_one_or_none()
+        found: Job | None = result.scalar_one_or_none()
+        return found
 
     async def page(
         self,

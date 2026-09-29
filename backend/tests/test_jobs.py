@@ -362,6 +362,25 @@ async def test_another_users_job_is_not_readable(client: AsyncClient, db: AsyncS
     assert response.status_code == 404
 
 
+async def test_another_users_job_cannot_be_cancelled(client: AsyncClient, db: AsyncSession) -> None:
+    """docs/07-security.md §6.8 — M7. Cancelling refunds, so this is a money
+    route as much as a data one: a stranger's cancel must be a 404 that moves
+    nothing, and the owner's job must still be queued with its credits still
+    reserved."""
+    owner_headers, owner_id = await _account(client)
+    asset = await _ready_asset(db, owner_id, duration_ms=600_000)
+    created = (await client.post(f"{V1}/jobs", headers=owner_headers, json=_body(asset))).json()
+    balance_before = await _balance(db, owner_id)
+
+    stranger_headers, _ = await _account(client)
+    response = await client.post(f"{V1}/jobs/{created['id']}/cancel", headers=stranger_headers)
+
+    assert response.status_code == 404
+    job = (await client.get(f"{V1}/jobs/{created['id']}", headers=owner_headers)).json()
+    assert job["status"] == "queued"
+    assert await _balance(db, owner_id) == balance_before
+
+
 async def test_cancelling_refunds_in_full(client: AsyncClient, db: AsyncSession) -> None:
     headers, user_id = await _account(client)
     asset = await _ready_asset(db, user_id, duration_ms=600_000)

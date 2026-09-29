@@ -265,6 +265,20 @@ async def create_job(
     if locked is None:
         raise NotFoundError("That account no longer exists.")
 
+    # **The replay check again, now that we hold the lock.** The one at the top
+    # ran before it, so twenty retries of one request arriving together all
+    # found no job, queued on the lock, and then each tried to insert the same
+    # key: the first succeeded and the other nineteen hit the unique index and
+    # returned 500 — in exactly the retry storm idempotency keys exist for.
+    # Found in M7 (tests/test_credits_race.py). No money moved, because the
+    # constraint held; but the client was told its paid job had failed. Behind
+    # the lock every job creation for this account is serialised, so what this
+    # sees is final.
+    if idempotency_key:
+        existing = await jobs.by_idempotency_key(idempotency_key)
+        if existing is not None:
+            return _serialise(existing, await ledger.reserved_for(existing.id))
+
     # Re-price against the locked row. The balance read for the quote came from
     # the request's own user object, which was loaded before the lock — between
     # the two, another request may have spent it, and the quote's answer is

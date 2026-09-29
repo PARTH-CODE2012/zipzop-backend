@@ -7,6 +7,7 @@ English written to be shown to a person and may be reworded at any time.
 See docs/05-api-contract.md §1 and §9.
 """
 
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -208,6 +209,17 @@ def _jsonable(errors: Sequence[Any]) -> list[dict[str, Any]]:
 
 
 def _plain(value: Any) -> Any:
+    # A non-finite float — `NaN`, `Infinity`, `-Infinity` — reaches here as the
+    # rejected `input` of a bounds validation error, because Python's `json`
+    # parser accepts those literals even though JSON forbids them. Starlette
+    # renders the response with `allow_nan=False`, so echoing one straight back
+    # makes the 422 handler itself raise `ValueError` mid-render and the caller
+    # gets a 500 (a stack trace in dev, an empty error in prod) instead of the
+    # clean bounds message. Stringify it: honest about what was sent, and always
+    # serialisable. Found in M7 by sending a non-finite `speed`
+    # (docs/22-m7-readiness.md §3).
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     if value is None or isinstance(value, str | int | float | bool):
         return value
     if isinstance(value, dict):

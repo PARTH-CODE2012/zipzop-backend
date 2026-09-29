@@ -379,12 +379,61 @@ async def test_complete_verifies_the_object_is_really_there(client: AsyncClient,
     assert response.status_code == 404
 
 
-async def test_complete_rejects_an_object_of_the_wrong_size(client: AsyncClient, s3: Any) -> None:
-    """Reserving one byte against the quota and uploading a gigabyte must not
-    work."""
+async def test_the_upload_url_refuses_more_bytes_than_were_reserved(
+    client: AsyncClient, s3: Any
+) -> None:
+    """docs/07-security.md §6.3: *"Upload 5 GB through a URL issued for 5 MB."*
+
+    Found in M7. The signature covered the key and the type and not the size,
+    so this PUT used to return 200 and store every byte — the quota had been
+    checked against 10. `Content-Length` is now signed, and storage refuses
+    the mismatch before keeping anything.
+    """
     headers, _ = await _account(client)
     reserved = (await _reserve(client, headers, size_bytes=10)).json()
-    assert await _put(reserved["uploadUrl"], b"x" * 5000, "video/mp4") == 200
+
+    assert await _put(reserved["uploadUrl"], b"x" * 5000, "video/mp4") == 403
+    listing = s3.list_objects_v2(Bucket=settings.s3_bucket, Prefix="originals/").get("Contents", [])
+    assert not [o for o in listing if reserved["assetId"].removeprefix("ast_") in o["Key"]]
+
+    # And the honest upload through the same URL still works.
+    assert await _put(reserved["uploadUrl"], b"x" * 10, "video/mp4") == 200
+
+
+async def test_a_part_url_refuses_a_part_of_the_wrong_size(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, s3: Any
+) -> None:
+    """The multipart half of the same hole: each part URL is signed for that
+    part's exact length, so a part cannot be stuffed either."""
+    _small_multipart_threshold(monkeypatch)
+    headers, _ = await _account(client)
+    part_size = 8 * 1024 * 1024
+    reserved = (await _reserve(client, headers, size_bytes=part_size + 4096)).json()
+    first = reserved["multipart"]["parts"][0]["url"]
+
+    status_code, _ = await _put_part(first, b"x" * (part_size + 1))
+    assert status_code == 403
+
+    asset_uuid = reserved["assetId"].removeprefix("ast_")
+    for upload in s3.list_multipart_uploads(Bucket=settings.s3_bucket).get("Uploads", []):
+        if asset_uuid in upload["Key"]:
+            s3.abort_multipart_upload(
+                Bucket=settings.s3_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
+            )
+
+
+async def test_complete_rejects_an_object_of_the_wrong_size(client: AsyncClient, s3: Any) -> None:
+    """Reserving one byte against the quota and uploading a gigabyte must not
+    work.
+
+    The upload URL now refuses the mismatch itself (the test above), so the
+    wrong-size object is written straight into the bucket here: this is the
+    second line of defence, for an object that arrives by any other route.
+    """
+    headers, user_id = await _account(client)
+    reserved = (await _reserve(client, headers, size_bytes=10)).json()
+    key = _reserved_key(user_id, reserved["assetId"])
+    s3.put_object(Bucket=settings.s3_bucket, Key=key, Body=b"x" * 5000, ContentType="video/mp4")
 
     response = await client.post(
         f"{V1}/media/{reserved['assetId']}/complete", headers=headers, json={"etag": None}
@@ -399,6 +448,17 @@ async def test_complete_rejects_an_object_of_the_wrong_size(client: AsyncClient,
     # rollback that discarded the delete was invisible to the test harness.
     after = await client.get(f"{V1}/media/{reserved['assetId']}", headers=headers)
     assert after.status_code == 404
+
+    # And — M7 — the bytes are gone as well as the row. Before, they stayed
+    # under `originals/`, which nothing ever cleans, counted against nobody.
+    with pytest.raises(s3.exceptions.ClientError):
+        s3.head_object(Bucket=settings.s3_bucket, Key=key)
+
+
+def _reserved_key(user_id: uuid.UUID, public_id: str) -> str:
+    """The key the reservation chose: `originals/{user}/{asset}/source.mp4`
+    for an `.mp4` upload (`tests/test_storage_keys.py` pins the layout)."""
+    return f"originals/{user_id}/{public_id.removeprefix('ast_')}/source.mp4"
 
 
 async def test_complete_twice_is_harmless(

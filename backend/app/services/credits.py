@@ -119,9 +119,24 @@ class CreditLedger:
         The row lock is what serialises them; without it the check and the
         deduction are two statements with a gap in between, and the gap is
         where a user spends credits they do not have.
+
+        🔴 **`populate_existing`, or the lock protects nothing.** Found in M7 by
+        firing twenty `POST /jobs` at once against a balance of one job: all
+        twenty were created. The row lock *was* taken — but the request had
+        already loaded this `User` through `current_user`, and SQLAlchemy hands
+        back the object already in the session's identity map **without
+        re-reading its columns**. Every request then priced itself against the
+        balance it saw *before* waiting for the lock, and each wrote
+        `stale - cost` back: a lost update, twenty jobs for the price of one,
+        and a cached balance of 0 over a ledger of -38. The same trap
+        `repositories/media.claim_for_ingest` documents and avoids; this is
+        where it mattered most. `tests/test_credits_race.py` holds it.
         """
         result = await self._session.execute(
-            sa.select(User).where(User.id == user_id).with_for_update()
+            sa.select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -218,6 +233,11 @@ class CreditLedger:
         )
         found: dict[uuid.UUID, dict[CreditBucket, int]] = {}
         for job_id, bucket, delta in rows.all():
+            # `job_id` is nullable on the ledger (grants have none), and
+            # SQLAlchemy 2.1 types the column that way. The `IN` above already
+            # excludes NULL; this says so to the type checker.
+            if job_id is None:
+                continue
             found.setdefault(job_id, {})[bucket] = -delta
         return found
 

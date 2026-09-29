@@ -3,6 +3,20 @@
 # The frontend is deliberately NOT here — Next.js hot reload is markedly faster
 # running natively, and it needs nothing from this network beyond the API's
 # published port. Run `make dev-frontend` alongside `make dev`.
+#
+# **Every port is published on 127.0.0.1, never on all interfaces.** Found in
+# M7: `"5432:5432"` binds 0.0.0.0, so on a café's Wi-Fi anyone on the same
+# network reached Postgres with `zipzop/zipzop`, a Redis with no password at
+# all — the queue — and MinIO with its well-known root pair. Development data is
+# synthetic, but the credentials are in this public file. Loopback is all the
+# native API, the worker and the browser need.
+#
+# **Both loopbacks, IPv4 and IPv6 — the `[::1]` lines are not redundant.**
+# `localhost`, which every URL in .env uses, resolves to `::1` first on Windows.
+# With only 127.0.0.1 published, that first attempt is not refused but left
+# hanging in SYN_SENT until the TCP timeout, then retried on IPv4: every new
+# database connection took tens of seconds and the test suite, which opens one
+# per test, crawled for eleven minutes. Found while verifying this very change.
 
 name: zipzop
 
@@ -14,7 +28,8 @@ services:
       POSTGRES_PASSWORD: zipzop
       POSTGRES_DB: zipzop
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+      - "[::1]:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +42,8 @@ services:
     image: redis:7-alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+      - "[::1]:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -45,8 +61,10 @@ services:
       MINIO_ROOT_USER: zipzop
       MINIO_ROOT_PASSWORD: zipzop-dev-secret
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # web console
+      - "127.0.0.1:9000:9000"   # API
+      - "[::1]:9000:9000"
+      - "127.0.0.1:9001:9001"   # web console
+      - "[::1]:9001:9001"
     volumes:
       - minio-data:/data
     # MinIO's own HTTP liveness endpoint rather than `mc ready local`.
@@ -108,7 +126,8 @@ services:
       # Inside the container 8000 is uncontested — it has the network namespace
       # to itself. Only the host side can collide, so only the host side moves,
       # and it reads the same API_PORT as every other entry point.
-      - "${API_PORT:-8123}:8000"
+      - "127.0.0.1:${API_PORT:-8123}:8000"
+      - "[::1]:${API_PORT:-8123}:8000"
     volumes:
       - ./backend:/app
     depends_on:

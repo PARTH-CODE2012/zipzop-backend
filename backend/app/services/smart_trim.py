@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from app.logging import get_logger
+from app.services.ffmpeg_filters import input_protocol_args
 from app.services.transcription import Transcript, Word
 
 log = get_logger(__name__)
@@ -224,6 +225,7 @@ def detect_silence(source: Path, limits: Thresholds, duration_ms: int) -> list[R
             "ffmpeg",
             "-v",
             "info",
+            *input_protocol_args(),
             "-i",
             str(source),
             "-af",

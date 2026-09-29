@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from app.config import settings
 from app.logging import get_logger
+from app.services.ffmpeg_filters import input_protocol_args
 
 log = get_logger(__name__)
 
@@ -225,6 +226,7 @@ def _rms_envelope(source: Path) -> list[float]:
             "ffmpeg",
             "-v",
             "error",
+            *input_protocol_args(),
             "-i",
             str(source),
             "-ac",

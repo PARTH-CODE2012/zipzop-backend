@@ -1,0 +1,22 @@
+# security.txt — RFC 9116. A TEMPLATE, NOT YET PUBLISHED.
+#
+# docs/07-security.md §10: "security.txt and a disclosure address, with a named
+# person who answers it. Someone will find something after launch; the
+# question is whether they can tell us."
+#
+# To publish:
+#   1. Replace the two <…> placeholders below. The address must be read by a
+#      named person — an unread inbox is worse than none, because the reporter
+#      believes they have told us.
+#   2. Save as frontend/public/.well-known/security.txt (Next serves /public
+#      at the site root).
+#   3. Set Expires to no more than a year ahead, and put the renewal in a
+#      calendar: an expired file tells researchers the contact is stale.
+#
+# This file lives outside public/ on purpose, so a placeholder can never be
+# served by accident.
+
+Contact: mailto:<security@your-domain>
+Expires: 2027-09-29T00:00:00.000Z
+Preferred-Languages: en, fr
+Canonical: https://<your-domain>/.well-known/security.txt

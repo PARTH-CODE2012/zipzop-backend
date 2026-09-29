@@ -31,7 +31,8 @@ class MediaAssetRepository(ScopedRepository[MediaAsset]):
 
     async def get_visible(self, asset_id: uuid.UUID) -> MediaAsset | None:
         result = await self._session.execute(self._visible().where(MediaAsset.id == asset_id))
-        return result.scalar_one_or_none()
+        found: MediaAsset | None = result.scalar_one_or_none()
+        return found
 
     async def by_ids(self, asset_ids: set[uuid.UUID]) -> dict[uuid.UUID, MediaAsset]:
         """The caller's assets among those ids, keyed by id.

@@ -1,12 +1,49 @@
-"""Building filter-graph arguments that survive FFmpeg's parsers.
+"""Building filter-graph arguments that survive FFmpeg's parsers, and confining
+what those parsers are allowed to reach.
 
-One function so far, and it is here rather than private to a caller because it
-was already wrong once in `color_analysis` and the export renderer is about to
-need the same thing for `lut3d=file=…`. A second private copy is how the first
-one's bug gets reintroduced somewhere it has not been found yet.
+Two concerns, one module, and both here for the same reason: they were each a
+copy-paste away from being wrong in a different file. `escape_path` was already
+wrong once in `color_analysis`; the protocol allowlist below has to be identical
+at ten call sites, and ten private copies is ten chances to forget one.
 """
 
 from pathlib import Path
+from typing import Final
+
+#: What an FFmpeg/FFprobe invocation on user-supplied media is allowed to open.
+#:
+#: **The sharpest edge in the product** (docs/07-security.md §6.4): a file chosen
+#: entirely by an attacker is handed to a C demuxer, and some container formats
+#: — HLS playlists, the concat demuxer, a `.mov` with an external data reference
+#: — name a *URL* for the demuxer to follow. Left unrestricted that is an SSRF
+#: primitive: an uploaded playlist pointing a segment at
+#: `http://169.254.169.254/…` reads the instance's IAM credentials from inside
+#: the worker.
+#:
+#: `file` and nothing else. Every network protocol (http, https, tcp, tls,
+#: rtmp, …) is refused, so no reference inside a user file can leave the host;
+#: the residual — a `file:///etc/…` reference — is what worker egress
+#: restriction and running ingest with no ambient credentials are for (§6.4).
+#:
+#: **This is pinned rather than assumed.** FFmpeg *does* ship a secure-ish
+#: default (9.0.1 here defaults the demuxer whitelist to `file,crypto,data`),
+#: but that default is build- and version-dependent — the Debian image the
+#: worker runs is a different build from any developer's — and it once was
+#: permissive. A one-argument control that says exactly what we allow is worth
+#: more than a default we have to re-verify on every base-image bump. It is
+#: applied as an **input** option, before each `-i`, so it governs the demuxer
+#: and its sub-resources without touching where output is written.
+USER_MEDIA_PROTOCOLS: Final = "file"
+
+
+def input_protocol_args() -> list[str]:
+    """The allowlist flag, to place immediately before an `-i` on user media.
+
+    A function rather than a bare constant so a call site reads as
+    ``[*input_protocol_args(), "-i", path]`` and cannot accidentally share or
+    mutate one list, and so there is exactly one spelling of the flag name.
+    """
+    return ["-protocol_whitelist", USER_MEDIA_PROTOCOLS]
 
 
 def escape_path(path: Path | str) -> str:

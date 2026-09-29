@@ -109,17 +109,31 @@ def client() -> Any:
     )
 
 
-def presign_put(key: str, content_type: str) -> PresignedUpload:
-    """A 15-minute window to upload one object.
+def presign_put(key: str, content_type: str, size_bytes: int) -> PresignedUpload:
+    """A 15-minute window to upload one object, of exactly the reserved size.
 
     `Content-Type` is part of the signature, so the browser must send exactly
     the value returned in `headers` — a different one is a 403. That is why the
     contract returns the headers rather than leaving the client to guess.
+
+    **So is `Content-Length`, and that is the M7 fix** (docs/07-security.md
+    §6.3). Without it the signature bound the key and the type but not the
+    size, so a URL issued against a one-byte reservation accepted five
+    gigabytes: the quota check had counted one byte, and storage took whatever
+    arrived. The browser sets `Content-Length` itself from the file it sends —
+    script cannot, it is a forbidden header — and the reservation is that same
+    `file.size`, so a legitimate upload matches by construction and anything
+    else is refused by storage with a 403 before a byte is kept.
     """
     ttl = settings.upload_url_ttl_seconds
     url = client().generate_presigned_url(
         "put_object",
-        Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": content_type},
+        Params={
+            "Bucket": settings.s3_bucket,
+            "Key": key,
+            "ContentType": content_type,
+            "ContentLength": size_bytes,
+        },
         ExpiresIn=ttl,
     )
     return PresignedUpload(
@@ -183,6 +197,11 @@ def presign_parts(key: str, upload_id: str, size_bytes: int) -> MultipartUpload:
                     "Key": key,
                     "UploadId": upload_id,
                     "PartNumber": number,
+                    # Each part is signed for its own exact length, for the
+                    # same reason the single PUT is (see `presign_put`): every
+                    # part but the last is `part_size`, the last is the
+                    # remainder, and the client cuts on exactly these bounds.
+                    "ContentLength": _part_length(number, count, part_size, size_bytes),
                 },
                 ExpiresIn=settings.upload_url_ttl_seconds,
             ),
@@ -190,6 +209,13 @@ def presign_parts(key: str, upload_id: str, size_bytes: int) -> MultipartUpload:
         for number in range(1, count + 1)
     ]
     return MultipartUpload(upload_id=upload_id, part_size_bytes=part_size, parts=parts)
+
+
+def _part_length(number: int, count: int, part_size: int, size_bytes: int) -> int:
+    """How many bytes part `number` of `count` carries."""
+    if number < count:
+        return part_size
+    return size_bytes - part_size * (count - 1)
 
 
 def _part_size_for(size_bytes: int) -> int:
@@ -248,6 +274,17 @@ def head(key: str) -> ObjectInfo | None:
         etag=str(response.get("ETag", "")).strip('"'),
         content_type=response.get("ContentType"),
     )
+
+
+def delete(key: str) -> None:
+    """Remove one object. Quietly, if it is already gone.
+
+    For an object that never became an asset — an upload refused at
+    completion. Not for originals that did: those are only ever removed by the
+    retention policy (docs/03 §6.3), never by a request.
+    """
+    with contextlib.suppress(ClientError):
+        client().delete_object(Bucket=settings.s3_bucket, Key=key)
 
 
 def download(key: str, destination: str) -> None:

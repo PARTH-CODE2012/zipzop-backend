@@ -50,10 +50,16 @@ def upgrade() -> None:
         sa.Column("name", postgresql.CITEXT(), nullable=False),
         sa.Column("settings", postgresql.JSONB(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["user_id"], ["users.id"], name="fk_templates_user_id_users", ondelete="CASCADE"

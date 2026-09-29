@@ -13,6 +13,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ForbiddenError, RateLimitedError, TokenRevokedError
+from app.config import settings
 from app.db import get_session
 from app.models import User, UserStatus
 from app.repositories.user import UserRepository
@@ -25,15 +26,30 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 def client_ip(request: Request) -> str:
     """The address rate limits are counted against.
 
-    `X-Forwarded-For` is trusted only for its **first** entry, and only because
-    this service is meant to sit behind a load balancer that sets it. A client
-    can send the header itself, so behind nothing this is spoofable — which is
-    why it must never be used for authorisation, only for throttling.
+    **Read from the right of `X-Forwarded-For`, never the left.** A proxy
+    appends the address it saw to whatever chain arrived, so with
+    `trusted_proxy_hops = N` the entry N places from the right is the one our
+    own outermost proxy wrote, and everything to its left is client-supplied.
+
+    This used to take the *first* entry — precisely the one the client writes.
+    Found in M7 (docs/07-security.md §6.10): sending a different made-up address
+    on every request gave each one a fresh allowance, so the 20-a-minute
+    ceiling on `/auth/login` stopped nothing. A chain shorter than the trusted
+    hop count was not built by our proxies, so none of it is believed and the
+    socket peer is used instead.
+
+    Still only ever for throttling, never for authorisation: a misconfigured
+    hop count makes it wrong, and wrong must only ever cost a rate limit.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    hops = settings.trusted_proxy_hops
+    if hops <= 0:
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "")
+    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+    if len(chain) < hops:
+        return peer
+    return chain[-hops]
 
 
 async def current_user(request: Request, session: Session) -> User:

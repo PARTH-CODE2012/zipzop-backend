@@ -11,7 +11,12 @@ dependencies = [
     "pydantic-settings>=2.6",
 
     # Database
-    "sqlalchemy>=2.0.36",
+    # `[asyncio]`, because SQLAlchemy 2.1 stopped installing `greenlet` on its
+    # own and the async engine cannot import without it. Found in M7 when the
+    # first image built from a lockfile could not start the API — every fresh
+    # install from these ranges had the same problem, and a developer's old
+    # virtualenv, still holding greenlet from 2.0, was what hid it.
+    "sqlalchemy[asyncio]>=2.0.36",
     "alembic>=1.14",
     "asyncpg>=0.30",
     "psycopg[binary]>=3.2",     # Alembic runs sync; asyncpg serves the app
@@ -53,6 +58,13 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-boto3",
+    # Security gates — docs/07-security.md §7, added in M7. In the dev extras
+    # rather than installed ad hoc, so `make security` and CI run the same
+    # versions the lockfile pins.
+    "bandit>=1.8",
+    "pip-audit>=2.7",
+    # Produces requirements.lock / requirements-dev.lock (`make lock`).
+    "uv>=0.5",
 ]
 
 [build-system]
@@ -103,6 +115,22 @@ module = ["app.services.redis_client"]
 disallow_untyped_calls = false
 
 # --------------------------------------------------------------------- pytest
+
+[tool.bandit]
+# Security static analysis — docs/07-security.md §7, added in M7. Runs on every
+# PR (`make security`). The skips below are the reviewed, accepted set; anything
+# not listed here still fails the gate, which is the point of running it.
+exclude_dirs = ["tests", ".venv"]
+skips = [
+    "B101",  # assert: used only for FK-guaranteed invariants (`assert plan is not None`),
+    #          never for control flow, authorisation or input validation.
+    "B404",  # import subprocess: ffmpeg/ffprobe are shelled out by necessity (§6.4).
+    "B603",  # subprocess without shell: every call passes an argument *list*, never a
+    #          string, and every one on user media pins `-protocol_whitelist file`.
+    "B607",  # partial executable path: ffmpeg/ffprobe resolve from PATH, by design.
+]
+# B104 (bind 0.0.0.0) and B105 (the dev-default guard) are handled inline with
+# `# nosec` at their one site each, so those checks stay live everywhere else.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

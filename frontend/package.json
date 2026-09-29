@@ -16,15 +16,15 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "next": "^15.1.0",
+    "@tanstack/react-query": "^5.62.0",
+    "immer": "^10.1.1",
+    "next": "^15.5.26",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.2",
-    "immer": "^10.1.1",
-    "@tanstack/react-query": "^5.62.0"
+    "zustand": "^5.0.2"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "^15.1.0",
+    "@next/eslint-plugin-next": "^15.5.26",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
@@ -39,6 +39,14 @@
     "prettier": "^3.4.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.8"
+    "vite": "^7",
+    "vitest": "^4.1.11"
+  },
+  "pnpm": {
+    "overrides": {
+      "next>postcss": "^8.5.23",
+      "sharp": "^0.35.5",
+      "js-yaml": "^4.3.2"
+    }
   }
 }

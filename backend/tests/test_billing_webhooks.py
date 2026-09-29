@@ -169,6 +169,50 @@ async def test_a_forged_signature_stores_nothing(
     assert stored == 0
 
 
+async def test_an_oversized_callback_is_refused_before_it_is_buffered(
+    client: AsyncClient, db: AsyncSession, enqueued: list[Any]
+) -> None:
+    """docs/07-security.md §6.7: *"Post a 10 MB body."* Found in M7.
+
+    The route is unauthenticated and the signature can only be checked once the
+    whole body is in hand, so the body used to be read without a ceiling. It is
+    now refused past a megabyte — with a *valid* signature, so the 413 is about
+    the size and not about the signature failing first.
+    """
+    user, _ = await _account(db)
+    body = _charged(user.id)
+    body["padding"] = "x" * (2 * 1024 * 1024)
+    raw, headers = _sign(body)
+
+    response = await client.post(f"{V1}/webhooks/razorpay", content=raw, headers=headers)
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "WEBHOOK_TOO_LARGE"
+    stored = (await db.execute(sa.select(sa.func.count()).select_from(ProviderEvent))).scalar()
+    assert stored == 0
+    assert enqueued == []
+
+
+async def test_a_length_the_client_did_not_declare_is_still_counted(
+    client: AsyncClient, db: AsyncSession, enqueued: list[Any]
+) -> None:
+    """A chunked body carries no `Content-Length`, so the ceiling cannot rest on
+    the header alone. Sent as a stream, the same oversized body is refused."""
+    user, _ = await _account(db)
+    body = _charged(user.id)
+    body["padding"] = "x" * (2 * 1024 * 1024)
+    raw, headers = _sign(body)
+
+    async def chunks() -> Any:
+        for start in range(0, len(raw), 64 * 1024):
+            yield raw[start : start + 64 * 1024]
+
+    response = await client.post(f"{V1}/webhooks/razorpay", content=chunks(), headers=headers)
+
+    assert response.status_code == 413
+    assert enqueued == []
+
+
 async def test_stripe_is_refused_rather_than_pretended(
     client: AsyncClient, db: AsyncSession, enqueued: list[Any]
 ) -> None:

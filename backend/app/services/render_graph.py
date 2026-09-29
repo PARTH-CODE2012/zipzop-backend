@@ -37,6 +37,7 @@ filtergraph FFmpeg will not parse, let alone run. See `render_text.py`.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 from app.api.schemas.project import (
     ASPECT_RATIOS,
@@ -46,12 +47,24 @@ from app.api.schemas.project import (
     Transform,
 )
 from app.services import fonts
-from app.services.ffmpeg_filters import escape_path
+from app.services.ffmpeg_filters import escape_path, input_protocol_args
 
 #: Frames per second of the output. Taken from the project rather than guessed
 #: — `projects.fps` exists and defaults to 30 — but pinned here as the fallback
 #: for a document that predates it.
 DEFAULT_FPS = 30
+
+#: The watermark string, interpolated into a `drawtext` filter. **A constant,
+#: not a parameter, and that is the security decision** (docs/07-security.md
+#: §6.5): `drawtext` expands `%{…}` sequences, a `'` ends the option and a `:`
+#: ends the field, so any user-controlled string reaching this — a plan name, a
+#: display name, a custom watermark — would be a filter-graph injection. Today
+#: only this literal ever reaches it. Keeping it a module constant means it can
+#: never take an argument, which is a stronger guarantee than escaping one it is
+#: not supposed to have. If a custom watermark is ever a feature, it arrives
+#: through an escaper written for that field, not by widening this into a
+#: parameter.
+WATERMARK_TEXT: Final = "ZipZop"
 
 #: How the graph gets from a look name to a `.cube` on disk. Injected rather
 #: than imported so a test can hand it a stub without a grade directory, and so
@@ -290,7 +303,6 @@ def build_command(
     output: Path,
     lut_path_for: LutResolver,
     subtitles: Path | None = None,
-    watermark_text: str = "ZipZop",
     progress_to: str | None = None,
 ) -> GraphPlan:
     """The whole render, as one FFmpeg invocation.
@@ -324,7 +336,18 @@ def build_command(
         if source is None:
             raise ValueError(f"no source file for asset {clip.asset_id}")
         start_s, take_s = source_window(clip)
-        args += ["-ss", f"{start_s:.3f}", "-t", f"{take_s:.3f}", "-i", str(source)]
+        # The allowlist before *each* `-i`: every source is a user upload, and a
+        # container that names a URL must not be followed off the host (§6.4).
+        # It is an input option, so it does not touch the local-file output.
+        args += [
+            "-ss",
+            f"{start_s:.3f}",
+            "-t",
+            f"{take_s:.3f}",
+            *input_protocol_args(),
+            "-i",
+            str(source),
+        ]
         inputs.append(source)
 
     # ---- per-clip chains --------------------------------------------------
@@ -361,7 +384,7 @@ def build_command(
         # has paid for it. See `app/services/fonts.py`.
         chains.append(
             f"[{video_label}]drawtext=fontfile={escape_path(fonts.default_font())}:"
-            f"text='{watermark_text}':"
+            f"text='{WATERMARK_TEXT}':"
             f"fontsize={size}:fontcolor=white@0.75:"
             f"borderw={max(1, size // 12)}:bordercolor=black@0.45:"
             f"x=w-tw-{margin}:y=h-th-{margin}[vout]"

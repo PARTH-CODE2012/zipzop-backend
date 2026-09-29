@@ -1,3 +1,10 @@
+# ---- security register ----
+# docs/07-security.md §2 and §9: findings and reproductions live in a PRIVATE
+# register, never in a public issue. This repository answers anonymous API
+# calls, so it is public — the register stays out of it. Keep a copy somewhere
+# private (a private repository, a password manager's secure notes).
+security/
+
 # ---- secrets ----
 .env
 .env.*

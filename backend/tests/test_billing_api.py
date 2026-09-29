@@ -645,5 +645,56 @@ async def test_the_ledger_is_only_ever_your_own(client: AsyncClient, db: AsyncSe
     assert {item["id"] for item in items}.isdisjoint(set(rows))
 
 
+async def test_a_forged_ledger_cursor_cannot_page_into_another_account(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """The cursor is not a capability — docs/22-m7-readiness.md §2.2.
+
+    `/credits/ledger` is one of the M6 routes that filters by hand rather than
+    through a `ScopedRepository`, so this proves the property the repository
+    would have made structural: a cursor is `{"id": N}` and the query is
+    `WHERE user_id = me AND id < N`, so pointing it at another account's row id
+    — or past the top of the table — still returns only the caller's rows. The
+    `user_id` predicate is what carries the isolation, and the cursor cannot
+    move it.
+    """
+    from app.api.routes.billing import _encode_cursor
+
+    mine, my_id = await _account(client)
+    _, other_id = await _account(client)
+
+    # Give the other account a row, and note its id — the thing an attacker
+    # would try to reach.
+    other_row = CreditLedgerEntry(
+        user_id=other_id,
+        bucket=CreditBucket.TOPUP,
+        delta=999,
+        reason=LedgerReason.ADMIN_GRANT,
+        balance_after=999,
+    )
+    db.add(other_row)
+    await db.commit()
+
+    # A cursor pointing just past that row: `id < other_row.id + 1` matches it,
+    # if the query trusted the cursor over the owner filter.
+    forged = _encode_cursor(other_row.id + 1)
+    items = (
+        await client.get(f"{V1}/credits/ledger", headers=mine, params={"cursor": forged})
+    ).json()["items"]
+
+    my_rows = set(
+        (
+            await db.execute(
+                sa.select(CreditLedgerEntry.id).where(CreditLedgerEntry.user_id == my_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    returned = {item["id"] for item in items}
+    assert other_row.id not in returned
+    assert returned <= my_rows
+
+
 async def test_the_ledger_needs_an_account(client: AsyncClient) -> None:
     assert (await client.get(f"{V1}/credits/ledger")).status_code == 401

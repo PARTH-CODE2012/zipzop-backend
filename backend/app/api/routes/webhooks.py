@@ -42,10 +42,45 @@ WEBHOOK_RATE_LIMIT = 600
 WEBHOOK_RATE_WINDOW_SECONDS = 60
 
 
+#: The largest body a provider callback may carry. Razorpay's are a few KB; a
+#: subscription event with every nested entity is well under 64 KB. A megabyte
+#: is generous by an order of magnitude and still small enough that nobody can
+#: make this route buffer their upload.
+MAX_WEBHOOK_BODY_BYTES = 1024 * 1024
+
+
 class WebhookRejectedError(APIError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "WEBHOOK_REJECTED"
     message = "This callback could not be verified."
+
+
+class WebhookTooLargeError(APIError):
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    code = "WEBHOOK_TOO_LARGE"
+    message = "This callback is larger than any provider sends."
+
+
+async def _bounded_body(request: Request) -> bytes:
+    """The raw body, refused past `MAX_WEBHOOK_BODY_BYTES`.
+
+    **The signature cannot be checked before the body is read**, so an
+    unbounded read let anyone make this unauthenticated route hold whatever
+    they sent in memory — ten megabytes, a gigabyte — before it said no
+    (docs/07-security.md §6.7, found in M7). The declared length is refused
+    up front, and the stream is counted as it arrives because a declared length
+    is only a claim: chunked bodies carry none, and a client can lie.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_WEBHOOK_BODY_BYTES:
+        raise WebhookTooLargeError()
+
+    received = bytearray()
+    async for chunk in request.stream():
+        received.extend(chunk)
+        if len(received) > MAX_WEBHOOK_BODY_BYTES:
+            raise WebhookTooLargeError()
+    return bytes(received)
 
 
 async def _webhook_rate_limit(request: Request) -> None:
@@ -73,7 +108,8 @@ async def _handle(provider: PaymentProvider, request: Request, session: Session)
     # **The raw bytes, not the parsed body.** Both providers sign the exact
     # octets they sent; a dict that has been through a JSON round trip is a
     # different byte string with the same meaning, and it will not verify.
-    raw = await request.body()
+    # Bounded, because it has to be read in full before it can be verified.
+    raw = await _bounded_body(request)
 
     try:
         adapter.verify_signature(raw_body=raw, headers=headers)
