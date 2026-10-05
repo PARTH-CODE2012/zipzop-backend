@@ -63,6 +63,28 @@ export interface JobStream {
 }
 
 /**
+ * The server's close code for "the token behind this socket has expired"
+ * (contract §8). Not a failure: the socket lives exactly as long as the access
+ * token that asked for it (M7-18), so a session longer than fifteen minutes
+ * sees this routinely, and answers it with a fresh ticket straight away.
+ */
+export const TOKEN_EXPIRED_CLOSE = 4001
+
+/** Waits between reconnect attempts after anything else closes the socket. */
+export const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
+
+/** A socket that stayed up this long was a working connection, not a flap. */
+const STABLE_AFTER_MS = 10_000
+
+export interface StreamOptions {
+  baseUrl?: string
+  onOpen?: () => void
+  onClose?: () => void
+  /** The browser's `WebSocket` unless a test hands in its own. */
+  createSocket?: (url: string) => WebSocket
+}
+
+/**
  * Open the WebSocket and call `onHint` whenever it says something changed.
  *
  * Deliberately returns **no job state**. The message carries a job id and a
@@ -70,48 +92,107 @@ export interface JobStream {
  * paths write the same state, and the one that arrives out of order wins. The
  * hint means "read the job now"; the read is what decides anything.
  *
+ * **Opened with a one-time ticket, never the access token (M7-19).** Whatever
+ * authenticates a socket rides in its URL, and URLs are what access logs keep.
+ * `getTicket` is asked again for every connection, because a ticket is spent
+ * by the handshake that uses it.
+ *
+ * **It comes back by itself.** Until M7 a closed socket stayed closed and the
+ * session carried on at polling speed. Now the server closes it on purpose when
+ * the token expires, so reconnecting is part of the contract: at once after a
+ * `4001`, with backoff after anything else. A signed-out or suspended account
+ * cannot get a ticket, and that is where it stops.
+ *
  * A socket that fails to open is not an error. It is a slower session.
  */
 export function openJobStream(
-  token: string,
+  getTicket: () => Promise<string>,
   onHint: (jobId: string) => void,
-  options: { baseUrl?: string; onOpen?: () => void; onClose?: () => void } = {},
+  options: StreamOptions = {},
 ): JobStream {
-  const base = options.baseUrl ?? apiBase()
-  const url = `${base.replace(/^http/, 'ws')}/ws?token=${encodeURIComponent(token)}`
+  const base = (options.baseUrl ?? apiBase()).replace(/^http/, 'ws')
+  const createSocket = options.createSocket ?? ((url: string) => new WebSocket(url))
 
   let socket: WebSocket | null = null
   let closed = false
+  let failures = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-  try {
-    socket = new WebSocket(url)
-  } catch {
-    // No socket. The poll below carries the session on its own.
-    return { close: () => {} }
+  const retry = (immediately: boolean) => {
+    if (closed) return
+    const wait = immediately
+      ? 0
+      : RECONNECT_DELAYS_MS[Math.min(failures, RECONNECT_DELAYS_MS.length - 1)]
+    failures += 1
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      void connect()
+    }, wait)
   }
 
-  socket.onopen = () => options.onOpen?.()
-  socket.onclose = () => {
-    if (!closed) options.onClose?.()
-  }
-  socket.onerror = () => {
-    // Nothing to do and nothing to report: the fallback is already running.
-  }
-  socket.onmessage = (event) => {
+  const connect = async () => {
+    let ticket: string
     try {
-      const message = JSON.parse(String(event.data)) as { type?: string; jobId?: string }
-      // The heartbeat exists to keep proxies from closing an idle connection.
-      if (!message.jobId || message.type === 'ping') return
-      onHint(message.jobId)
+      ticket = await getTicket()
+    } catch (error) {
+      // 401 after a failed refresh, or 403 for an account that is no longer
+      // active: there is no ticket to be had, and asking again will not change
+      // that. Anything else — offline, a 5xx — is worth another try later.
+      const status = (error as { status?: number } | null)?.status
+      if (status === 401 || status === 403) return
+      retry(false)
+      return
+    }
+    if (closed) return
+
+    let opened = 0
+    let ws: WebSocket
+    try {
+      ws = createSocket(`${base}/ws?ticket=${encodeURIComponent(ticket)}`)
     } catch {
-      // A message we cannot parse is a message from a version we do not know.
-      // Ignoring it is correct; the poll still finishes the job.
+      retry(false)
+      return
+    }
+    socket = ws
+
+    ws.onopen = () => {
+      opened = Date.now()
+      options.onOpen?.()
+    }
+    ws.onclose = (event) => {
+      socket = null
+      if (closed) return
+      options.onClose?.()
+      // A connection that held is a fresh start for the backoff, so a socket
+      // closed at token expiry after fifteen good minutes reconnects at once.
+      // One closed with 4001 the instant it opened has not held, and backs off
+      // like any other flap rather than spinning.
+      if (opened > 0 && Date.now() - opened >= STABLE_AFTER_MS) failures = 0
+      retry(event.code === TOKEN_EXPIRED_CLOSE && failures === 0)
+    }
+    ws.onerror = () => {
+      // Nothing to do and nothing to report: the fallback is already running,
+      // and `onclose` follows with the code that decides what happens next.
+    }
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(String(event.data)) as { type?: string; jobId?: string }
+        // The heartbeat exists to keep proxies from closing an idle connection.
+        if (!message.jobId || message.type === 'ping') return
+        onHint(message.jobId)
+      } catch {
+        // A message we cannot parse is a message from a version we do not know.
+        // Ignoring it is correct; the poll still finishes the job.
+      }
     }
   }
+
+  void connect()
 
   return {
     close() {
       closed = true
+      if (retryTimer) clearTimeout(retryTimer)
       socket?.close()
     },
   }
@@ -126,7 +207,7 @@ export function openJobStream(
  * by the catch-up call rather than waited for forever.
  */
 export function watchJobs(options: {
-  token: string
+  getTicket: () => Promise<string>
   projectId?: string
   onUpdate: (job: JobResponse) => void
   intervalMs?: number
@@ -161,7 +242,7 @@ export function watchJobs(options: {
     }
   }
 
-  const stream = openJobStream(options.token, (jobId) => void readOne(jobId), {
+  const stream = openJobStream(options.getTicket, (jobId) => void readOne(jobId), {
     // Every reconnect re-syncs, because the gap is exactly when something
     // finished without anyone hearing.
     onOpen: () => void resync(),

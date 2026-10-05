@@ -1,0 +1,64 @@
+# The edge of the local staging stack — what the load balancer and the CDN are
+# in production (docs/23-m7-notes.md §7, docs/24-m7-closure.md §3).
+#
+# Three hostnames on one proxy, each its own origin, as in production:
+#   app.zipzop.test    the Next.js frontend
+#   api.zipzop.test    the API and its WebSocket
+#   media.zipzop.test  object storage (S3 in production, MinIO here)
+#
+# `.test` is reserved (RFC 2606) and resolves only inside the compose networks,
+# where these names are aliases of this container. Nothing here is reachable
+# from outside the machine; no port is published.
+
+{
+	# A local CA, never a public one: nothing is asked of Let's Encrypt, and
+	# the root certificate stays in the `caddy-data` volume, which the API, the
+	# worker and the checks mount to trust it.
+	local_certs
+	skip_install_trust
+	admin off
+}
+
+(edge) {
+	header {
+		# HSTS on everything we serve: the browser never tries plain http again.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	# Access logs as the load balancer would keep them, with the one thing in a
+	# request line that must not be kept removed. The WebSocket ticket is
+	# single-use and spent by the time it is logged (M7-19), and it is still
+	# redacted: a log is not where credentials of any kind belong.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					replace ticket REDACTED
+				}
+			}
+		}
+	}
+}
+
+app.zipzop.test {
+	import edge
+	reverse_proxy frontend:3000
+}
+
+api.zipzop.test {
+	import edge
+	# One proxy hop: Caddy *replaces* any X-Forwarded-For a client sent with the
+	# address it saw, so the API (TRUSTED_PROXY_HOPS=1) reads the last entry and
+	# a forged header buys nothing (M7-03). An ALB appends instead; the same
+	# setting is right for both.
+	reverse_proxy api:8000
+}
+
+media.zipzop.test {
+	import edge
+	# The Host header is passed through untouched — it is part of every
+	# presigned signature.
+	reverse_proxy minio:9000
+}

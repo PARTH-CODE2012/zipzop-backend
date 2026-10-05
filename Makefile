@@ -88,7 +88,9 @@ docker-ok: ## Fail early with a useful message if the daemon is unreachable
 .PHONY: pull
 pull: docker-ok ## Fetch images one at a time, retrying — use this on a flaky connection
 	@failed=""; \
-	for img in postgres:16-alpine redis:7-alpine minio/minio:latest minio/mc:latest; do \
+	for img in postgres:16-alpine redis:7-alpine \
+			pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 \
+			pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd; do \
 		echo "→ $$img"; \
 		ok=0; \
 		for attempt in 1 2 3; do \
@@ -397,4 +399,27 @@ SEMGREP_ARGS := --config p/python --config p/owasp-top-ten --config p/react \
 	--exclude "*.test.ts"
 TRIVY_FS_ARGS := --scanners vuln,misconfig,secret --severity HIGH,CRITICAL \
 	--ignore-unfixed --exit-code 1 --skip-dirs frontend/node_modules \
-	--skip-dirs backend/.venv --skip-files .env
+	--skip-dirs backend/.venv --skip-files .env \
+	--skip-dirs deploy/local-staging/keys --skip-files deploy/local-staging/.env
+
+# ------------------------------------------------------------ local staging --
+# The production topology on this machine — deploy/local-staging/compose.yml,
+# docs/24-m7-closure.md §3. Production image, ENVIRONMENT=production, TLS at
+# an edge proxy, an internal network the workers cannot leave. `staging-check`
+# runs Part B of docs/07-security.md against it; `SCANS=1` adds ZAP and sqlmap.
+STAGING := docker compose -f deploy/local-staging/compose.yml
+
+.PHONY: staging-up
+staging-up: docker-ok ## Start the local staging stack (generates its secrets once)
+	cd $(BACKEND) && ./$(VBIN)/python ../deploy/local-staging/gen_secrets.py
+	$(STAGING) up -d --build
+	@echo "staging up — the frontend builds inside its container; give it a minute"
+
+.PHONY: staging-check
+staging-check: ## Run every Part B check against the local staging stack
+	$(STAGING) --profile check build checks
+	sh deploy/local-staging/check.sh
+
+.PHONY: staging-down
+staging-down: ## Stop the local staging stack and drop its volumes
+	$(STAGING) --profile check down -v

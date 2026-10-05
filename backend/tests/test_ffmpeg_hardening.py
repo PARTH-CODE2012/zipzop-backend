@@ -8,11 +8,12 @@ Left open that is an SSRF primitive against the instance metadata endpoint.
 
 Two kinds of test here, and both are needed:
 
-* **the flag is present** at every call site that touches user media — a unit
+* **the flags are present** at every call site that touches user media — a unit
   assertion that fails the moment someone adds a new `ffmpeg`/`ffprobe` call and
   forgets it, which is exactly how the first copy of a bug like this survives;
-* **the flag bites** — a crafted HLS playlist that references a URL is refused by
-  the real `ffprobe`, and does not reach out.
+* **the flags bite** — a crafted HLS playlist that references a URL, and an
+  `ffconcat` file that references the file next to it, are refused by the real
+  `ffprobe`; and every container the upload route accepts still opens.
 
 The readiness note (docs/22-m7-readiness.md §2.1) ranked this first. Running it
 refined the finding rather than confirming a live hole: FFmpeg 9.0.1 already
@@ -30,27 +31,37 @@ from typing import Any
 
 import pytest
 
+from app.api.schemas.media import SUPPORTED_CONTENT_TYPES
 from app.services import color_analysis, ingest, render_graph, smart_trim, transcription
-from app.services.ffmpeg_filters import USER_MEDIA_PROTOCOLS, input_protocol_args
+from app.services.ffmpeg_filters import (
+    USER_MEDIA_FORMATS,
+    USER_MEDIA_PROTOCOLS,
+    user_media_input_args,
+)
 from app.services.smart_trim import THRESHOLDS
 
 
-def _assert_allowlisted_before_input(cmd: list[str]) -> None:
-    """The allowlist is present, is exactly `file`, and precedes every input.
+def _assert_allowlisted_before_input(cmd: list[str], *, formats: str = USER_MEDIA_FORMATS) -> None:
+    """Both allowlists are present, exact, and precede every input.
 
-    `-protocol_whitelist` is an *input* option: placed after an `-i` it governs
-    nothing. So the assertion is not merely that the flag exists but that it sits
-    ahead of the first input the command opens.
+    `-protocol_whitelist` and `-format_whitelist` are *input* options: placed
+    after an `-i` they govern nothing. So the assertion is not merely that the
+    flags exist but that they sit ahead of the first input the command opens.
     """
-    assert "-protocol_whitelist" in cmd, cmd
-    idx = cmd.index("-protocol_whitelist")
-    assert cmd[idx + 1] == USER_MEDIA_PROTOCOLS == "file", cmd
-    # ffmpeg uses `-i`; ffprobe takes the input positionally as the last arg. In
-    # either case the flag must come before the thing being opened.
-    if "-i" in cmd:
-        assert idx < cmd.index("-i"), cmd
-    else:
-        assert idx < len(cmd) - 1, cmd
+    assert USER_MEDIA_PROTOCOLS == "file"
+    for flag, value in (
+        ("-protocol_whitelist", USER_MEDIA_PROTOCOLS),
+        ("-format_whitelist", formats),
+    ):
+        assert flag in cmd, cmd
+        idx = cmd.index(flag)
+        assert cmd[idx + 1] == value, cmd
+        # ffmpeg uses `-i`; ffprobe takes the input positionally as the last
+        # arg. In either case the flag must come before the thing being opened.
+        if "-i" in cmd:
+            assert idx < cmd.index("-i"), cmd
+        else:
+            assert idx < len(cmd) - 1, cmd
 
 
 @pytest.fixture
@@ -122,12 +133,15 @@ def test_color_analysis_pins_the_allowlist_on_the_movie_source(capture: Any) -> 
     with pytest.raises(color_analysis.AnalysisFailedError):
         color_analysis.sample_frames(Path("/tmp/in.mp4"), duration_ms=4000)
     cmd = calls[0]
-    _assert_allowlisted_before_input(cmd)
+    # The top level opens one thing, the lavfi device, so `lavfi` is the only
+    # demuxer it may use.
+    _assert_allowlisted_before_input(cmd, formats="lavfi")
     # The lavfi `movie=` source opens the file through its own demuxer, which the
-    # top-level flag does not reach — so it carries the allowlist inline. Without
-    # this the movie source silently falls back to FFmpeg's build default.
+    # top-level flags do not reach — so it carries both allowlists inline.
+    # Without this the movie source silently falls back to FFmpeg's defaults.
     movie = next(part for part in cmd if part.startswith("movie="))
-    assert f"protocol_whitelist\\={USER_MEDIA_PROTOCOLS}" in movie, movie
+    assert "format_opts=protocol_whitelist=file" in movie, movie
+    assert "format_whitelist=" + USER_MEDIA_FORMATS.replace(",", "\\,") in movie, movie
 
 
 def test_smart_trim_silence_pins_the_protocol_allowlist(capture: Any) -> None:
@@ -166,21 +180,24 @@ def test_export_graph_pins_the_allowlist_before_every_input() -> None:
         output=Path("/tmp/out.mp4"),
         lut_path_for=luts.path_for,
     )
-    # One `-protocol_whitelist file` for each of the two inputs, each before its
-    # own `-i`.
+    # Both allowlists for each of the two inputs, each right before its `-i`.
     args = plan.args
     input_positions = [i for i, a in enumerate(args) if a == "-i"]
     assert len(input_positions) == 2
     for i in input_positions:
-        window = args[max(0, i - 6) : i]
-        assert "-protocol_whitelist" in window and USER_MEDIA_PROTOCOLS in window, args
+        assert args[i - 4 : i] == user_media_input_args(), args
 
 
-def test_input_protocol_args_is_a_fresh_list_each_call() -> None:
+def test_user_media_input_args_is_a_fresh_list_each_call() -> None:
     """A shared mutable default is how one call's args leak into another's."""
-    a = input_protocol_args()
+    a = user_media_input_args()
     a.append("mutated")
-    assert input_protocol_args() == ["-protocol_whitelist", "file"]
+    assert user_media_input_args() == [
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        USER_MEDIA_FORMATS,
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -216,6 +233,98 @@ def test_probe_refuses_an_hls_upload_that_points_at_a_url(tmp_path: Path) -> Non
     # connect timeout. Ten seconds is far under ffprobe's 60s probe budget and
     # far over a clean refusal.
     assert time.monotonic() - started < 10.0
+
+
+#: An ffconcat script named like a video. The `duration` line matters: without
+#: it concat reports no duration and `probe()` refused the file by accident —
+#: "no playable duration" — which is how this looked closed when it was not.
+_CONCAT_UPLOAD = "ffconcat version 1.0\nfile neighbour.mp4\nduration 1.0\n"
+
+
+@pytest.mark.ffmpeg
+def test_probe_refuses_a_concat_upload_that_reads_the_file_next_to_it(tmp_path: Path) -> None:
+    """M7-22. FFprobe chooses the demuxer from the bytes, not the name: an
+    `ffconcat` text uploaded as `clip.mp4` was opened as concat, and its `file`
+    line was followed to the file beside it — whose duration and streams were
+    then reported as the upload's, and whose frames the proxy would have been
+    made from. The protocol allowlist could not stop it (`file` has to be
+    allowed to open the upload at all); naming the demuxers does."""
+    _sample(tmp_path / "neighbour.mp4", "mp4")
+    evil = tmp_path / "clip.mp4"
+    evil.write_text(_CONCAT_UPLOAD, encoding="utf-8")
+
+    with pytest.raises(ingest.UnreadableMediaError):
+        ingest.probe(evil)
+
+
+@pytest.mark.ffmpeg
+def test_colour_analysis_refuses_a_concat_upload_through_the_movie_source(
+    tmp_path: Path,
+) -> None:
+    """The same refusal inside `movie=`, whose demuxer the top-level flags do
+    not reach — what is under test is the three-level escaping of
+    `format_opts`, against the real parser."""
+    _sample(tmp_path / "neighbour.mp4", "mp4")
+    evil = tmp_path / "clip.mp4"
+    evil.write_text(_CONCAT_UPLOAD, encoding="utf-8")
+
+    with pytest.raises(color_analysis.AnalysisFailedError):
+        color_analysis.sample_frames(evil, duration_ms=1000)
+    # And the same escaping still lets a real file through.
+    assert color_analysis.sample_frames(tmp_path / "neighbour.mp4", duration_ms=1000)
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("extension", sorted(set(SUPPORTED_CONTENT_TYPES.values())))
+def test_every_container_the_upload_route_accepts_still_opens(
+    tmp_path: Path, extension: str
+) -> None:
+    """The format allowlist must not refuse what the product promises to take:
+    one real file per extension in `SUPPORTED_CONTENT_TYPES`, probed exactly as
+    ingest probes it."""
+    sample = tmp_path / f"sample.{extension}"
+    _sample(sample, extension)
+    assert ingest.probe(sample).duration_ms > 0
+
+
+_ENCODE: dict[str, list[str]] = {
+    "mp4": ["-c:v", "mpeg4", "-c:a", "aac"],
+    "mov": ["-c:v", "mpeg4", "-c:a", "aac"],
+    "mkv": ["-c:v", "mpeg4", "-c:a", "aac"],
+    "avi": ["-c:v", "mpeg4", "-c:a", "pcm_s16le"],
+    "webm": ["-c:v", "libvpx", "-c:a", "libopus"],
+    "mp3": ["-vn", "-c:a", "libmp3lame"],
+    "m4a": ["-vn", "-c:a", "aac"],
+    "aac": ["-vn", "-c:a", "aac", "-f", "adts"],
+    "wav": ["-vn", "-c:a", "pcm_s16le"],
+    "flac": ["-vn", "-c:a", "flac"],
+    "ogg": ["-vn", "-c:a", "libopus"],
+}
+
+
+def _sample(path: Path, extension: str) -> None:
+    """One second of picture and tone in the given container."""
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=d=1:s=64x64:r=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=d=1",
+            *_ENCODE[extension],
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
 
 
 # --------------------------------------------------------------------------

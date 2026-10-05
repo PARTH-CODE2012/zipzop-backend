@@ -4,6 +4,11 @@
 (the plan) and [`22-m7-readiness.md`](22-m7-readiness.md) (the map of the code
 as built), in the order the readiness note suggested.
 
+> **Closed on 5 October — [`24-m7-closure.md`](24-m7-closure.md).** Every
+> finding listed as open in §6 below is fixed, Part B ran on a local staging
+> stack, and three more findings came out of it. Read that note for the
+> current state; this one is the record of 28–29 September.
+
 This is the build note — what was decided, what was found, what the next phase
 inherits. The findings themselves, with reproductions, live in the **private**
 register `security/findings.md`, which is not in this repository (§4.1).

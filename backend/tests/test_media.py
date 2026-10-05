@@ -411,15 +411,32 @@ async def test_a_part_url_refuses_a_part_of_the_wrong_size(
     reserved = (await _reserve(client, headers, size_bytes=part_size + 4096)).json()
     first = reserved["multipart"]["parts"][0]["url"]
 
-    status_code, _ = await _put_part(first, b"x" * (part_size + 1))
-    assert status_code == 403
+    # Refused either way: a 403, or — on a fast link with a body this size —
+    # the server answering 403 from the headers and dropping the connection
+    # before the client has finished sending, which the client sees as a reset.
+    # Which of the two arrives depends on timing (Windows got the 403, the
+    # Linux CI runner the reset), so the assertion that counts is the next one.
+    try:
+        status_code: int | None = (await _put_part(first, b"x" * (part_size + 1)))[0]
+    except (httpx.NetworkError, httpx.RemoteProtocolError):
+        status_code = None
+    assert status_code in (403, None)
 
     asset_uuid = reserved["assetId"].removeprefix("ast_")
-    for upload in s3.list_multipart_uploads(Bucket=settings.s3_bucket).get("Uploads", []):
-        if asset_uuid in upload["Key"]:
-            s3.abort_multipart_upload(
-                Bucket=settings.s3_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
-            )
+    uploads = [
+        upload
+        for upload in s3.list_multipart_uploads(Bucket=settings.s3_bucket).get("Uploads", [])
+        if asset_uuid in upload["Key"]
+    ]
+    assert uploads, "the reservation opened no multipart upload"
+    for upload in uploads:
+        stored = s3.list_parts(
+            Bucket=settings.s3_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
+        ).get("Parts", [])
+        s3.abort_multipart_upload(
+            Bucket=settings.s3_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
+        )
+        assert stored == [], "the stuffed part was kept"
 
 
 async def test_complete_rejects_an_object_of_the_wrong_size(client: AsyncClient, s3: Any) -> None:

@@ -47,7 +47,7 @@ from app.api.schemas.project import (
     Transform,
 )
 from app.services import fonts
-from app.services.ffmpeg_filters import escape_path, input_protocol_args
+from app.services.ffmpeg_filters import escape_path, user_media_input_args
 
 #: Frames per second of the output. Taken from the project rather than guessed
 #: — `projects.fps` exists and defaults to 30 — but pinned here as the fallback
@@ -344,7 +344,7 @@ def build_command(
             f"{start_s:.3f}",
             "-t",
             f"{take_s:.3f}",
-            *input_protocol_args(),
+            *user_media_input_args(),
             "-i",
             str(source),
         ]

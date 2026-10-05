@@ -78,3 +78,12 @@ def test_production_serves_no_docs_and_no_live_schema(monkeypatch: pytest.Monkey
     assert app.docs_url is None
     assert app.openapi_url is None
     assert app.openapi()["info"]["title"] == "ZipZop API"
+
+
+@pytest.mark.parametrize("path", ["/health/live", "/v1/catalog/luts", "/v1/no-such-route"])
+async def test_every_response_is_nosniff_and_not_stored(client: AsyncClient, path: str) -> None:
+    """Found by the ZAP baseline on staging (docs/24-m7-closure.md §3.1): API
+    responses carried neither header. An error is a response too."""
+    response = await client.get(path)
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"

@@ -86,6 +86,21 @@ async def auth_rate_limit(request: Request) -> None:
     await _enforce(request, bucket="auth", limit=20, window_seconds=60)
 
 
+async def register_rate_limit(request: Request) -> None:
+    """Accounts per address per hour, on top of the auth limit (§6.10).
+
+    A bucket of its own and an hour long, because the thing it limits is not a
+    burst of guesses but a stock of accounts: 20 a minute stopped brute force
+    and still let one address open 1,200 free accounts an hour.
+    """
+    await _enforce(
+        request,
+        bucket="register",
+        limit=settings.register_limit_per_hour,
+        window_seconds=3600,
+    )
+
+
 async def _enforce(request: Request, *, bucket: str, limit: int, window_seconds: int) -> None:
     ip = client_ip(request)
     verdict = await rate_limit.hit(f"{bucket}:{ip}", limit=limit, window_seconds=window_seconds)

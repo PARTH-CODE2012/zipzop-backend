@@ -122,6 +122,18 @@ async def run_ingest(session: AsyncSession, asset_id: uuid.UUID, *, worker_id: s
                 )
                 return "failed"
 
+            # Before anything decodes a frame (M7-24). The probe reads the
+            # header only; the proxy, the thumbnail and every later tool decode
+            # every pixel of every frame, and a file can be tiny on disk and
+            # enormous to decode.
+            if (probe.width or 0) * (probe.height or 0) > settings.max_video_pixels:
+                await fail_ingest(
+                    session,
+                    asset_id,
+                    "This video is larger than 4K. Export it at 4K or below and upload it again.",
+                )
+                return "failed"
+
             proxy_key: str | None = None
             thumbnail_key: str | None = None
 

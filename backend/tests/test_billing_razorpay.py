@@ -248,6 +248,33 @@ def test_a_payload_missing_everything_still_parses() -> None:
     assert event.amount_minor is None
 
 
+@pytest.mark.parametrize(
+    ("event_type", "entity", "kind"),
+    [
+        ("refund.processed", "refund", BillingEventKind.PAYMENT_REVERSED),
+        ("payment.dispute.lost", "dispute", BillingEventKind.PAYMENT_REVERSED),
+        # Not final: a created refund can still fail, a dispute can be won.
+        ("refund.created", "refund", BillingEventKind.IGNORED),
+        ("payment.dispute.created", "dispute", BillingEventKind.IGNORED),
+    ],
+)
+def test_money_going_back_is_read_only_once_it_is_final(
+    event_type: str, entity: str, kind: BillingEventKind
+) -> None:
+    """M7-23. The payment is named inside the refund or dispute entity, which
+    is all the parser can count on."""
+    body = {
+        "entity": "event",
+        "event": event_type,
+        "payload": {entity: {"entity": {"id": "x_1", "payment_id": "pay_taken_back"}}},
+    }
+    raw, headers = _signed(body)
+    event = RazorpayProvider().parse_webhook(raw_body=raw, headers=headers)
+
+    assert event.kind is kind
+    assert event.payment_reference == "pay_taken_back"
+
+
 def test_a_plan_we_have_never_heard_of_is_dropped_not_guessed() -> None:
     """A note naming a plan that does not exist is a mistake somewhere. Guessing
     would grant an allowance nobody bought."""

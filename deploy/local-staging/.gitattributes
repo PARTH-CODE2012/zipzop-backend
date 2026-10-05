@@ -1,0 +1,4 @@
+# Shell scripts and the Caddyfile run inside Linux containers: LF, whatever
+# the checkout platform would otherwise choose.
+*.sh text eol=lf
+Caddyfile text eol=lf

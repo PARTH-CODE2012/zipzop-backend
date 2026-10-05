@@ -491,18 +491,36 @@ async def test_an_unsigned_alg_none_token_is_refused(client: AsyncClient) -> Non
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/auth/login", "/auth/register"])
-async def test_auth_endpoints_are_limited_to_twenty_a_minute(
-    client: AsyncClient, path: str
-) -> None:
+async def test_sign_in_is_limited_to_twenty_a_minute(client: AsyncClient) -> None:
     """docs/03-backend-architecture.md §10. The 429 carries Retry-After."""
     last = None
     for _ in range(21):
-        last = await client.post(f"{V1}{path}", json={"email": _email(), "password": "x" * 12})
+        last = await client.post(f"{V1}/auth/login", json={"email": _email(), "password": "x" * 12})
     assert last is not None
     assert last.status_code == 429
     assert last.json()["error"]["code"] == "RATE_LIMITED"
     assert int(last.headers["retry-after"]) > 0
+
+
+async def test_one_address_opens_ten_accounts_an_hour_and_no_more(client: AsyncClient) -> None:
+    """docs/07-security.md §6.10, measured in M7: with only the 20-a-minute
+    auth limit, one address opened 1,200 free accounts an hour on the staging
+    stack. The eleventh account in the hour is refused, for the rest of the
+    hour — and signing in, a separate bucket, is not spent by signing up."""
+    from app.config import settings
+
+    statuses = []
+    for _ in range(settings.register_limit_per_hour + 1):
+        response = await client.post(
+            f"{V1}/auth/register", json={"email": _email(), "password": "x" * 12}
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[:-1] == [201] * settings.register_limit_per_hour
+    assert statuses[-1] == 429
+    assert int(response.headers["retry-after"]) > 60, "the window is an hour, not a minute"
+    login = await client.post(f"{V1}/auth/login", json={"email": _email(), "password": "x" * 12})
+    assert login.status_code == 401
 
 
 async def test_a_forged_forwarded_for_does_not_buy_a_fresh_allowance(

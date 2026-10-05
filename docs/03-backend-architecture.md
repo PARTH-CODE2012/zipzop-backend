@@ -939,7 +939,7 @@ Events: `job.progress`, `job.succeeded`, `job.failed`, `credits.updated`. Shapes
 | **Transport** | HTTPS only, HSTS. |
 | **Media access** | Every S3 object private. Presigned PUT for upload (15 min), CloudFront signed URLs for playback (1 h). |
 | **Ownership** | Every query filters on `user_id` at the repository layer, not the route handler. A route that forgets is a data leak; a repository that cannot express a cross-user query is not. |
-| **Rate limits** | 100 requests/minute per user on the API; 20/minute on auth endpoints per IP; job creation additionally bounded by the concurrency caps in §5.3. |
+| **Rate limits** | 100 requests/minute per user on the API; 20/minute on auth endpoints per IP, and **10 sign-ups an hour per IP** (M7 — one address had opened 1,200 free accounts an hour); job creation additionally bounded by the concurrency caps in §5.3. Behind a proxy, the address counted is `TRUSTED_PROXY_HOPS` from the right of `X-Forwarded-For`. |
 | **Upload validation** | Content type and size checked before presigning; the real format is verified by probing after upload, because a client-declared content type proves nothing. |
 | **Deletion** | Soft delete first (`deleted_at`), hard delete on a schedule. Account deletion cascades to projects, assets and — in phase 2 — face profiles and every asset derived from them. |
 

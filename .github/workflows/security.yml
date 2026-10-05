@@ -85,6 +85,17 @@ jobs:
       # Reads pnpm-lock.yaml; nothing needs installing. Every level fails the
       # job: M7 left this at zero, and the overrides in package.json say why
       # each transitive pin is there.
+      #
+      # **One advisory is ignored, and only one:** GHSA-vfj7-8cjw-p6xm, a
+      # stack-exhaustion DoS in `braces` <= 3.0.3 — the latest version; no fix
+      # exists. It reaches us only through @next/eslint-plugin-next ->
+      # fast-glob 3.3.1 -> micromatch, which expands glob patterns *we* write
+      # in the lint config, never input from a user, and none of it ships.
+      # Recorded 5 October 2026 (docs/24-m7-closure.md §6) for the project
+      # lead to sign; revisit when `braces` publishes a fix, or by 5 November
+      # 2026 at the latest — the `auditConfig.ignoreGhsas` entry in
+      # package.json is the line to delete. The brace-expansion advisories
+      # that landed the same fortnight are fixed by overrides, not ignored.
       - name: pnpm audit
         working-directory: frontend
         run: pnpm audit

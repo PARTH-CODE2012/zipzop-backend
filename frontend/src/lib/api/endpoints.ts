@@ -233,6 +233,19 @@ export function cancelJob(jobId: string): Promise<JobResponse> {
   return api.post<JobResponse>(`/jobs/${jobId}/cancel`, {})
 }
 
+export type WsTicketResponse = Schemas['WsTicketResponse']
+
+/**
+ * A one-time ticket for the event socket — contract §8.
+ *
+ * Through `request()` like any other call, so an expired access token is
+ * refreshed on the way: this is the path by which a socket the server closed
+ * at token expiry comes back, and by which a signed-out account does not.
+ */
+export function createWsTicket(): Promise<WsTicketResponse> {
+  return api.post<WsTicketResponse>('/ws/ticket')
+}
+
 /**
  * The result, wherever it lives — contract §6.3.
  *

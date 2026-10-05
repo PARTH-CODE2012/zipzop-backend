@@ -66,8 +66,16 @@ jobs:
 
       # The ingest worker shells out to both. Without them every media test
       # fails on a missing binary rather than on anything about the code.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      #
+      # `fonts-noto-core` for the same reason the production image installs it:
+      # without a Devanagari font every Hindi caption renders as boxes, and
+      # `test_render_text.py` says so. Added 5 October 2026 — the M5 tests that
+      # need it were written while this job could not reach its tests at all.
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-noto-core
+          fc-cache -f
 
       # M2's upload flow is presigned URLs against S3. A mock cannot fail the
       # way the real thing does — a signature that does not verify, path-style
@@ -84,12 +92,19 @@ jobs:
       # server, and no health command could have made it one. Found 27 August
       # 2026, when an audit proposed changing that health command; the check
       # was never the problem.
+      #
+      # **`pgsty/minio`, pinned by digest.** `minio/minio` was removed from
+      # Docker Hub, and from 31 August to 5 October 2026 every run of this job
+      # stopped here with `docker run` exit code 125 — no backend test ran in
+      # CI for five weeks. docker-compose.yml says why this fork; the digest is
+      # the same one, so CI and development test against one server.
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=zipzop \
             -e MINIO_ROOT_PASSWORD=zipzop-dev-secret \
-            minio/minio:latest server /data
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 \
+            server /data
           for _ in $(seq 1 40); do
             if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
               echo "MinIO is up"

@@ -227,3 +227,126 @@ async def test_one_idempotency_key_sent_twenty_times_at_once_is_one_job(
         assert balance == ledger_sum
     finally:
         await _cleanup(maker, user_id)
+
+
+# --------------------------------------------------------------------------
+# Cancel at the instant of success — the last §6.6 case M7 left open
+#
+# Both are compare-and-set on the job's status, and Postgres serialises them
+# on the row: whichever commits second re-reads a status that no longer
+# matches and changes nothing. A first attempt raced an HTTP cancel against
+# the worker and the worker won all eight rounds, so only one order was ever
+# exercised. These hold the row lock on purpose, one order each.
+# --------------------------------------------------------------------------
+
+
+async def _running_job(ac: AsyncClient, maker: Any, headers: dict[str, str], asset_id: str) -> Any:
+    from app.repositories.job import claim
+
+    created = await ac.post(
+        f"{V1}/jobs",
+        headers={**headers, "Idempotency-Key": uuid.uuid4().hex},
+        json={"tool": "captions", "input": {"assetId": asset_id}},
+    )
+    assert created.status_code == 202, created.text
+    public_id = created.json()["id"]
+    job_id = ids.decode(ids.JOB, public_id)
+    async with maker() as worker:
+        assert await claim(worker, job_id, concurrency_limit=100, worker_id="race")
+        await worker.commit()
+    return public_id, job_id
+
+
+async def _refunds(maker: Any, job_id: uuid.UUID) -> int:
+    async with maker() as check:
+        count = await check.scalar(
+            sa.select(sa.func.count())
+            .select_from(CreditLedgerEntry)
+            .where(
+                CreditLedgerEntry.job_id == job_id,
+                CreditLedgerEntry.reason == LedgerReason.REFUND,
+            )
+        )
+    return int(count or 0)
+
+
+async def test_a_cancel_that_arrives_while_success_commits_is_refused(
+    production_app: tuple[AsyncClient, Any],
+) -> None:
+    """The worker has written `succeeded` and not yet committed; the user's
+    cancel arrives and waits on the row. When the worker commits, the cancel
+    finds a finished job: 409, no refund, the charge stands."""
+    from app.repositories.job import succeed
+
+    ac, maker = production_app
+    user_id, headers, asset_id, _ = await _funded_account(ac, maker, jobs_affordable=1)
+    try:
+        public_id, job_id = await _running_job(ac, maker, headers, asset_id)
+
+        async with maker() as worker:
+            assert await succeed(worker, job_id, result={"words": []})
+            cancel = asyncio.create_task(ac.post(f"{V1}/jobs/{public_id}/cancel", headers=headers))
+            await asyncio.sleep(0.5)
+            assert not cancel.done(), "the cancel did not wait for the row"
+            await worker.commit()
+        response = await cancel
+
+        assert response.status_code == 409, response.text
+        assert await _refunds(maker, job_id) == 0
+        async with maker() as check:
+            job = await check.get(Job, job_id)
+            assert job is not None and job.status.value == "succeeded"
+        balance, ledger_sum = await _reconcile(maker, user_id)
+        assert (balance, ledger_sum) == (0, 0)
+    finally:
+        await _cleanup(maker, user_id)
+
+
+async def test_a_success_that_arrives_while_cancel_commits_is_dropped(
+    production_app: tuple[AsyncClient, Any],
+) -> None:
+    """The other order. The cancel — the route's own two steps, status then
+    refund — holds the row; the worker reports success and waits. When the
+    cancel commits, the success matches nothing: the job stays cancelled and
+    refunded, and no result is delivered for credits that went back."""
+    from app.repositories.job import JobRepository, period_start_for, succeed
+
+    ac, maker = production_app
+    user_id, headers, asset_id, cost = await _funded_account(ac, maker, jobs_affordable=1)
+    try:
+        _, job_id = await _running_job(ac, maker, headers, asset_id)
+
+        async def report_success() -> bool:
+            async with maker() as worker:
+                done = await succeed(worker, job_id, result={"words": []})
+                await worker.commit()
+                return done
+
+        async with maker() as user_side:
+            job = await user_side.get(Job, job_id)
+            assert job is not None
+            assert await JobRepository(user_side, user_id).cancel(job)
+            ledger = CreditLedger(user_side)
+            locked = await ledger.lock_user(user_id)
+            assert locked is not None
+            await ledger.refund(
+                user=locked,
+                job_id=job_id,
+                period_started_at=await period_start_for(user_side, user_id),
+                job_created_at=job.created_at,
+            )
+            success = asyncio.create_task(report_success())
+            await asyncio.sleep(0.5)
+            assert not success.done(), "the success did not wait for the row"
+            await user_side.commit()
+
+        assert await success is False
+        assert await _refunds(maker, job_id) == 1
+        async with maker() as check:
+            finished = await check.get(Job, job_id)
+            assert finished is not None and finished.status.value == "cancelled"
+            assert finished.result is None
+        balance, ledger_sum = await _reconcile(maker, user_id)
+        assert (balance, ledger_sum) == (cost, cost)
+    finally:
+        await _cleanup(maker, user_id)

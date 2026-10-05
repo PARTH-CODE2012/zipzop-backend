@@ -491,103 +491,96 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 
 ---
 
-## M7 · Cybersecurity ⚠️ — code done 29 September; 🔴 cannot close without staging
+## M7 · Cybersecurity ✅ — closed in code 5 October; the cloud-only checks wait for a host
 
 *Ends when: no critical or high finding is open, every fix has a regression test, and the scanners run on every pull request.*
 
-> **Done 28–29 September — [`docs/23-m7-notes.md`](docs/23-m7-notes.md).**
-> Everything that could run without a deployment ran. **17 findings fixed**,
-> among them two Critical — twenty concurrent jobs against a balance of one all
-> succeeded (a lost update behind a lock that did take the row), and
-> `next@15.5.23` carried two unauthenticated RCE advisories — plus three High:
-> a rate limiter that trusted the client's own `X-Forwarded-For`, an upload URL
-> that did not sign its size, and development services published on every
-> interface. **No Critical or High is open.** 447 → 476 backend tests, each
-> new one confirmed by reverting its fix. The six scanners run on every pull
-> request and nightly.
+> **Closed 5 October — [`docs/24-m7-closure.md`](docs/24-m7-closure.md).**
+> The six findings left open on 29 September are fixed in code, Part B ran on
+> a production-shaped **local staging stack** (`make staging-up`,
+> `make staging-check` — 30 checks, all passing, plus ZAP and sqlmap), and
+> running it found more, all fixed: **CI had not passed since 30 August**
+> (a missing font, then lint, then a MinIO image deleted from Docker Hub — and
+> three PRs were merged red), **a 12 MB upload could take a worker's whole
+> machine** (an 8K decode bomb — uploads above 4K are now refused at the probe),
+> and **one address could open 1,200 free accounts an hour** (now ten) — plus
+> two smaller ones: scratch left by killed workers, and missing response headers.
+> 476 → 524 backend tests, 352 → 368 frontend.
 >
-> 🔴 **M7 still cannot close.** There is no staging, so Part B's deployment
-> targets are *untested*, not passed — IMDS, egress, IAM, the real bucket, the
-> real ALB, a delivery from Razorpay. The register is **private and gitignored**
+> **Still outside the code:** the checks only a real cloud can answer — IMDS,
+> IAM roles, the real ALB and S3, a delivery from Razorpay (§4 of the note) —
+> and six decisions for the project lead (§7): signing the one accepted risk
+> (a lint-tool advisory with no fix), a `security.txt` contact, branch
+> protection on `main`, the patch policy, the referral policy, and email
+> verification.
+
+> **Done 28–29 September — [`docs/23-m7-notes.md`](docs/23-m7-notes.md).**
+> 17 findings fixed, two of them Critical — twenty concurrent jobs against a
+> balance of one all succeeded, and `next@15.5.23` carried two unauthenticated
+> RCE advisories — plus three High. The register is **private and gitignored**
 > (this repository is public): keep a copy of `security/findings.md` somewhere
 > private.
 
-**The last milestone before launch, and the only one whose job is to break what the previous seven built.** Full plan — scope, rules of engagement, threat model, severity scale — in [`docs/07-security.md`](docs/07-security.md). This is the checklist; that document says why each line is here.
-
-> **Start at [`docs/22-m7-readiness.md`](docs/22-m7-readiness.md), written 20 September.**
-> `07-security.md` is dated **17 August** — before M4, M5 and M6 existed. It
-> anticipates their shape; it has never seen their code. The readiness note is the
-> map of what was actually built: six things reading already found (🔴 first among
-> them, **ffmpeg runs on user media with no protocol allowlist**), ten questions
-> reading already cleared so M7 does not re-derive them, and the M6 surface the
-> plan never saw.
->
-> 🔴 **Two blockers, neither of them code:** there is no staging environment and
-> nothing is deployed anywhere, so almost none of Part B can run; and the rules of
-> engagement are not signed.
-
-**Runs on staging, deployed from the release commit, with synthetic data only.** Never production, never real footage, never real cards. Stripe and Razorpay are not targets — their sandboxes are.
+**The last milestone before launch, and the only one whose job is to break what the previous seven built.** Full plan — scope, rules of engagement, threat model, severity scale — in [`docs/07-security.md`](docs/07-security.md). The map of the code as built is [`docs/22-m7-readiness.md`](docs/22-m7-readiness.md).
 
 ### Rules of engagement 🔗
 
-- [ ] 🔴 Staging stack deployed from the release commit, seeded with synthetic accounts and generated media — **the blocker**: no host has been chosen
-- [ ] Scope and dates agreed in writing with the project lead, including who can call a stop — M7's local part ran on the developer's own machine and synthetic data only; the staging part still needs this
-- [ ] AWS testing policy re-read **the week the test runs** — it changes, and the DoS carve-out is the part that bites
-- [x] Private findings register created at `security/findings.md` — never a public issue. **Gitignored**, because the repository is public; keep a private copy
+- [~] Staging stack with synthetic accounts and generated media — **a local production-shaped stack** ([`deploy/local-staging/`](deploy/local-staging/compose.yml)): production image, `ENVIRONMENT=production`, TLS edge, an internal network the workers cannot leave. A real host is still needed for the cloud-only checks
+- [~] Scope and dates agreed in writing with the project lead — not needed for a stack on the developer's own machine with synthetic data; **needed before anything runs against a real host**
+- [ ] AWS (or whichever host's) testing policy re-read **the week the cloud checks run**
+- [x] Private findings register at `security/findings.md` — **gitignored**, because the repository is public; keep a private copy
 
 ### Part A — code review
 
-- [x] **Every route**: authenticated, ownership enforced at the repository, no cross-user identifier accepted. The public ones are public on purpose (health, auth, catalogue, plans, packs, promo preview, webhooks); the WebSocket authenticates by token
-- [x] **The `ScopedRepository` claim re-proved** for every repository added in M3–M6 — **M6 added none**: its six tables filter by hand. Every hand-written filter was checked and holds, including under a forged ledger cursor (new test)
-- [x] Auth: rotation, reuse-revokes-chain, logout revoking, equal-time login, bcrypt cost, the SHA-256 pre-hash — all covered by `test_auth.py`; `alg: none` added
-- [x] **The timeline validator read as a security control** — bounds hold on every numeric field; `NaN`/`Infinity` are refused, and refusing them crashed the error handler into a 500 (fixed)
-- [x] No f-string SQL, no `text()` with interpolation, no `dict[str, Any]` reaching a query — and semgrep's Python and OWASP rulesets agree
-- [x] `gitleaks` over the **full history** — 55 commits on every ref, no leaks; `assert_production_safe()` covered by `test_config.py`
-- [~] Logs carry no password, token or presigned URL in **our** log lines. 🟠 The WebSocket access token rides in the URL, so an access log recording request lines would hold it — a load-balancer setting, open for staging
-- [x] Frontend: httpOnly + `Secure` + `SameSite` on the refresh cookie; **the CSRF story is decided** (bearer header on mutations, `SameSite=Lax` cookie scoped to `/v1/auth` on the two cookie routes — `docs/23-m7-notes.md` §4.2); no `dangerouslySetInnerHTML` anywhere
-- [~] Frontend: **CSP, `frame-ancestors`, `Referrer-Policy` shipped** and verified in a browser; user media is served from the storage origin, never the app's. Bucket CORS on a **real** bucket needs staging
-- [~] Infra: containers non-root (verified: uid 1000) with no Docker socket; development services now loopback-only. Redis auth in production, **IMDSv2 hop limit 1**, OIDC in CI — all need the AWS account
-- [ ] **Branch protection on `main`** — a GitHub setting, for whoever administers the repository. Owned here because it is a supply-chain control
-- [x] Dependencies: **hashed lockfiles on both sides, installed from in CI** (the Python one found SQLAlchemy 2.1 had dropped `greenlet` — the image could not start); `pip-audit` and `pnpm audit` clean; **FFmpeg pinned** through the base image digest (7.1.5, Debian 13); Actions pinned by verified SHA
+- [x] **Every route**: authenticated, ownership enforced at the repository, no cross-user identifier accepted
+- [x] **The `ScopedRepository` claim re-proved** for every repository added in M3–M6
+- [x] Auth: rotation, reuse-revokes-chain, logout revoking, equal-time login, bcrypt cost, the SHA-256 pre-hash, `alg: none`
+- [x] **The timeline validator read as a security control** — bounds on every numeric field; `NaN`/`Infinity` refused
+- [x] No f-string SQL, no `text()` with interpolation — semgrep agrees, and **sqlmap on the staging stack** found nothing on login, both cursors and the job filters
+- [x] `gitleaks` over the **full history**; `assert_production_safe()` covered by `test_config.py`
+- [x] Logs carry no password, token or presigned URL — **the WebSocket now opens with a one-time ticket**, never the access token, and the staging proxy's access log holds `ticket=REDACTED` (M7-19)
+- [x] Frontend: httpOnly + `Secure` + `SameSite` on the refresh cookie (verified through the staging edge); the CSRF story decided; no `dangerouslySetInnerHTML`
+- [x] Frontend: **a nonce CSP — no `'unsafe-inline'` for scripts** (M7-20), `frame-ancestors`, `Referrer-Policy`, HSTS at the edge; verified in a browser and through the staging edge
+- [~] Infra: containers non-root, no Docker socket, Redis authenticated, worker egress to storage only — **all verified on staging**. IMDSv2 hop limit and OIDC in CI need the cloud account
+- [ ] **Branch protection on `main`**, `CI` and `Security` required — the project lead's. CI was red for five weeks and three PRs merged anyway (docs/24-m7-closure.md §5.3)
+- [x] Dependencies: hashed lockfiles on both sides; FFmpeg pinned through the base image digest; Actions pinned by SHA; **MinIO pinned by digest** to a maintained fork
 
 ### Part B — penetration test
 
-*Every `[x]` below ran against local infrastructure — real Postgres, Redis, MinIO and FFmpeg, never mocks. Re-run the lot on staging when it exists.*
+*Every `[x]` below ran on real Postgres, Redis, storage and FFmpeg, and the deployment checks on the local staging stack. Re-run `make staging-check` against the real hostnames on deployment day.*
 
-- [x] **Cross-account isolation, every resource type** — project, asset, job (read **and cancel**, new), ledger (with a forged cursor, new), template, promo stats, socket channel. Subscription and payment have no route that takes their id; every billing route acts on the caller's own row
-- [x] Auth: rotated-token reuse, post-logout refresh, **`alg: none`** (new), a foreign signing key, user enumeration — covered. Key confusion needs RS256, which only production uses
-- [~] Storage: **5 GB through a URL issued for 5 MB — found and fixed** (the size was not signed, and the rejected object stayed forever in `originals/`); PUT for another key refused; key traversal refused. Anonymous GET and an expired PUT on a **real** bucket need staging
-- [~] ⚠️ **Ingest worker.** HLS / concat pointed at a URL: refused by the shipped FFmpeg with and without our new allowlist; traversal filenames and a non-media `.mp4` refused. Still to run: decode bombs, 50 at once from one account, temp cleanup after repeated kills — and **egress from inside the container needs staging**
-- [x] ⚠️ **Fuzz `ffprobe`** — timeboxed mutation run against the production image's FFmpeg 7.1.5, no network, crash triage only. Result in the register and `docs/23-m7-notes.md`
-- [x] ⚠️ **Export filter graph**: captions go through one escaper into an ASS file (never `drawtext`); the watermark is now a constant; fonts are resolved server-side; speed, crop and every other number is bounded, and `NaN` is refused
-- [x] ⚠️ **Credits** — 🔴 **20 concurrent jobs against a balance of 1 created 20 jobs**: found and fixed (`populate_existing` on the lock). The same with one idempotency key returned 500s: fixed. Client prices are never read. The ledger now reconciles with the cached balance under real concurrency (`tests/test_credits_race.py`). Cancel-at-the-instant-of-success is still to write in that harness
-- [x] Webhooks: unsigned, tampered, forged, replayed — covered; **oversized — found and fixed** (1 MB cap); a plan in the notes that does not exist is never granted — the charge falls back to the subscription's current plan, i.e. a renewal. `notes.user_id` is trusted over the payment row: notes are set by us at checkout, so only a dashboard operator could forge one — recorded, not fixed
-- [~] Jobs and WebSocket: another user's job is 404 to read and to cancel; one user's events never reach another. 🟠 **An open socket outlives its token** — open, Low: closing it needs the client to reconnect with a fresh token
-- [x] Browser: no HTML sink anywhere near user or model text; CSRF story decided; the checkout return is origin-exact (tests); the refresh token is httpOnly, so script on our origin cannot read it — contract 1.2 holds. A CSP now backs all of it
-- [~] Rate limits: 🟠 **`X-Forwarded-For` spoofing — found and fixed** (the limiter read the client's own entry). The cost of an abusive free account is a staging measurement, and still decides email verification
+- [x] **Cross-account isolation, every resource type** — locally and through the staging edge
+- [x] Auth: rotated-token reuse, post-logout refresh, `alg: none`, a foreign signing key, user enumeration
+- [x] Storage: **5 GB through a URL issued for 5 MB — found and fixed in M7**; on staging: anonymous GET, listing and PUT refused, an expired PUT refused, a URL bent to another key refused, CORS to the app's origin only, the storage identity unable to see another bucket or delete its own. **Abandoned uploads now cleaned from the bucket** (M7-21)
+- [x] ⚠️ **Ingest worker.** HLS and concat refused by name (`-format_whitelist`, M7-22 — concat *had* read the file next to the upload); **a decode bomb found and fixed** (M7-24: 12 MB, every core and 4 GB for 5 minutes; above 4K now refused at the probe); **scratch left by killed workers now removed** (three `docker kill`s left three copies of the upload); egress from inside the container **closed except storage** (staging)
+- [x] ⚠️ **Fuzz `ffprobe`** — 10 210 cases, no crash (29 September)
+- [x] ⚠️ **Export filter graph**: captions through one escaper into ASS; the watermark a constant; every number bounded
+- [x] ⚠️ **Credits** — 20 concurrent jobs against a balance of 1: found and fixed; one idempotency key twenty times: fixed; **cancel at the instant of success, both orders, under a held row lock: settles one way only**
+- [x] Webhooks: unsigned, tampered, forged, replayed, oversized; **refunds and lost disputes now reverse referral commission** (M7-23). A delivery from Razorpay itself needs a public URL — §4 of the note
+- [x] Jobs and WebSocket: another user's job is 404; one user's events never reach another; **an open socket closes when its token expires, and the client reconnects with a fresh ticket** (M7-18)
+- [x] Browser: no HTML sink; CSRF decided; checkout return origin-exact; an injected `onerror` handler refused by the CSP
+- [x] Rate limits: `X-Forwarded-For` spoofing fixed, **and re-proved behind a real proxy**; **§6.10 measured — one address opened 1,200 free accounts an hour; now ten** (M7-25). Email verification is the lead's call
 
 ### Automated gates — these stay after M7
 
-*All in [`.github/workflows/security.yml`](.github/workflows/security.yml): every push, every pull request, and nightly. Not yet observed running in GitHub Actions — there is no `gh` on this machine; each was run locally from the same pinned image.*
+*All in [`.github/workflows/security.yml`](.github/workflows/security.yml) and `ci.yml`: every push, every pull request, nightly.*
 
-- [x] `semgrep` (python · owasp · react · typescript) on every pull request — clean
-- [x] `bandit` on every pull request — clean, four skips each with a reason in `pyproject.toml`
-- [x] `pip-audit` (both lockfiles) · `pnpm audit` — every run **and nightly**. `osv-scanner` not added: trivy reads the same advisories
-- [x] `gitleaks` on every pull request, whole history
-- [x] `trivy` on the lockfiles and configuration, **and on the production image built in the job** — which found two HIGH advisories in pip's vendored libraries; pip is now removed from the image
-- [~] `make security` runs the lot locally. The ZAP baseline needs a deployment
+- [x] `semgrep`, `bandit`, `pip-audit`, `pnpm audit`, `gitleaks`, `trivy` (fs and the built image) — clean
+- [x] **CI's backend job green again** — run in an `ubuntu:24.04` mirror of the runner before pushing (it had failed since 30 August). The first GitHub run of both workflows is checked after the push
+- [x] `make security` runs the lot locally; **`make staging-check` runs Part B**, with `SCANS=1` for the ZAP baseline and sqlmap
 
 ### Fix, retest, hand over
 
-- [x] Every critical and high fixed — two Critical, three High, **none open**
+- [x] Every critical and high fixed — none open
 - [x] Every fix carries a test that fails without it — each confirmed by reverting the fix
-- [x] Retest from the register; the finding closes on evidence, not on a commit message
-- [x] Any accepted risk written down, time-boxed and signed by the project lead — **none accepted so far**; six open findings carry an owner instead (none Critical or High)
-- [x] `docs/23-m7-notes.md` written (the plan said `08`, which became the UI charter)
-- [ ] `security.txt` published with a disclosure address, and a named person who answers it — `frontend/security.txt.template` is ready apart from those two things, which are the project lead's
-- [ ] **Proposed patch policy to accept** — a Critical advisory in anything that ships deployed within 3 days, a High within 14 (`docs/23-m7-notes.md` §5)
+- [x] Retest from the register; the finding closes on evidence
+- [~] Any accepted risk written down, time-boxed and signed — **one, awaiting the lead's signature**: `braces` (GHSA-vfj7-8cjw-p6xm), a DoS in a lint-tool dependency with no fixed version anywhere, ignored by id until 5 November (`docs/24-m7-closure.md` §6)
+- [x] Build notes: [`docs/23-m7-notes.md`](docs/23-m7-notes.md) and [`docs/24-m7-closure.md`](docs/24-m7-closure.md), with the one-page summary for the project lead (§1)
+- [ ] `security.txt` published with a disclosure address and a named person — `frontend/security.txt.template` is ready; the two values are the project lead's
+- [ ] **Patch policy accepted** — Critical within 3 days, High within 14 (`docs/23-m7-notes.md` §5)
+- [ ] **Referral policy confirmed** — the 30-day hold, the reversal on refund or chargeback, the self-referral rule (`docs/24-m7-closure.md` §2.6)
 
-> **Not in M7, on purpose:** facial data and consent (phase 2 — none of it exists yet), GDPR/DPA paperwork, any certification, a bug bounty, and DDoS resilience beyond rate limits. An external penetration test is **recommended once there is revenue** and is the only real correction for M7 being a review of one's own code. Reasoning in [`docs/07-security.md`](docs/07-security.md) §11.
+> **Not in M7, on purpose:** facial data and consent (phase 2), GDPR/DPA paperwork, any certification, a bug bounty, and DDoS resilience beyond rate limits. An external penetration test is **recommended once there is revenue** and is the only real correction for M7 being a review of one's own code. Reasoning in [`docs/07-security.md`](docs/07-security.md) §11.
 
 ---
 
@@ -600,7 +593,7 @@ Walk [`docs/02-scope-v1.md`](docs/02-scope-v1.md) §6 end to end, as someone who
 - [ ] A project with 500 clips
 - [ ] Slow network, dropped socket, closed tab mid-job
 - [ ] An account that runs out of credits halfway through
-- [ ] **No critical or high finding open in `security/findings.md`** — M7's gate, and the one that cannot be waived quietly
+- [x] **No critical or high finding open in `security/findings.md`** — M7's gate, and the one that cannot be waived quietly. Holds since 29 September; re-checked 5 October with every M7 finding closed
 
 ---
 
