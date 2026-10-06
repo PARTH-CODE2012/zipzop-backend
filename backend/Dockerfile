@@ -11,7 +11,13 @@
 # for us, so its version should change when we decide, not when a tag moves.
 # To update: `docker pull python:3.12-slim`, take the new RepoDigest, rebuild,
 # and let the `trivy (production image)` job judge it.
-FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS base
+#
+# Last moved 6 October 2026: the 29 September digest carried seven HIGH
+# advisories with Debian fixes (OpenSSL CVE-2026-75804 / CVE-2026-84782 in
+# libssl3t64, openssl and openssl-provider-legacy; pcre2 CVE-2026-103111), so
+# the first `trivy (production image)` run on GitHub failed. The 6 October
+# image ships 3.5.7-1~deb13u3 and 10.46-1~deb13u3.
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

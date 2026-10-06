@@ -1,4 +1,8 @@
-# security.txt — RFC 9116. A TEMPLATE, NOT YET PUBLISHED.
+# security.txt — RFC 9116. The TEMPLATE for the Phase 2 address.
+#
+# Published since 6 October 2026 as frontend/public/.well-known/security.txt,
+# with a temporary contact (the project lead's own address, their choice). This
+# file is the shape it takes once a domain and a dedicated security@ exist.
 #
 # docs/07-security.md §10: "security.txt and a disclosure address, with a named
 # person who answers it. Someone will find something after launch; the

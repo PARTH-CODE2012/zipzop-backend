@@ -1,0 +1,12 @@
+# security.txt — RFC 9116. Served at /.well-known/security.txt.
+#
+# A temporary, pre-launch contact, chosen by the project lead on 6 October 2026:
+# their own address, read by them. Phase 2 replaces it with a dedicated
+# security@ address on the product domain, adds `Canonical:` once that domain
+# exists, and renews `Expires`. The six-month expiry is deliberate: it makes the
+# swap a date rather than a good intention. Template for the switch:
+# frontend/security.txt.template.
+
+Contact: mailto:parthgiri95@gmail.com
+Expires: 2027-04-06T00:00:00.000Z
+Preferred-Languages: en

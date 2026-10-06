@@ -190,10 +190,12 @@ schedule. `make security` runs the same scanners from the same pinned images.
 | **trivy image** | the production image, built in the job | Clean once pip was removed (§2.2) |
 
 `make lock` regenerates the Python lockfiles after `pyproject.toml` changes.
-**A stated patch policy (§5.4)** — proposed here, for the project lead to
-accept: a Critical advisory in anything that ships is deployed within **3
-days**, a High within **14**, the rest with the next release. The nightly run
-is what starts the clock.
+**The patch policy (§5.4)** — **set by the project lead on 6 October 2026**
+([`24-m7-closure.md`](24-m7-closure.md) §10.1): a **Critical or High** advisory
+in anything that ships is fixed within **24–48 hours**, everything else
+within **a week**. That is stricter than the 3-and-14 days first proposed here.
+The nightly run is what starts the clock, and once branch protection is on, a
+required check turning red is the clock made visible.
 
 **The fuzz run (§6.4)** — fifteen minutes of random header mutation over MP4,
 MOV, MKV, WebM and WAV, against the production image's `ffprobe` exactly as

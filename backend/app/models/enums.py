@@ -172,6 +172,23 @@ class CommissionReason(enum.StrEnum):
     REVERSAL = "reversal"  # chargeback or refund took the payment back — negative
 
 
+class PromoViolationKind(enum.StrEnum):
+    """What a code's owner did wrong — the project lead's two cases (6 October
+    2026). Stored as text with a check constraint, not as a native enum, so it
+    is deliberately absent from `ENUM_TYPES`."""
+
+    SELF_USE = "self_use"
+    SHARED_OUTSIDE_SERVER = "shared_outside_server"
+
+
+class PromoViolationAction(enum.StrEnum):
+    """What was done about it: a first violation is a warning, a second removes
+    the code."""
+
+    WARNING = "warning"
+    CODE_REMOVED = "code_removed"
+
+
 #: Every enum type, in the order a migration must create them, paired with the
 #: SQL type name. `create_all_types` / `drop_all_types` in the M2 migration walk
 #: this so a new enum cannot be added to the application and forgotten in the

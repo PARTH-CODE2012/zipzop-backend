@@ -481,7 +481,7 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 - [x] Commission accrual as **ledger rows**, signed and append-only, **recomputed on every renewal**. A unique index on `(payment_id, reason)` makes a double accrual impossible; a payout is a negative row rather than a status flip, so what is owed is a `SUM` and the history survives
 - [x] Owner-facing figures: `GET /promo/{code}/stats` — signups, subscribers, accrued, paid, owed, **per currency and never summed across them**
 - [ ] 🔴 Payout: **accrue from day one, pay the first cohort by hand.** The real process — schedule, threshold, channel, tax — is **still unowned**, and is needed by the tenth server owner rather than the first
-- [ ] ⚠️ Abuse: self-referral, codes shared outside the server, and a chargeback landing after a commission is paid. `CommissionReason.REVERSAL` exists for the third; **the paragraph of thought is still owed**
+- [x] Abuse: self-referral refused automatically (M7-23); refunds and chargebacks reverse the commission (M7-23); and **the lead's graduated rule (6 October)**: a first violation (self-use, or a code shared outside the server) cancels that commission and is a warning, a second removes the code. Judged by a person, applied with `python -m app.scripts.promo_violation` (`docs/24-m7-closure.md` §10.2)
 
 ### Templates — small, and not an AI tool ✅
 
@@ -513,6 +513,15 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 > (a lint-tool advisory with no fix), a `security.txt` contact, branch
 > protection on `main`, the patch policy, the referral policy, and email
 > verification.
+>
+> **6 October — the lead answered all six** (`docs/24-m7-closure.md` §10):
+> `braces` accepted, `security.txt` published with a temporary contact, patch
+> policy 24–48 h for Critical/High and a week otherwise, a graduated referral
+> policy (now in code), no email verification before launch, and branch
+> protection yes, which is a ruleset the owner imports. The first GitHub run of
+> both workflows was red: a font missing from the production image that broke
+> every Free-plan export, and seven HIGH advisories in its base image. Both are
+> fixed.
 
 > **Done 28–29 September — [`docs/23-m7-notes.md`](docs/23-m7-notes.md).**
 > 17 findings fixed, two of them Critical — twenty concurrent jobs against a
@@ -542,7 +551,7 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 - [x] Frontend: httpOnly + `Secure` + `SameSite` on the refresh cookie (verified through the staging edge); the CSRF story decided; no `dangerouslySetInnerHTML`
 - [x] Frontend: **a nonce CSP — no `'unsafe-inline'` for scripts** (M7-20), `frame-ancestors`, `Referrer-Policy`, HSTS at the edge; verified in a browser and through the staging edge
 - [~] Infra: containers non-root, no Docker socket, Redis authenticated, worker egress to storage only — **all verified on staging**. IMDSv2 hop limit and OIDC in CI need the cloud account
-- [ ] **Branch protection on `main`**, `CI` and `Security` required — the project lead's. CI was red for five weeks and three PRs merged anyway (docs/24-m7-closure.md §5.3)
+- [~] **Branch protection on `main`**, `CI` and `Security` required. **Approved by the lead on 6 October**, and ready as [`.github/rulesets/protect-main.json`](.github/rulesets/protect-main.json); only the repository owner can import it (`docs/24-m7-closure.md` §10.3). CI was red for five weeks and three PRs merged anyway (§5.3)
 - [x] Dependencies: hashed lockfiles on both sides; FFmpeg pinned through the base image digest; Actions pinned by SHA; **MinIO pinned by digest** to a maintained fork
 
 ### Part B — penetration test
@@ -559,14 +568,14 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 - [x] Webhooks: unsigned, tampered, forged, replayed, oversized; **refunds and lost disputes now reverse referral commission** (M7-23). A delivery from Razorpay itself needs a public URL — §4 of the note
 - [x] Jobs and WebSocket: another user's job is 404; one user's events never reach another; **an open socket closes when its token expires, and the client reconnects with a fresh ticket** (M7-18)
 - [x] Browser: no HTML sink; CSRF decided; checkout return origin-exact; an injected `onerror` handler refused by the CSP
-- [x] Rate limits: `X-Forwarded-For` spoofing fixed, **and re-proved behind a real proxy**; **§6.10 measured — one address opened 1,200 free accounts an hour; now ten** (M7-25). Email verification is the lead's call
+- [x] Rate limits: `X-Forwarded-For` spoofing fixed, **and re-proved behind a real proxy**; **§6.10 measured — one address opened 1,200 free accounts an hour; now ten** (M7-25). Email verification: **not before launch**, the lead's decision on 6 October; revisit in Phase 2 if spam sign-ups appear
 
 ### Automated gates — these stay after M7
 
 *All in [`.github/workflows/security.yml`](.github/workflows/security.yml) and `ci.yml`: every push, every pull request, nightly.*
 
 - [x] `semgrep`, `bandit`, `pip-audit`, `pnpm audit`, `gitleaks`, `trivy` (fs and the built image) — clean
-- [x] **CI's backend job green again** — run in an `ubuntu:24.04` mirror of the runner before pushing (it had failed since 30 August). The first GitHub run of both workflows is checked after the push
+- [x] **CI's backend job green again.** The 5 October mirror passed, but **the first GitHub run did not**: a font missing from the production image (M7-30, which broke every Free-plan export), HIGH advisories in the base image (M7-31), and `semgrep`. The first two were reproduced with the job's exact apt line and fixed on 6 October; the mirror is green (533 passed). `semgrep` is clean locally on the same commit, so the next run decides (`docs/24-m7-closure.md` §10.4)
 - [x] `make security` runs the lot locally; **`make staging-check` runs Part B**, with `SCANS=1` for the ZAP baseline and sqlmap
 
 ### Fix, retest, hand over
@@ -574,11 +583,11 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 - [x] Every critical and high fixed — none open
 - [x] Every fix carries a test that fails without it — each confirmed by reverting the fix
 - [x] Retest from the register; the finding closes on evidence
-- [~] Any accepted risk written down, time-boxed and signed — **one, awaiting the lead's signature**: `braces` (GHSA-vfj7-8cjw-p6xm), a DoS in a lint-tool dependency with no fixed version anywhere, ignored by id until 5 November (`docs/24-m7-closure.md` §6)
+- [x] Any accepted risk written down, time-boxed and signed — **one, accepted by the lead on 6 October**: `braces` (GHSA-vfj7-8cjw-p6xm), a DoS in a lint-tool dependency with no fixed version anywhere, ignored by id until 5 November (`docs/24-m7-closure.md` §6, §10.1)
 - [x] Build notes: [`docs/23-m7-notes.md`](docs/23-m7-notes.md) and [`docs/24-m7-closure.md`](docs/24-m7-closure.md), with the one-page summary for the project lead (§1)
-- [ ] `security.txt` published with a disclosure address and a named person — `frontend/security.txt.template` is ready; the two values are the project lead's
-- [ ] **Patch policy accepted** — Critical within 3 days, High within 14 (`docs/23-m7-notes.md` §5)
-- [ ] **Referral policy confirmed** — the 30-day hold, the reversal on refund or chargeback, the self-referral rule (`docs/24-m7-closure.md` §2.6)
+- [x] `security.txt` published: [`frontend/public/.well-known/security.txt`](frontend/public/.well-known/security.txt), with the lead's own address as a **temporary** contact (their choice) until Phase 2 brings a domain and a dedicated `security@`. It expires 6 April 2027
+- [x] **Patch policy set by the lead** — Critical and High within **24–48 hours**, everything else within **a week** (`docs/23-m7-notes.md` §5)
+- [x] **Referral policy set** — the lead's graduated rule, in code (`docs/24-m7-closure.md` §10.2). The 30-day hold and the reversal on refund or chargeback stay as the defaults of §2.6. Still open: does a refunded customer keep the credits?
 
 > **Not in M7, on purpose:** facial data and consent (phase 2), GDPR/DPA paperwork, any certification, a bug bounty, and DDoS resilience beyond rate limits. An external penetration test is **recommended once there is revenue** and is the only real correction for M7 being a review of one's own code. Reasoning in [`docs/07-security.md`](docs/07-security.md) §11.
 

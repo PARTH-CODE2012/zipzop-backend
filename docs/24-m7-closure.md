@@ -11,8 +11,8 @@ production-shaped stack built on one machine, and records what that found.
 | Frontend tests | **352 → 368** |
 | Findings | **All 23 from 28–29 September closed**, and **6 new**, found by running things: a CI that had not passed since 30 August, a decode bomb, account farming, scratch left by killed workers, missing response headers, and dependency advisories published since. **None open in code**; one dev-tool advisory with no fix anywhere is excepted, for the lead to sign (§6) |
 | Part B | **30 checks** on the local staging stack (`make staging-check`), all passing — plus the ZAP baseline and sqlmap |
-| Launch gate (§8) | 🟢 no open Critical or High · 🟢 every fix has a test · 🟢 scanners on every pull request — **once this push shows them green** (§6) |
-| Still outside the code | The cloud itself (§4), and six decisions for the project lead (§7) |
+| Launch gate (§8) | 🟢 no open Critical or High · 🟢 every fix has a test · 🟠 scanners on every pull request — **the 5 October push was red on GitHub**; fixed 6 October (§10.4) |
+| Still outside the code | The cloud itself (§4). The lead's six decisions came on 6 October (§10); one action is still theirs: importing the branch ruleset (§10.3) |
 
 ---
 
@@ -327,6 +327,10 @@ not changed.
 
 ## 7. Owed by the project lead
 
+> **Answered 6 October 2026 — §10.** Everything below is decided. The only
+> thing still in the lead's hands is switching branch protection on, which
+> only the repository's owner can do (§10.3).
+
 0. **Sign or refuse the one accepted risk** — `braces`, §6.
 1. **A disclosure address and a named person** for `security.txt`
    (`frontend/security.txt.template`).
@@ -371,4 +375,132 @@ M7's settings ([`23-m7-notes.md`](23-m7-notes.md) §7), with today's added:
 
 ---
 
-*Build note · 5 October 2026 · M7 closed in code; the cloud-only checks wait for a host*
+## 10. 6 October — the lead's answers, and what the first GitHub run found
+
+### 10.1 The six decisions
+
+| §7 | The project lead's decision | Where it landed |
+|---|---|---|
+| 0 | **`braces` accepted.** It is a lint-tool dependency and does not ship. | Unchanged in `package.json`: ignored by id until **5 November 2026** or a fix, whichever comes first. This row is the signature §8 asked for |
+| 1 | **`security.txt`: `parthgiri95@gmail.com` for now**, the lead's own address and their choice, until Phase 2 brings a domain and a dedicated `security@` | [`frontend/public/.well-known/security.txt`](../frontend/public/.well-known/security.txt). It expires on **6 April 2027** on purpose, so the swap has a date |
+| 2 | **Branch protection: yes** | [`.github/rulesets/protect-main.json`](../.github/rulesets/protect-main.json). Only the owner can apply it (§10.3) |
+| 3 | **Patch policy: Critical and High within 24–48 hours, everything else within a week** | Replaces the 3-and-14-day proposal in [`23-m7-notes.md`](23-m7-notes.md) §5 |
+| 4 | **Referral policy: a first violation (using your own code, or sharing it outside your server) cancels that commission and is a warning. A second removes the code** | `promo_violations` and `app.scripts.promo_violation` (§10.2) |
+| 5 | **Email verification: not before launch.** It would add a mail service's cost and setup for a problem not yet seen. Revisit in Phase 2 if spam sign-ups appear | Sign-up stays limited to ten an hour per address (`REGISTER_LIMIT_PER_HOUR`, §5.2) |
+
+Not answered, so they stay as the defaults of §2.6: the 30-day hold, the
+reversal on refund or chargeback, and whether a refunded customer keeps the
+credits.
+
+The lead said all of this is **temporary while pre-launch**: a business
+address, a domain and the infrastructure behind them come with Phase 2.
+
+### 10.2 The referral policy in code
+
+A violation is **judged by a person**, because the API cannot see a code
+shared outside a Discord server. The code is the bookkeeping that follows the
+judgement:
+
+    python -m app.scripts.promo_violation CODE --kind self_use --user buyer@example.com
+    python -m app.scripts.promo_violation CODE --kind shared_outside_server --note "posted in …"
+
+It is a dry run unless `--yes` is passed. For each violation,
+[`services/promo_policy.py`](../backend/app/services/promo_policy.py) does this:
+
+* It writes a row to **`promo_violations`** (migration `0009`), append-only:
+  the kind, the account that came in through the breach, and what was done.
+  "Second violation" needs the rows to be countable, and a warning has to be
+  explainable months later to an owner who disputes it.
+* **First violation:**
+  * every accrual that account earned for the code gets a `REVERSAL` row,
+    through the refund path's own `reverse_commission`, so a payment already
+    refunded is never reversed twice;
+  * the account is **detached** from the code. Otherwise its next renewal
+    would accrue the same commission and the violation would keep paying.
+    🟠 *This is the one reading that goes beyond the lead's words, and it is
+    theirs to confirm.*
+* **Second violation:** the code is **retired** (`is_active = false`). A
+  retired code grants nothing at sign-up and accrues nothing on any renewal,
+  which is what "remove the code" has to mean. Commission legitimately earned
+  before that stays owed.
+* The **bonus credits** the customer got at sign-up are left alone: the policy
+  is about the owner's commission.
+
+Ten tests in [`tests/test_promo_policy.py`](../backend/tests/test_promo_policy.py)
+pin down the money. The commission cancelled is only the breach's. A refunded
+payment is not reversed twice, and neither is the same account reported twice.
+An accrual whose payment row is gone is reversed once. A removed code stops
+earning even on customers it brought in honestly.
+
+### 10.3 Branch protection — one import, by the owner
+
+On a repository owned by a personal account, **only the owner can manage
+branch rules**; collaborators cannot. So it is prepared rather than applied:
+
+1. **Settings → Rules → Rulesets → New ruleset → Import a ruleset**
+2. Choose [`.github/rulesets/protect-main.json`](../.github/rulesets/protect-main.json), then **Create**.
+
+On the default branch, it enforces this:
+
+* every change arrives through a **pull request**. No approval is required,
+  because the lead merges their own `dev` → `main` PRs and could not approve
+  them;
+* the **eight jobs of `CI` and `Security`** must pass, bound to the GitHub
+  Actions app so another integration cannot post a fake green;
+* **no force-push and no deletion**, with no bypass.
+
+§5.3 is why: three PRs were merged while CI was red. One consequence is
+intended: an advisory published overnight against a dependency turns a
+required check red and blocks merging until it is fixed. That is the patch
+policy's clock, made visible.
+
+**Import it after the checks are green**, or the next `dev` → `main` PR is
+blocked by the failures §10.4 fixes.
+
+### 10.4 The first GitHub run was red
+
+§6 said the `Security` workflow would run for the first time with the 5 October
+push. It did, alongside `CI`, and three jobs failed. The logs need a signed-in
+account, so each failure was reproduced locally with the job's exact images and
+apt line:
+
+* **M7-30 🟠 Every Free-plan export would have failed in production**
+  (`backend`, six render tests).
+  * **What happened.** The watermark is drawn with `drawtext`, which needs a
+    font *file*, and `fonts.default_font()` looked for DejaVu, Liberation,
+    Arial or Segoe. DejaVu used to arrive with `ffmpeg` through fontconfig's
+    font dependency. But `fonts-noto-core`, installed in the image for Hindi
+    captions and in CI since 5 October, **also satisfies that dependency**, so
+    apt never installs DejaVu. The production image has
+    `/usr/share/fonts/truetype/noto` and nothing else. Every watermarked
+    render (the Free plan's are forced) raised `NoFontError`.
+  * **Why the mirror missed it.** The 5 October mirror passed. Today's mirror,
+    built from the job's exact `apt-get install --no-install-recommends ffmpeg
+    fontconfig fonts-noto-core`, reproduces the runner's six failures. The
+    difference is which fonts end up installed.
+  * **Fixed.** Noto Sans now leads the fallback list. A test reproduces an
+    image holding only Noto, and fails without the fix.
+* **M7-31 🟡 Seven HIGH advisories in the production image's Debian
+  packages** (`trivy (production image)`): OpenSSL CVE-2026-75804 and
+  CVE-2026-84782 (`libssl3t64`, `openssl`, `openssl-provider-legacy`), and
+  pcre2 CVE-2026-103111, all fixed in Debian after the 29 September base
+  digest. The base image moved to the 6 October `python:3.12-slim` digest,
+  which ships `3.5.7-1~deb13u3` and `10.46-1~deb13u3`. The rescan is clean.
+  Under the new patch policy this is the 24–48 hour case.
+* **`semgrep`** failed on GitHub, but on a clean export of the same commit it
+  is clean locally: 274 files, no result. The rule packs (`p/python`,
+  `p/owasp-top-ten`, …) are fetched live from the registry, so 5 October's
+  rules may not be today's. **The next run decides.** If it fails again, its
+  log is the next thing to read.
+
+Local mirrors run on a Windows checkout see `openapi.json` "differ" from the
+generated contract. Git's `core.autocrlf` gives the copy CRLF, and the content
+is identical. A Linux runner does not have this.
+
+The backend suite now has **535 tests**: 533 pass in the mirror, and 2 are
+skipped because they need the cached Whisper model. That is 524 plus the 11
+added here.
+
+---
+
+*Build note · 5 October 2026, §10 added 6 October · M7 closed in code; the lead's decisions applied; the cloud-only checks wait for a host*

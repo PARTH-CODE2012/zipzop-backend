@@ -335,3 +335,47 @@ class CommissionLedgerEntry(Base):
             postgresql_where="payment_id IS NOT NULL",
         ),
     )
+
+
+class PromoViolation(Base):
+    """A breach of the referral rules by a code's owner, and what it cost them.
+
+    The project lead's policy (6 October 2026, docs/24-m7-closure.md §2.6): using
+    your own code, or sharing it outside your Discord server, is a violation.
+    The first one cancels the commission it earned and is a warning; the second
+    removes the code. Both are judged by a person, so this is a record of a
+    decision and not a detector.
+
+    **A table, not a counter on `promo_codes`.** "Second violation" means the
+    rows have to be countable. A warning also has to be explainable months later
+    to the owner who disputes it, so each row keeps what was found, against
+    which account, and what was done about it. Append-only, like the ledgers.
+    """
+
+    __tablename__ = "promo_violations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(CITEXT, ForeignKey("promo_codes.code"), nullable=False)
+    #: `self_use` or `shared_outside_server` — `PromoViolationKind`. Text with a
+    #: check rather than a native enum: a third kind is then a one-line
+    #: migration, not the enum-type dance `0005_beta_plan` documents.
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The account that came in through the breach, when there is one. Its
+    #: commission is the commission the first violation cancels. Null when the
+    #: code was seen shared outside the server before anyone used it.
+    referred_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    #: `warning` or `code_removed` — `PromoViolationAction`. Stored, not derived
+    #: from the row's position, so the record says what the owner was told.
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('self_use', 'shared_outside_server')", name="kind_is_known"),
+        CheckConstraint("action IN ('warning', 'code_removed')", name="action_is_known"),
+        Index("ix_promo_violations_code_created_at", "code", "created_at"),
+    )
