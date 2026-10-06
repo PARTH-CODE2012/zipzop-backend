@@ -11,7 +11,7 @@ production-shaped stack built on one machine, and records what that found.
 | Frontend tests | **352 → 368** |
 | Findings | **All 23 from 28–29 September closed**, and **6 new**, found by running things: a CI that had not passed since 30 August, a decode bomb, account farming, scratch left by killed workers, missing response headers, and dependency advisories published since. **None open in code**; one dev-tool advisory with no fix anywhere is excepted, for the lead to sign (§6) |
 | Part B | **30 checks** on the local staging stack (`make staging-check`), all passing — plus the ZAP baseline and sqlmap |
-| Launch gate (§8) | 🟢 no open Critical or High · 🟢 every fix has a test · 🟠 scanners on every pull request — **the 5 October push was red on GitHub**; fixed 6 October (§10.4) |
+| Launch gate (§8) | 🟢 no open Critical or High · 🟢 every fix has a test · 🟢 scanners on every pull request — **all eight jobs green on GitHub since `5301ec5`, 6 October** (§10.4–10.6), the first green run since 30 August |
 | Still outside the code | The cloud itself (§4). The lead's six decisions came on 6 October (§10); one action is still theirs: importing the branch ruleset (§10.3) |
 
 ---
@@ -560,6 +560,11 @@ A temporary tracer then named the cause:
   backend or `anyio_backend`. Test ids lose their `[asyncio]` suffix; the
   tests are the same. The tracer is gone. The annotations stay: they are what
   made a runner-only failure readable without a GitHub login.
+
+**Result: `5301ec5` is green on all eight jobs** (`backend`, `frontend`,
+`bandit + pip-audit`, `pnpm audit`, `gitleaks`, `semgrep`, and both
+`trivy` jobs). It is the first fully green GitHub run since 30 August. The
+branch ruleset (§10.3) can be imported now.
 
 ---
 
