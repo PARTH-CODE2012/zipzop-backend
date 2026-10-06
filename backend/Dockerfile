@@ -64,6 +64,16 @@ FROM base AS dev
 COPY requirements-dev.lock ./
 RUN pip install --require-hashes -r requirements-dev.lock
 # Source arrives via a bind mount in docker-compose, so nothing is copied.
+#
+# Root, on purpose, and only here. This stage is never deployed: it serves
+# `docker compose up` and the staging `checks` container, and it writes into
+# the developer's bind-mounted checkout (beat's schedule file, test caches) as
+# whatever user owns it, which is not uid 1000 on every machine. `prod` below
+# runs as `app` and is the image trivy scans. semgrep's rule reads the file
+# without knowing stages, so it is waived for this line only. It had flagged
+# every GitHub run since M7, and the Windows checkout's CRLF line endings hid it
+# locally (docs/24-m7-closure.md §10.5).
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ----------------------------------------------------------------- prod ----

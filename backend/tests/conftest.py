@@ -364,3 +364,37 @@ def not_a_video(media_dir: pathlib.Path) -> pathlib.Path:
     if not path.exists():
         path.write_bytes(b"this is not an mp4, it is a sentence" * 64)
     return path
+
+
+# --------------------------------------------------------------------------
+# Failures as GitHub annotations
+# --------------------------------------------------------------------------
+
+
+def _escape_annotation(text: str) -> str:
+    """The workflow-command encoding: `%`, CR and LF are the only specials."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """On GitHub Actions, each failure also becomes an `::error` annotation.
+
+    A job's log can only be read by someone signed in to GitHub, but a check
+    run's annotations are public, and they show on the commit and the pull
+    request. CI failed for five weeks without anyone looking (docs/24 §5.3).
+    On 6 October a failure on the runner could not be read at all. Both are
+    cheaper to fix when the failing test and its last lines are on the page.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true" or not report.failed:
+        return
+    path, lineno, _ = report.location
+    tail = "\n".join(report.longreprtext.splitlines()[-30:])[-3000:]
+    title = _escape_annotation(f"{report.nodeid} ({report.when})").replace(",", "%2C")
+    out = sys.__stdout__  # past pytest's capture, where the runner reads commands
+    if out is None:
+        return
+    out.write(
+        f"::error file=backend/{path},line={(lineno or 0) + 1},title={title}"
+        f"::{_escape_annotation(tail)}\n"
+    )
+    out.flush()

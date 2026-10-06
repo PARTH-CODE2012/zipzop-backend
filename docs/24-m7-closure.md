@@ -487,11 +487,8 @@ apt line:
   digest. The base image moved to the 6 October `python:3.12-slim` digest,
   which ships `3.5.7-1~deb13u3` and `10.46-1~deb13u3`. The rescan is clean.
   Under the new patch policy this is the 24–48 hour case.
-* **`semgrep`** failed on GitHub, but on a clean export of the same commit it
-  is clean locally: 274 files, no result. The rule packs (`p/python`,
-  `p/owasp-top-ten`, …) are fetched live from the registry, so 5 October's
-  rules may not be today's. **The next run decides.** If it fails again, its
-  log is the next thing to read.
+* **`semgrep`** failed on GitHub, but was clean locally. The cause turned out
+  to be this machine's line endings, not the rules (§10.5).
 
 Local mirrors run on a Windows checkout see `openapi.json` "differ" from the
 generated contract. Git's `core.autocrlf` gives the copy CRLF, and the content
@@ -500,6 +497,38 @@ is identical. A Linux runner does not have this.
 The backend suite now has **535 tests**: 533 pass in the mirror, and 2 are
 skipped because they need the cached Whisper model. That is 524 plus the 11
 added here.
+
+### 10.5 The second run, and why local scans had disagreed with GitHub
+
+The 6 October push made `trivy (production image)` green and left three jobs
+red. Two of them were new, from advisories published within the day. The last
+needed a better mirror before it would reproduce:
+
+* **`semgrep` had been right all along.** On LF files it reports
+  `dockerfile.security.missing-user` on the **`dev`** stage's `CMD`. That
+  stage is never deployed, and `prod` runs as `app`. Locally the scan was
+  clean because this Windows checkout uses `core.autocrlf`: the Dockerfile
+  arrived in CRLF, semgrep's Dockerfile parser stopped at the first `\`
+  continuation (a `PartialParsing` warning, not an error), and the rule never
+  ran. Every "semgrep clean" written from this machine since M7 had this blind
+  spot. The fix:
+  * the `dev` line is waived with `# nosemgrep` and the reason beside it. Its
+    root user writes into the developer's bind-mounted checkout;
+  * a root `.gitattributes` now gives `backend/Dockerfile` LF on every
+    checkout, so local and GitHub scans read the same bytes;
+  * mirrors now take `git -c core.autocrlf=false archive`, not the working
+    copy.
+* **`pnpm audit` and `trivy (lockfiles + configuration)`:** `source-map-js`
+  < 1.2.2, GHSA-68fv-2mgg-jv7q / CVE-2026-93749 (HIGH, an event-loop DoS),
+  reaches us through `postcss` from Next, Tailwind and Vite. It is fixed by an
+  override to `^1.2.2`, in the same pattern as `brace-expansion`; the lockfile
+  moves eleven lines. Frontend lint, types, 368 tests and the build all pass.
+  This is the patch policy working as the lead set it: published, red, fixed
+  the same day.
+* **Test failures become annotations.** A job's log can only be read by
+  someone signed in to GitHub, but a check run's annotations are public. On
+  GitHub Actions, `tests/conftest.py` now writes each failing test as an
+  `::error` annotation, with its last thirty lines.
 
 ---
 

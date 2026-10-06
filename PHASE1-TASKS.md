@@ -575,7 +575,7 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 *All in [`.github/workflows/security.yml`](.github/workflows/security.yml) and `ci.yml`: every push, every pull request, nightly.*
 
 - [x] `semgrep`, `bandit`, `pip-audit`, `pnpm audit`, `gitleaks`, `trivy` (fs and the built image) — clean
-- [x] **CI's backend job green again.** The 5 October mirror passed, but **the first GitHub run did not**: a font missing from the production image (M7-30, which broke every Free-plan export), HIGH advisories in the base image (M7-31), and `semgrep`. The first two were reproduced with the job's exact apt line and fixed on 6 October; the mirror is green (533 passed). `semgrep` is clean locally on the same commit, so the next run decides (`docs/24-m7-closure.md` §10.4)
+- [x] **CI's backend job green again.** The 5 October mirror passed, but **the first GitHub run did not**: a font missing from the production image (M7-30, which broke every Free-plan export), HIGH advisories in the base image (M7-31), and `semgrep`. The first two were reproduced with the job's exact apt line and fixed on 6 October; the mirror is green (533 passed). `semgrep` had been right all along: this Windows checkout's CRLF had hidden a finding from every local scan. That finding is now waived with its reason, and the Dockerfile is pinned to LF. A `source-map-js` HIGH published the same day is fixed by an override (`docs/24-m7-closure.md` §10.4–10.5)
 - [x] `make security` runs the lot locally; **`make staging-check` runs Part B**, with `SCANS=1` for the ZAP baseline and sqlmap
 
 ### Fix, retest, hand over
