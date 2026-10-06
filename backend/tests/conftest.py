@@ -421,3 +421,49 @@ def pytest_runtest_makereport(
         )
         out.flush()
     return report
+
+
+def _trace_late_finalizers() -> None:
+    """🟠 Temporary diagnostic (6 October 2026): name who breaks pytest's rule.
+
+    On the GitHub runner only, a test's setup dies on `assert not
+    self._finalizers` in `FixtureDef.execute`. Some fixture was handed a
+    finalizer after it had been torn down, which pytest assumes cannot happen.
+    The position moves between runs, and no local mirror reproduces it. This
+    reports the fixture and the stack that added the finalizer, as an
+    annotation. Remove it with the fix.
+    """
+    from _pytest.fixtures import FixtureDef
+
+    original_execute = FixtureDef.execute
+    original_add = FixtureDef.addfinalizer
+    reported: list[str] = []
+
+    def execute(self: Any, request: Any) -> Any:
+        self._zz_executing = getattr(self, "_zz_executing", 0) + 1
+        try:
+            return original_execute(self, request)
+        finally:
+            self._zz_executing -= 1
+
+    def addfinalizer(self: Any, finalizer: Any) -> None:
+        late = self.cached_result is None and not getattr(self, "_zz_executing", 0)
+        if late and len(reported) < 4:
+            reported.append(self.argname)
+            stack = "".join(traceback.format_stack()[-22:-1])[-3500:]
+            detail = f"after: {_recent[-1:]}\n{finalizer!r}\n{stack}"
+            out = sys.__stdout__
+            if out is not None:
+                out.write(
+                    f"::error title=late finalizer on fixture {self.argname}"
+                    f"::{_escape_annotation(detail)}\n"
+                )
+                out.flush()
+        original_add(self, finalizer)
+
+    FixtureDef.execute = execute  # type: ignore[method-assign]
+    FixtureDef.addfinalizer = addfinalizer  # type: ignore[method-assign]
+
+
+if os.environ.get("GITHUB_ACTIONS") == "true":
+    _trace_late_finalizers()
