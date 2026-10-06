@@ -423,47 +423,72 @@ def pytest_runtest_makereport(
     return report
 
 
-def _trace_late_finalizers() -> None:
-    """🟠 Temporary diagnostic (6 October 2026): name who breaks pytest's rule.
+def _annotate(title: str, detail: str) -> None:
+    out = sys.__stdout__
+    if out is not None:
+        out.write(f"::error title={title}::{_escape_annotation(detail[-3800:])}\n")
+        out.flush()
+
+
+def _trace_stale_finalizers() -> None:
+    """🟠 Temporary diagnostic (6 October 2026): name the fixture pytest trips on.
 
     On the GitHub runner only, a test's setup dies on `assert not
-    self._finalizers` in `FixtureDef.execute`. Some fixture was handed a
-    finalizer after it had been torn down, which pytest assumes cannot happen.
-    The position moves between runs, and no local mirror reproduces it. This
-    reports the fixture and the stack that added the finalizer, as an
-    annotation. Remove it with the fix.
+    self._finalizers` in `FixtureDef.execute`: a fixture with no cached value
+    still holds finalizers. One way that happens is a fixture function raising
+    a `BaseException` that is not an `Exception` (a `CancelledError`, say).
+    pytest caches only `Exception`s, so the finalizer `execute` registered
+    first survives a `finish()` that thinks there is nothing to finish. This
+    records where each pending finalizer came from, and annotates both the
+    assertion (which fixture, which finalizers) and any such `BaseException`.
+    Remove it with the fix.
     """
     from _pytest.fixtures import FixtureDef
 
     original_execute = FixtureDef.execute
     original_add = FixtureDef.addfinalizer
-    reported: list[str] = []
+    original_finish = FixtureDef.finish
+    budget = [6]
 
     def execute(self: Any, request: Any) -> Any:
-        self._zz_executing = getattr(self, "_zz_executing", 0) + 1
         try:
             return original_execute(self, request)
-        finally:
-            self._zz_executing -= 1
+        except AssertionError:
+            if budget[0] > 0:
+                budget[0] -= 1
+                pending = getattr(self, "_zz_pending", [])
+                lines = [f"{self!r}", f"after: {_recent[-1:]}", f"{len(self._finalizers)} pending:"]
+                for name, stack in pending:
+                    lines += [f"--- {name}", stack]
+                _annotate(f"stale finalizers on {self.argname}", "\n".join(lines))
+            raise
+        except BaseException as exc:
+            if not isinstance(exc, Exception) and budget[0] > 0:
+                budget[0] -= 1
+                trace = "".join(traceback.format_exception(exc))
+                _annotate(
+                    f"{type(exc).__name__} from fixture {self.argname}",
+                    f"{self!r}\nafter: {_recent[-1:]}\n{trace}",
+                )
+            raise
 
     def addfinalizer(self: Any, finalizer: Any) -> None:
-        late = self.cached_result is None and not getattr(self, "_zz_executing", 0)
-        if late and len(reported) < 4:
-            reported.append(self.argname)
-            stack = "".join(traceback.format_stack()[-22:-1])[-3500:]
-            detail = f"after: {_recent[-1:]}\n{finalizer!r}\n{stack}"
-            out = sys.__stdout__
-            if out is not None:
-                out.write(
-                    f"::error title=late finalizer on fixture {self.argname}"
-                    f"::{_escape_annotation(detail)}\n"
-                )
-                out.flush()
+        pending = self.__dict__.setdefault("_zz_pending", [])
+        pending.append((repr(finalizer)[:160], "".join(traceback.format_stack()[-14:-1])))
+        del pending[:-4]
         original_add(self, finalizer)
+
+    def finish(self: Any, request: Any) -> None:
+        try:
+            original_finish(self, request)
+        finally:
+            if not self._finalizers:
+                self.__dict__["_zz_pending"] = []
 
     FixtureDef.execute = execute  # type: ignore[method-assign]
     FixtureDef.addfinalizer = addfinalizer  # type: ignore[method-assign]
+    FixtureDef.finish = finish  # type: ignore[method-assign]
 
 
 if os.environ.get("GITHUB_ACTIONS") == "true":
-    _trace_late_finalizers()
+    _trace_stale_finalizers()
