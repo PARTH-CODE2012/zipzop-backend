@@ -530,6 +530,37 @@ needed a better mirror before it would reproduce:
   GitHub Actions, `tests/conftest.py` now writes each failing test as an
   `::error` annotation, with its last thirty lines.
 
+### 10.6 The backend job: two async plugins, and a failure that moved
+
+After §10.5, every job was green except `backend`, with three setup errors
+the local mirrors never produced. The mirrors tried Python 3.12.3 and 3.12.14,
+root and a non-root uid, LF files, and a single CPU. The new annotations gave
+the first lead: pytest's own `assert not self._finalizers` in
+`FixtureDef.execute`, on a test that **moved one place down** between runs.
+A temporary tracer then named the cause:
+
+    ScopeMismatch: You tried to access the module scoped fixture anyio_backend
+    with a session scoped request object.
+
+* **Two plugins ran async code.** `asyncio_mode = "auto"` makes
+  pytest-asyncio run every async test and fixture. Fifteen modules *also*
+  carried `pytestmark = pytest.mark.anyio`, a habit from FastAPI's docs, which
+  switches on **anyio's** plugin for them. Both wrap async fixtures, and which
+  one wins depends on the order their entry points load. That order is not
+  the same on every filesystem.
+* **On the runner, anyio won** for the session-scoped `engine`. It asked for
+  its module-scoped `anyio_backend` and failed. The failure happened while
+  pytest was still resolving `engine`'s arguments, before it caches anything.
+  The finalizer `execute` had already registered stayed behind, and the next
+  test to need `engine` died on that assertion rather than on the real error.
+  That is why the failure showed up in an innocent test, one place later each
+  run.
+* **Fixed by having one plugin.** `-p no:anyio` in `addopts` (with the reason
+  beside it), and the fifteen marks removed. Nothing used anyio's `trio`
+  backend or `anyio_backend`. Test ids lose their `[asyncio]` suffix; the
+  tests are the same. The tracer is gone. The annotations stay: they are what
+  made a runner-only failure readable without a GitHub login.
+
 ---
 
 *Build note · 5 October 2026, §10 added 6 October · M7 closed in code; the lead's decisions applied; the cloud-only checks wait for a host*

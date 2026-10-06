@@ -33,8 +33,6 @@ from app.models import (
 from app.services import promo, promo_policy
 from app.services.billing import service
 
-pytestmark = pytest.mark.anyio
-
 SELF_USE = PromoViolationKind.SELF_USE
 SHARED = PromoViolationKind.SHARED_OUTSIDE_SERVER
 

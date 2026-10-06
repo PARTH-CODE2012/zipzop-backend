@@ -15,7 +15,6 @@ arrived.
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,8 +29,6 @@ from app.models import (
     User,
 )
 from app.services.billing import service
-
-pytestmark = pytest.mark.anyio
 
 
 async def _subscriber(

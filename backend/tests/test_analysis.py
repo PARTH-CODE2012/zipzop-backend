@@ -34,9 +34,6 @@ from app.services import color_analysis
 from app.services.analysis_pipeline import JobUnavailableError, run_analysis
 from app.services.credits import Allocation, CreditLedger
 
-pytestmark = pytest.mark.anyio
-
-
 # --------------------------------------------------------------------------
 # The tool
 # --------------------------------------------------------------------------

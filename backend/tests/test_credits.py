@@ -28,9 +28,6 @@ from app.models import (
 )
 from app.services.credits import Allocation, CreditLedger, allocate
 
-pytestmark = pytest.mark.anyio
-
-
 # --------------------------------------------------------------------------
 # allocate() — pure, and the ordering is the whole point
 # --------------------------------------------------------------------------

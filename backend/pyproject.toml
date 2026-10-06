@@ -142,7 +142,15 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-addopts = "-ra"
+# `-p no:anyio`: one plugin runs async tests and fixtures, pytest-asyncio.
+# anyio's plugin also wrapped async fixtures in modules marked
+# `pytest.mark.anyio`. Which plugin won depended on the order their entry
+# points loaded, so on the GitHub runner anyio wrapped the session-scoped
+# `engine`, asked for its module-scoped `anyio_backend` and failed with a
+# ScopeMismatch. That failure came before pytest cached anything, so the
+# stale finalizer it left made the *next* test die on an AssertionError.
+# It never reproduced locally (docs/24-m7-closure.md §10.6).
+addopts = "-ra -p no:anyio"
 markers = [
     "storage: needs MinIO on S3_ENDPOINT_URL",
     "ffmpeg: needs ffmpeg and ffprobe on PATH",

@@ -40,8 +40,6 @@ from app.services import promo
 from app.services.billing import service
 from app.services.billing.providers.razorpay import RazorpayProvider
 
-pytestmark = pytest.mark.anyio
-
 V1 = "/v1"
 
 

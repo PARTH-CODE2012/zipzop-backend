@@ -37,7 +37,7 @@ from app.services import storage
 from app.services.credits import Allocation, CreditLedger
 from app.services.render_pipeline import RenderFailedError, run_export
 
-pytestmark = [pytest.mark.anyio, pytest.mark.ffmpeg, pytest.mark.storage]
+pytestmark = [pytest.mark.ffmpeg, pytest.mark.storage]
 
 
 async def _fixture(

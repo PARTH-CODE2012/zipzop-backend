@@ -44,8 +44,6 @@ from app.models import (
 from app.services.billing import service
 from app.services.billing.providers.razorpay import RazorpayProvider
 
-pytestmark = pytest.mark.anyio
-
 V1 = "/v1"
 SECRET = "whsec_test_only_not_a_real_razorpay_secret"
 

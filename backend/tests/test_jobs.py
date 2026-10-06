@@ -34,8 +34,6 @@ from app.models import (
 )
 from app.repositories import job as job_repo
 
-pytestmark = pytest.mark.anyio
-
 V1 = "/v1"
 
 

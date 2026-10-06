@@ -33,8 +33,6 @@ from app.services.billing.providers.base import (
     WebhookEvent,
 )
 
-pytestmark = pytest.mark.anyio
-
 V1 = "/v1"
 RETURN_URL = "http://localhost:3123/settings/billing"
 

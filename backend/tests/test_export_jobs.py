@@ -20,8 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import ids
 from app.models import AssetKind, AssetStatus, MediaAsset, Project
 
-pytestmark = pytest.mark.anyio
-
 V1 = "/v1"
 
 
