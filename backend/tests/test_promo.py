@@ -555,7 +555,7 @@ async def test_money_that_went_back_takes_its_commission_with_it(
     outcome = await _deliver(db, _reversal(payment, event=event))
 
     assert outcome.action == "payment_reversed"
-    assert outcome.details == {"commission_reversed_minor": 59}
+    assert outcome.details["commission_reversed_minor"] == 59
     assert payment.status is PaymentStatus.REFUNDED
     assert await _owed(db, code) == 0
     reversal = await db.scalar(
@@ -579,8 +579,8 @@ async def test_a_payment_is_reversed_once_however_often_it_goes_back(db: AsyncSe
     again = await _deliver(db, refund)
     dispute = await _deliver(db, _reversal(payment, event="payment.dispute.lost"))
 
-    assert again.details == {"commission_reversed_minor": 0}
-    assert dispute.details == {"commission_reversed_minor": 0}
+    assert again.details["commission_reversed_minor"] == 0
+    assert dispute.details["commission_reversed_minor"] == 0
     assert await _owed(db, code) == 0
 
 

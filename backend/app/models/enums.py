@@ -108,6 +108,11 @@ class LedgerReason(enum.StrEnum):
     REFUND = "refund"
     ADMIN_GRANT = "admin_grant"
     ADMIN_ADJUST = "admin_adjust"
+    #: Credits a refunded or charged-back payment had granted, taken back as far
+    #: as they are still unused. The project lead's rule of 8 October 2026: a
+    #: refund revokes the credits, and what was already spent stays spent.
+    #: Its own reason so the ledger can answer "why did my balance drop".
+    PAYMENT_REVERSAL = "payment_reversal"
 
 
 class PlanCode(enum.StrEnum):

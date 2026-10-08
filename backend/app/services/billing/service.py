@@ -27,6 +27,7 @@ from app.logging import get_logger
 from app.models import (
     CommissionLedgerEntry,
     CommissionReason,
+    CreditBucket,
     Payment,
     PaymentKind,
     PaymentProvider,
@@ -448,8 +449,12 @@ async def grant_period(
     period_start: datetime,
     period_end: datetime,
     note: str,
+    payment_id: uuid.UUID | None = None,
 ) -> bool:
     """Sweep, grant, move the period. One transaction — §8.4.
+
+    `payment_id` is written on the grant rows, so a refund of that payment
+    revokes exactly what it bought.
 
     Returns `False` when this period was already granted, which is the normal
     outcome of the safety-net sweep firing after the webhook has done the work.
@@ -467,6 +472,7 @@ async def grant_period(
         plan_credits=plan.monthly_credits,
         facemap_seconds=plan.facemap_seconds,
         note=note,
+        payment_id=payment_id,
     )
 
     subscription.plan = plan.code
@@ -691,6 +697,7 @@ async def apply_event(session: AsyncSession, event: WebhookEvent) -> EventOutcom
         period_start=period_start,
         period_end=period_end,
         note=f"{event.provider.value} {event.event_type}",
+        payment_id=payment.id if payment is not None else None,
     )
     if not granted:
         return EventOutcome(action="already_granted", user_id=str(user.id))
@@ -922,12 +929,22 @@ async def _apply_reversal(
     session: AsyncSession, *, user: User, event: WebhookEvent
 ) -> EventOutcome:
     """A refund processed or a chargeback lost: mark the payment, reverse the
-    commission.
+    commission, revoke the credits.
 
-    The credits already granted for the payment are **not** taken back here.
-    Whether a refunded customer keeps the month they were refunded for is a
-    commercial decision with a support conversation attached, not a ledger
-    rule — recorded for the project lead in `docs/24-m7-closure.md`.
+    **The credits** follow the project lead's rule of 8 October 2026: a refund
+    fully revokes what the payment granted, and what the customer already used
+    stays used. The rest is clawed back (`CreditLedger.revoke_payment`).
+
+    * A top-up's credits sit in `topup` and never expire, so they are revoked
+      from there.
+    * A subscription's credits are revoked only while the period it bought is
+      still the current one. Once a later period has been granted, those
+      credits have already expired at the boundary. Taking the same amount
+      from the new month would charge the customer for a period they paid for
+      separately.
+
+    The plan itself is left alone: a refund says nothing about which plan the
+    account should be on, and the provider's own cancellation event does.
     """
     payment = None
     if event.payment_reference:
@@ -952,11 +969,39 @@ async def _apply_reversal(
     payment.status = PaymentStatus.REFUNDED
     await session.flush()
     reversed_minor = await reverse_commission(session, payment=payment, why=event.event_type)
+    revoked = await CreditLedger(session).revoke_payment(
+        user=user,
+        payment_id=payment.id,
+        buckets=await _buckets_still_held(session, payment),
+        note=event.event_type,
+    )
     return EventOutcome(
         action="payment_reversed",
         user_id=str(user.id),
-        details={"commission_reversed_minor": reversed_minor},
+        details={"commission_reversed_minor": reversed_minor, "credits_revoked": revoked},
     )
+
+
+async def _buckets_still_held(session: AsyncSession, payment: Payment) -> list[CreditBucket]:
+    """Which buckets may still hold credits this payment granted."""
+    if payment.kind is PaymentKind.TOPUP:
+        return [CreditBucket.TOPUP]
+    if payment.subscription_id is None or payment.settled_at is None:
+        return []
+    subscription = await session.get(Subscription, payment.subscription_id)
+    if subscription is None:  # pragma: no cover - the FK nulls the column first
+        return []
+    settled = payment.settled_at
+    if settled.tzinfo is None:  # pragma: no cover - the column is timezone-aware
+        settled = settled.replace(tzinfo=UTC)
+    current = subscription.current_period_start
+    if current.tzinfo is None:  # pragma: no cover - the column is timezone-aware
+        current = current.replace(tzinfo=UTC)
+    # The period this payment bought started at or before it settled. A later
+    # period starts about a month after, so it lies past the tolerance.
+    if current <= settled + SAME_PERIOD_TOLERANCE:
+        return [CreditBucket.PLAN, CreditBucket.FACEMAP]
+    return []
 
 
 # --------------------------------------------------------------------------

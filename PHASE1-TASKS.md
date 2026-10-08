@@ -587,7 +587,7 @@ The project lead sent three points from CapCut/InShot/VN reviews. Where they lan
 - [x] Build notes: [`docs/23-m7-notes.md`](docs/23-m7-notes.md) and [`docs/24-m7-closure.md`](docs/24-m7-closure.md), with the one-page summary for the project lead (§1)
 - [x] `security.txt` published: [`frontend/public/.well-known/security.txt`](frontend/public/.well-known/security.txt), with the lead's own address as a **temporary** contact (their choice) until Phase 2 brings a domain and a dedicated `security@`. It expires 6 April 2027
 - [x] **Patch policy set by the lead** — Critical and High within **24–48 hours**, everything else within **a week** (`docs/23-m7-notes.md` §5)
-- [x] **Referral policy set** — the lead's graduated rule, in code (`docs/24-m7-closure.md` §10.2). The 30-day hold and the reversal on refund or chargeback stay as the defaults of §2.6. Still open: does a refunded customer keep the credits?
+- [x] **Referral policy set** — the lead's graduated rule, in code (`docs/24-m7-closure.md` §10.2). The 30-day hold and the reversal on refund or chargeback stay as the defaults of §2.6. **A refund revokes the credits** (the lead, 8 October): the unused part is clawed back, and what was spent stays spent (`docs/24-m7-closure.md` §10.7)
 
 > **Not in M7, on purpose:** facial data and consent (phase 2), GDPR/DPA paperwork, any certification, a bug bounty, and DDoS resilience beyond rate limits. An external penetration test is **recommended once there is revenue** and is the only real correction for M7 being a review of one's own code. Reasoning in [`docs/07-security.md`](docs/07-security.md) §11.
 

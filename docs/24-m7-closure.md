@@ -388,9 +388,9 @@ M7's settings ([`23-m7-notes.md`](23-m7-notes.md) §7), with today's added:
 | 4 | **Referral policy: a first violation (using your own code, or sharing it outside your server) cancels that commission and is a warning. A second removes the code** | `promo_violations` and `app.scripts.promo_violation` (§10.2) |
 | 5 | **Email verification: not before launch.** It would add a mail service's cost and setup for a problem not yet seen. Revisit in Phase 2 if spam sign-ups appear | Sign-up stays limited to ten an hour per address (`REGISTER_LIMIT_PER_HOUR`, §5.2) |
 
-Not answered, so they stay as the defaults of §2.6: the 30-day hold, the
-reversal on refund or chargeback, and whether a refunded customer keeps the
-credits.
+Not answered, so they stay as the defaults of §2.6: the 30-day hold and the
+reversal on refund or chargeback. Whether a refunded customer keeps the
+credits was answered on 8 October: they do not (§10.7).
 
 The lead said all of this is **temporary while pre-launch**: a business
 address, a domain and the infrastructure behind them come with Phase 2.
@@ -417,8 +417,8 @@ It is a dry run unless `--yes` is passed. For each violation,
     refunded is never reversed twice;
   * the account is **detached** from the code. Otherwise its next renewal
     would accrue the same commission and the violation would keep paying.
-    🟠 *This is the one reading that goes beyond the lead's words, and it is
-    theirs to confirm.*
+    *This was the one reading that went beyond the lead's words. They
+    confirmed it on 8 October (§10.7).*
 * **Second violation:** the code is **retired** (`is_active = false`). A
   retired code grants nothing at sign-up and accrues nothing on any renewal,
   which is what "remove the code" has to mean. Commission legitimately earned
@@ -566,6 +566,34 @@ A temporary tracer then named the cause:
 `trivy` jobs). It is the first fully green GitHub run since 30 August. The
 branch ruleset (§10.3) can be imported now.
 
+### 10.7 8 October — the lead's follow-ups
+
+* **The detach is confirmed.** An account caught in a violation stops
+  earning its referrer commission, as §10.2 implemented it.
+* **A refund revokes the credits.** The lead: *"fully revoke credits on
+  refund — if a customer already used some, just claw back whatever's left
+  unused."* In code:
+  * `refund.processed` and `payment.dispute.lost` now also call
+    `CreditLedger.revoke_payment`, which writes a `payment_reversal` row
+    (migration `0010`) per bucket. The amount is the smaller of what the
+    payment granted and the balance left, so spent credits stay spent and no
+    balance goes negative. A second event for the same payment revokes
+    nothing.
+  * A **subscription** month's grant rows now name the payment that bought
+    them. Its credits are revoked only while that month is still the current
+    one: once the next month has been granted, the refunded month's credits
+    have already expired, and taking the same amount from the new month would
+    charge for a period paid separately.
+  * A **top-up** is revoked from `topup`, up to the pack it bought. A promo
+    bonus in the same bucket is not touched.
+  * The plan itself is not changed by a refund; the provider's cancellation
+    event does that.
+  * Seven tests in [`tests/test_billing_refunds.py`](../backend/tests/test_billing_refunds.py),
+    all through a real Razorpay delivery. The suite is now **542 tests**: 540
+    pass, and 2 are skipped because they need the cached Whisper model. The
+    billing page labels the new rows *"Taken back: payment refunded"*.
+* **Branch protection:** the lead imports the ruleset (§10.3) themselves.
+
 ---
 
-*Build note · 5 October 2026, §10 added 6 October · M7 closed in code; the lead's decisions applied; the cloud-only checks wait for a host*
+*Build note · 5 October 2026, §10 added 6–8 October · M7 closed in code; the lead's decisions applied; the cloud-only checks wait for a host*

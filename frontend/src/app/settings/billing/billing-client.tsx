@@ -560,6 +560,8 @@ function reason(code: string): string {
       return 'Granted by support'
     case 'admin_adjust':
       return 'Adjusted by support'
+    case 'payment_reversal':
+      return 'Taken back: payment refunded'
     default:
       return code
   }
