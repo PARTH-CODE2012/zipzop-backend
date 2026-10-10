@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from app.logging import get_logger
+from app.services.ffmpeg_filters import user_media_input_args
 
 log = get_logger(__name__)
 
@@ -96,6 +97,9 @@ def probe(path: Path) -> Probe:
             "ffprobe",
             "-v",
             "error",
+            # Before -i: the file is attacker-chosen, and a container that names
+            # an http/file reference must not be followed off the host (§6.4).
+            *user_media_input_args(),
             "-print_format",
             "json",
             "-show_format",
@@ -244,6 +248,7 @@ def make_proxy(source: Path, destination: Path) -> None:
             "-hide_banner",
             "-loglevel",
             "error",
+            *user_media_input_args(),
             "-i",
             str(source),
             "-vf",
@@ -281,6 +286,7 @@ def make_audio_proxy(source: Path, destination: Path) -> None:
             "-hide_banner",
             "-loglevel",
             "error",
+            *user_media_input_args(),
             "-i",
             str(source),
             "-vn",
@@ -320,6 +326,7 @@ def make_thumbnail(source: Path, destination: Path, duration_ms: int) -> None:
             "-hide_banner",
             "-loglevel",
             "error",
+            *user_media_input_args(),
             "-ss",
             f"{at_seconds:.3f}",
             "-i",
@@ -344,6 +351,7 @@ def make_thumbnail(source: Path, destination: Path, duration_ms: int) -> None:
                 "-hide_banner",
                 "-loglevel",
                 "error",
+                *user_media_input_args(),
                 "-i",
                 str(source),
                 "-frames:v",
@@ -386,6 +394,7 @@ def make_peaks(source: Path, duration_ms: int, *, has_audio: bool) -> dict[str, 
             "ffmpeg",
             "-v",
             "error",
+            *user_media_input_args(),
             "-i",
             str(source),
             "-ac",

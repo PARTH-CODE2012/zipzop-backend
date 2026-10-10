@@ -17,7 +17,13 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 
 from app.api import ids
-from app.api.deps import CurrentUser, Session, auth_rate_limit, general_rate_limit
+from app.api.deps import (
+    CurrentUser,
+    Session,
+    auth_rate_limit,
+    general_rate_limit,
+    register_rate_limit,
+)
 from app.api.errors import InvalidCredentialsError, TokenExpiredError, TokenRevokedError
 from app.api.schemas.auth import (
     CreditBalances,
@@ -122,7 +128,7 @@ async def _start_session(
     "/register",
     status_code=status.HTTP_201_CREATED,
     response_model=SessionResponse,
-    dependencies=[Depends(auth_rate_limit)],
+    dependencies=[Depends(auth_rate_limit), Depends(register_rate_limit)],
     summary="Create an account",
 )
 async def register(

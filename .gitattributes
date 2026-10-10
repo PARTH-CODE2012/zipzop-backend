@@ -1,0 +1,7 @@
+# The Dockerfile is read by Linux tools: docker, semgrep and trivy. A Windows
+# checkout with core.autocrlf gave it CRLF, and semgrep's Dockerfile parser then
+# failed partway through. Locally the scan came out clean while GitHub, reading
+# LF, failed it on every run (docs/24-m7-closure.md §10.5). LF everywhere, as
+# deploy/local-staging/.gitattributes already does for scripts run in Linux
+# containers.
+backend/Dockerfile text eol=lf

@@ -172,7 +172,6 @@ def test_a_grade_actually_changes_the_picture() -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.anyio
 async def test_the_catalogue_endpoint_lists_the_renderable_looks(client: Any) -> None:
     """Contract §10, and promised by §4.4 since M2 without being implemented.
 
@@ -188,9 +187,23 @@ async def test_the_catalogue_endpoint_lists_the_renderable_looks(client: Any) ->
     assert names == set(LOOKS)
 
 
-@pytest.mark.anyio
 async def test_the_catalogue_is_public(client: Any) -> None:
     """No `Authorization` header. The catalogue is the same for everyone and
     says nothing about an account — and the pricing page has to be able to show
     what the product does before anyone signs up."""
     assert (await client.get("/v1/catalog/luts")).status_code == 200
+
+
+async def test_the_catalogue_is_rate_limited(client: Any) -> None:
+    """Public does not mean unbounded — docs/22-m7-readiness.md §2.3.
+
+    This was the one public route with no limiter on it, and it globs a
+    directory on every call. It now carries `general_rate_limit` (100/min per
+    IP) like the rest, so an anonymous caller cannot spin it without a ceiling.
+    """
+    last = None
+    for _ in range(101):
+        last = await client.get("/v1/catalog/luts")
+    assert last is not None
+    assert last.status_code == 429
+    assert last.json()["error"]["code"] == "RATE_LIMITED"

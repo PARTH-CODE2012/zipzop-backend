@@ -10,10 +10,12 @@ negative case is as important as the positive one.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import (
     AssetKind,
     AssetStatus,
@@ -271,6 +273,66 @@ async def test_a_recent_pending_upload_is_left_alone(db: AsyncSession) -> None:
     user = await _user(db)
     asset = await _asset(
         db, user, status=AssetStatus.PENDING_UPLOAD, created_at=NOW - timedelta(minutes=5)
+    )
+
+    assert await sweep_abandoned_uploads(db, now=NOW) == []
+    await db.refresh(asset)
+    assert asset.status is AssetStatus.PENDING_UPLOAD
+
+
+async def test_an_abandoned_upload_takes_what_it_left_in_the_bucket_with_it(
+    db: AsyncSession, s3: Any
+) -> None:
+    """M7-21, against the real MinIO. The parts of a multipart upload nobody
+    completed, and the object of a single PUT nobody confirmed, used to stay in
+    `originals/` for good — billed, and counted against no one."""
+    user = await _user(db)
+    stale = NOW - ABANDONED_UPLOAD_AFTER - timedelta(minutes=1)
+
+    multipart = await _asset(db, user, status=AssetStatus.PENDING_UPLOAD, created_at=stale)
+    multipart.storage_key = f"originals/{user.id}/{multipart.id}.mp4"
+    upload_id = s3.create_multipart_upload(Bucket=settings.s3_bucket, Key=multipart.storage_key)[
+        "UploadId"
+    ]
+    s3.upload_part(
+        Bucket=settings.s3_bucket,
+        Key=multipart.storage_key,
+        UploadId=upload_id,
+        PartNumber=1,
+        Body=b"x" * 1024,
+    )
+    multipart.multipart_upload_id = upload_id
+
+    single = await _asset(db, user, status=AssetStatus.PENDING_UPLOAD, created_at=stale)
+    single.storage_key = f"originals/{user.id}/{single.id}.mp4"
+    s3.put_object(Bucket=settings.s3_bucket, Key=single.storage_key, Body=b"x" * 1024)
+    await db.flush()
+
+    found = await sweep_abandoned_uploads(db, now=NOW)
+
+    assert set(found) == {multipart.id, single.id}
+    uploads = s3.list_multipart_uploads(Bucket=settings.s3_bucket).get("Uploads", [])
+    assert upload_id not in {u["UploadId"] for u in uploads}
+    listed = s3.list_objects_v2(Bucket=settings.s3_bucket, Prefix=single.storage_key)
+    assert listed.get("KeyCount", 0) == 0
+
+
+async def test_a_cleanup_that_fails_leaves_the_row_for_the_next_sweep(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failing the row first would forget the bytes behind it for good."""
+    from app.services import storage
+
+    def unreachable(key: str) -> None:
+        raise ConnectionError("storage is down")
+
+    monkeypatch.setattr(storage, "delete", unreachable)
+    user = await _user(db)
+    asset = await _asset(
+        db,
+        user,
+        status=AssetStatus.PENDING_UPLOAD,
+        created_at=NOW - ABANDONED_UPLOAD_AFTER - timedelta(minutes=1),
     )
 
     assert await sweep_abandoned_uploads(db, now=NOW) == []

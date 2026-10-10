@@ -30,12 +30,26 @@ class Settings(BaseSettings):
     # machine, and another project holding one produced a stack that failed
     # three different ways depending on which half won. `scripts/ports.sh`
     # resolves them for the dev flow; these are the fallbacks when nothing has.
-    api_host: str = "0.0.0.0"
+    # Container default; the dev flow binds 127.0.0.1 and prod sits behind the ALB.
+    api_host: str = "0.0.0.0"  # nosec B104
     api_port: int = 8123
     #: Both spellings of the same origin — a browser sent to `127.0.0.1` and one
     #: sent to `localhost` present different `Origin` headers, and a list with
     #: only one of them rejects half the ways of opening the app.
     cors_origins: str = "http://localhost:3123,http://127.0.0.1:3123"
+    #: How many reverse proxies in front of this process append to
+    #: `X-Forwarded-For` — **1 behind a single ALB, 0 when nothing is**.
+    #:
+    #: The address rate limits count against is the entry that many places
+    #: from the *right* of the chain: a proxy appends what it saw, so everything
+    #: to the left of our own proxies' entries was written by the client and can
+    #: say anything. 0 ignores the header altogether.
+    #:
+    #: ⚠️ Getting it wrong fails in two opposite directions. Too high, and a
+    #: client-written entry is trusted again (docs/07-security.md §6.10). Left at
+    #: 0 behind an ALB, every user shares the ALB's own address and one
+    #: rate-limit bucket — 100 requests a minute for the whole product.
+    trusted_proxy_hops: int = 0
 
     # ------------------------------------------------------------- database
     database_url: str = "postgresql+asyncpg://zipzop:zipzop@localhost:5432/zipzop"
@@ -87,6 +101,13 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------- limits
     max_upload_bytes: int = 2_147_483_648  # 2 GB
     max_duration_ms: int = 3_600_000  # 60 min
+    #: Largest picture ingest will decode, in pixels: 4K in any orientation,
+    #: square included; 8K is refused. Not a quality rule — export stops at 4K
+    #: — but a cost one (M7-24): what a file *costs* to decode is its pixels
+    #: times its frames, and its size on disk says nothing about either. A
+    #: 12 MB upload of black 8192x8192 frames took every core of the worker
+    #: host and 4 GB of memory on the staging stack.
+    max_video_pixels: int = 4096 * 4096
     multipart_threshold_bytes: int = 104_857_600  # 100 MB
 
     # -------------------------------------------------------------- billing
@@ -121,6 +142,26 @@ class Settings(BaseSettings):
     #: currencies — which is what "Razorpay first" means in practice. Switching
     #: on the day Stripe lands is this one variable.
     billing_provider_for_usd: Literal["razorpay", "stripe"] = "razorpay"
+
+    #: Days a referral commission is held before it counts as payable (M7-23).
+    #:
+    #: A refund or a lost chargeback reverses the commission on that payment; a
+    #: commission already paid out cannot be reversed, only netted against the
+    #: owner's next ones. Holding it a month means the common case — a refund
+    #: asked for in the first weeks — is reversed before anyone is paid. A
+    #: default proposed for the project lead to confirm; changing it changes no
+    #: row, only what `GET /promo/{code}/stats` reports as payable.
+    commission_hold_days: int = 30
+
+    #: Accounts one address may open in an hour (docs/07-security.md §6.10).
+    #:
+    #: Measured on the local staging stack in M7: with only the shared 20-a-
+    #: minute auth limit, one address opened 20 accounts a minute — 1,200 an
+    #: hour, each with 300 free credits and 5 GB, all on a disposable domain.
+    #: Ten an hour is far above what a household or a classroom needs and far
+    #: below what a farm wants. Email verification is the stronger control and
+    #: the project lead's call; this is the one that needed no mail provider.
+    register_limit_per_hour: int = 10
 
     # ------------------------------------------------------------ computed
     @computed_field  # type: ignore[prop-decorator]
@@ -171,7 +212,8 @@ def assert_production_safe() -> None:
         return
 
     problems: list[str] = []
-    if settings.jwt_secret_key == "dev-only-change-me":
+    # This compares against the dev default in order to refuse it; not a secret.
+    if settings.jwt_secret_key == "dev-only-change-me":  # nosec B105
         problems.append("JWT_SECRET_KEY is still the development default")
     if settings.jwt_algorithm == "HS256":
         problems.append("JWT_ALGORITHM should be RS256 in production")

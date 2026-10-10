@@ -1,12 +1,95 @@
-"""Building filter-graph arguments that survive FFmpeg's parsers.
+"""Building filter-graph arguments that survive FFmpeg's parsers, and confining
+what those parsers are allowed to reach.
 
-One function so far, and it is here rather than private to a caller because it
-was already wrong once in `color_analysis` and the export renderer is about to
-need the same thing for `lut3d=file=…`. A second private copy is how the first
-one's bug gets reintroduced somewhere it has not been found yet.
+Two concerns, one module, and both here for the same reason: they were each a
+copy-paste away from being wrong in a different file. `escape_path` was already
+wrong once in `color_analysis`; the allowlists below have to be identical at ten
+call sites, and ten private copies is ten chances to forget one.
 """
 
 from pathlib import Path
+from typing import Final
+
+#: What an FFmpeg/FFprobe invocation on user-supplied media is allowed to open.
+#:
+#: **The sharpest edge in the product** (docs/07-security.md §6.4): a file chosen
+#: entirely by an attacker is handed to a C demuxer, and some container formats
+#: — HLS playlists, the concat demuxer, a `.mov` with an external data reference
+#: — name a *URL* for the demuxer to follow. Left unrestricted that is an SSRF
+#: primitive: an uploaded playlist pointing a segment at
+#: `http://169.254.169.254/…` reads the instance's IAM credentials from inside
+#: the worker.
+#:
+#: `file` and nothing else. Every network protocol (http, https, tcp, tls,
+#: rtmp, …) is refused, so no reference inside a user file can leave the host.
+#: The residual — a reference to another *local* file — is closed by naming the
+#: demuxers too (`USER_MEDIA_FORMATS`, M7-22).
+#:
+#: **This is pinned rather than assumed.** FFmpeg *does* ship a secure-ish
+#: default (9.0.1 here defaults the demuxer whitelist to `file,crypto,data`),
+#: but that default is build- and version-dependent — the Debian image the
+#: worker runs is a different build from any developer's — and it once was
+#: permissive. A one-argument control that says exactly what we allow is worth
+#: more than a default we have to re-verify on every base-image bump. It is
+#: applied as an **input** option, before each `-i`, so it governs the demuxer
+#: and its sub-resources without touching where output is written.
+USER_MEDIA_PROTOCOLS: Final = "file"
+
+#: The demuxers user media may be opened with — one per container the upload
+#: route accepts (`SUPPORTED_CONTENT_TYPES`), named as FFmpeg names them:
+#: `mov` reads mp4, mov and m4a; `matroska` reads mkv and webm.
+#:
+#: **What the protocol allowlist could not close (M7-22).** `file` has to stay
+#: allowed to open the upload at all, and two demuxers turn a file into a list
+#: of *other* files: `concat` and `hls`. FFprobe picks the demuxer from the
+#: bytes, not the name — an `ffconcat` text uploaded as `clip.mp4` was opened as
+#: concat by FFmpeg 9.0.1 and its `file …` line followed, reading the file next
+#: to it. Its `-safe` default kept that to relative paths without `..`, and each
+#: job's scratch is a private directory, so it reached nothing but the job's own
+#: files; but that was a property of where files happened to be, not a control.
+#: Naming the formats closes the class: concat, HLS, DASH, image sequences, and
+#: any reference-following demuxer a future FFmpeg adds are refused by name
+#: before they parse anything. A container we do not accept is now refused by
+#: FFmpeg too, which is the same answer the upload route already gives.
+USER_MEDIA_FORMATS: Final = "mov,matroska,avi,mp3,aac,wav,flac,ogg"
+
+
+def user_media_input_args() -> list[str]:
+    """The allowlists, to place immediately before an `-i` on user media.
+
+    A function rather than a bare constant so a call site reads as
+    ``[*user_media_input_args(), "-i", path]`` and cannot accidentally share or
+    mutate one list, and so there is exactly one spelling of each flag.
+    """
+    return [
+        "-protocol_whitelist",
+        USER_MEDIA_PROTOCOLS,
+        "-format_whitelist",
+        USER_MEDIA_FORMATS,
+    ]
+
+
+def movie_source_options() -> str:
+    """The same two allowlists for a lavfi `movie=` source, as its `format_opts`.
+
+    `movie=` opens the file through a demuxer of its own, which top-level flags
+    do not reach. `format_opts` is a dictionary parsed **three** times on the way
+    in, so each separator is escaped for the parser that must not consume it:
+
+    * level 3, the dictionary itself: `key=value` pairs joined by `:`;
+    * level 2, the filter's option parser, which ends a value at a bare `:` — so
+      the pair separator arrives as `\\:`;
+    * level 1, the filtergraph parser, which unescapes once and splits filters
+      at a bare `,` — so backslashes are doubled and the format list's commas
+      escaped.
+
+    Verified against the real ffprobe: a valid upload is analysed, an
+    `ffconcat` one is refused with "Format not on whitelist".
+    """
+    pairs = (("protocol_whitelist", USER_MEDIA_PROTOCOLS), ("format_whitelist", USER_MEDIA_FORMATS))
+    level2 = "\\:".join(f"{key}={value}" for key, value in pairs)
+    level1 = level2.replace("\\", "\\\\").replace(",", "\\,")
+    return f"format_opts={level1}"
 
 
 def escape_path(path: Path | str) -> str:

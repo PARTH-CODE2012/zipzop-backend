@@ -27,6 +27,7 @@ from app.logging import get_logger
 from app.models import (
     CommissionLedgerEntry,
     CommissionReason,
+    CreditBucket,
     Payment,
     PaymentKind,
     PaymentProvider,
@@ -39,6 +40,7 @@ from app.models import (
     SubStatus,
     User,
 )
+from app.services import promo
 from app.services.billing import catalogue, routing
 from app.services.billing.providers.base import (
     BillingEventKind,
@@ -447,8 +449,12 @@ async def grant_period(
     period_start: datetime,
     period_end: datetime,
     note: str,
+    payment_id: uuid.UUID | None = None,
 ) -> bool:
     """Sweep, grant, move the period. One transaction — §8.4.
+
+    `payment_id` is written on the grant rows, so a refund of that payment
+    revokes exactly what it bought.
 
     Returns `False` when this period was already granted, which is the normal
     outcome of the safety-net sweep firing after the webhook has done the work.
@@ -466,6 +472,7 @@ async def grant_period(
         plan_credits=plan.monthly_credits,
         facemap_seconds=plan.facemap_seconds,
         note=note,
+        payment_id=payment_id,
     )
 
     subscription.plan = plan.code
@@ -643,6 +650,11 @@ async def apply_event(session: AsyncSession, event: WebhookEvent) -> EventOutcom
     if event.kind is BillingEventKind.TOPUP_PAID:
         return await _apply_topup(session, user=user, event=event)
 
+    if event.kind is BillingEventKind.PAYMENT_REVERSED:
+        # Before `_ensure_subscription`: a refund says nothing about which plan
+        # the account is on, and must not be read as if it did.
+        return await _apply_reversal(session, user=user, event=event)
+
     subscription = await _ensure_subscription(
         session,
         user=user,
@@ -685,6 +697,7 @@ async def apply_event(session: AsyncSession, event: WebhookEvent) -> EventOutcom
         period_start=period_start,
         period_end=period_end,
         note=f"{event.provider.value} {event.event_type}",
+        payment_id=payment.id if payment is not None else None,
     )
     if not granted:
         return EventOutcome(action="already_granted", user_id=str(user.id))
@@ -803,6 +816,13 @@ async def accrue_commission(session: AsyncSession, *, user: User, payment: Payme
     if code is None or not code.is_active:
         return 0
 
+    if await promo.is_self_referral(session, code=code, user=user):
+        # The owner paying on their own code (M7-23). Sign-up already refuses
+        # the attribution for an owner's inbox; this catches an account that
+        # was given the code before it was made the code's owner.
+        log.info("commission_refused", code=code.code, reason="self_referral")
+        return 0
+
     amount = payment.amount_minor * code.commission_bps // 10_000
     if amount <= 0:
         return 0
@@ -846,6 +866,142 @@ async def accrue_commission(session: AsyncSession, *, user: User, payment: Payme
         user_id=str(user.id),
     )
     return amount
+
+
+async def reverse_commission(session: AsyncSession, *, payment: Payment, why: str) -> int:
+    """Take back the commission a payment earned, because the payment went back.
+
+    **The default policy M7-23 proposes**, for the project lead to confirm: a
+    payment refunded — in whole or in part — or charged back earns nothing.
+    Whole, not pro rata, because the payment is no longer the customer the
+    commission rewarded, and because one reversal per payment is what the
+    unique index on `(payment_id, reason)` can guarantee.
+
+    A row, not an edit: the accrual stays, and a negative row beside it says
+    what happened and why. If the commission was already paid out, what is owed
+    goes negative and the owner's next commissions net it off — there is no
+    other way to recover money already sent. `settings.commission_hold_days` is
+    what makes that the rare case. Returns the amount reversed, positive.
+    """
+    accrual = await session.scalar(
+        sa.select(CommissionLedgerEntry).where(
+            CommissionLedgerEntry.payment_id == payment.id,
+            CommissionLedgerEntry.reason == CommissionReason.ACCRUAL,
+        )
+    )
+    if accrual is None:
+        return 0
+
+    try:
+        # Inside the savepoint, for the reason `accrue_commission` gives.
+        async with session.begin_nested():
+            session.add(
+                CommissionLedgerEntry(
+                    code=accrual.code,
+                    user_id=accrual.user_id,
+                    payment_id=payment.id,
+                    reason=CommissionReason.REVERSAL,
+                    amount_minor=-accrual.amount_minor,
+                    currency=accrual.currency,
+                    rate_bps=accrual.rate_bps,
+                    note=why,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        # Reversed already — a redelivery, or a refund and then a lost dispute
+        # on the same payment. One reversal is the whole commission.
+        log.info("commission_already_reversed", payment_id=str(payment.id))
+        return 0
+
+    log.info(
+        "commission_reversed",
+        code=accrual.code,
+        amount_minor=accrual.amount_minor,
+        currency=accrual.currency,
+        payment_id=str(payment.id),
+        why=why,
+    )
+    return accrual.amount_minor
+
+
+async def _apply_reversal(
+    session: AsyncSession, *, user: User, event: WebhookEvent
+) -> EventOutcome:
+    """A refund processed or a chargeback lost: mark the payment, reverse the
+    commission, revoke the credits.
+
+    **The credits** follow the project lead's rule of 8 October 2026: a refund
+    fully revokes what the payment granted, and what the customer already used
+    stays used. The rest is clawed back (`CreditLedger.revoke_payment`).
+
+    * A top-up's credits sit in `topup` and never expire, so they are revoked
+      from there.
+    * A subscription's credits are revoked only while the period it bought is
+      still the current one. Once a later period has been granted, those
+      credits have already expired at the boundary. Taking the same amount
+      from the new month would charge the customer for a period they paid for
+      separately.
+
+    The plan itself is left alone: a refund says nothing about which plan the
+    account should be on, and the provider's own cancellation event does.
+    """
+    payment = None
+    if event.payment_reference:
+        payment = await session.scalar(
+            sa.select(Payment).where(
+                Payment.provider == event.provider,
+                Payment.provider_payment_id == event.payment_reference,
+            )
+        )
+    if payment is None:
+        # Money went back on a payment we never recorded. Loud, because a
+        # commission may still be standing on it under another reference.
+        log.error(
+            "reversal_for_unknown_payment",
+            provider=event.provider.value,
+            event_type=event.event_type,
+            payment=event.payment_reference,
+            user_id=str(user.id),
+        )
+        return EventOutcome(action="reversal_unmatched", user_id=str(user.id))
+
+    payment.status = PaymentStatus.REFUNDED
+    await session.flush()
+    reversed_minor = await reverse_commission(session, payment=payment, why=event.event_type)
+    revoked = await CreditLedger(session).revoke_payment(
+        user=user,
+        payment_id=payment.id,
+        buckets=await _buckets_still_held(session, payment),
+        note=event.event_type,
+    )
+    return EventOutcome(
+        action="payment_reversed",
+        user_id=str(user.id),
+        details={"commission_reversed_minor": reversed_minor, "credits_revoked": revoked},
+    )
+
+
+async def _buckets_still_held(session: AsyncSession, payment: Payment) -> list[CreditBucket]:
+    """Which buckets may still hold credits this payment granted."""
+    if payment.kind is PaymentKind.TOPUP:
+        return [CreditBucket.TOPUP]
+    if payment.subscription_id is None or payment.settled_at is None:
+        return []
+    subscription = await session.get(Subscription, payment.subscription_id)
+    if subscription is None:  # pragma: no cover - the FK nulls the column first
+        return []
+    settled = payment.settled_at
+    if settled.tzinfo is None:  # pragma: no cover - the column is timezone-aware
+        settled = settled.replace(tzinfo=UTC)
+    current = subscription.current_period_start
+    if current.tzinfo is None:  # pragma: no cover - the column is timezone-aware
+        current = current.replace(tzinfo=UTC)
+    # The period this payment bought started at or before it settled. A later
+    # period starts about a month after, so it lies past the tolerance.
+    if current <= settled + SAME_PERIOD_TOLERANCE:
+        return [CreditBucket.PLAN, CreditBucket.FACEMAP]
+    return []
 
 
 # --------------------------------------------------------------------------

@@ -3,6 +3,20 @@
 # The frontend is deliberately NOT here — Next.js hot reload is markedly faster
 # running natively, and it needs nothing from this network beyond the API's
 # published port. Run `make dev-frontend` alongside `make dev`.
+#
+# **Every port is published on 127.0.0.1, never on all interfaces.** Found in
+# M7: `"5432:5432"` binds 0.0.0.0, so on a café's Wi-Fi anyone on the same
+# network reached Postgres with `zipzop/zipzop`, a Redis with no password at
+# all — the queue — and MinIO with its well-known root pair. Development data is
+# synthetic, but the credentials are in this public file. Loopback is all the
+# native API, the worker and the browser need.
+#
+# **Both loopbacks, IPv4 and IPv6 — the `[::1]` lines are not redundant.**
+# `localhost`, which every URL in .env uses, resolves to `::1` first on Windows.
+# With only 127.0.0.1 published, that first attempt is not refused but left
+# hanging in SYN_SENT until the TCP timeout, then retried on IPv4: every new
+# database connection took tens of seconds and the test suite, which opens one
+# per test, crawled for eleven minutes. Found while verifying this very change.
 
 name: zipzop
 
@@ -14,7 +28,8 @@ services:
       POSTGRES_PASSWORD: zipzop
       POSTGRES_DB: zipzop
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+      - "[::1]:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +42,8 @@ services:
     image: redis:7-alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+      - "[::1]:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -38,26 +54,34 @@ services:
 
   # S3-compatible storage. Speaks the same presigned-URL protocol as the real
   # thing, so the upload flow is developed and tested without an AWS account.
+  #
+  # **`pgsty/minio`, not `minio/minio` — the upstream images no longer exist.**
+  # MinIO stopped publishing community images in late 2025 and `minio/minio`
+  # and `minio/mc` were later removed from Docker Hub. A machine with them
+  # cached never noticed; every fresh pull failed, and so did every CI run
+  # from 31 August to 5 October 2026 — at "Start MinIO", before a single
+  # backend test ran. `pgsty/minio` is Pigsty's maintained fork: the same
+  # server, so the signed-header behaviour the storage tests assert (a
+  # mismatched Content-Length is a 403, M7-04) is the same code. Pinned by
+  # digest, because a fork is one more party whose `latest` we would trust.
   minio:
-    image: minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: zipzop
       MINIO_ROOT_PASSWORD: zipzop-dev-secret
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # web console
+      - "127.0.0.1:9000:9000"   # API
+      - "[::1]:9000:9000"
+      - "127.0.0.1:9001:9001"   # web console
+      - "[::1]:9001:9001"
     volumes:
       - minio-data:/data
-    # MinIO's own HTTP liveness endpoint rather than `mc ready local`.
-    #
-    # Both work against `minio/minio:latest` today — `mc` ships in the image
-    # and the old check was passing, which is worth stating because the audit
-    # that prompted the change assumed otherwise. The reason to move is
-    # narrower: `mc ready local` depends on the client binary and its bundled
-    # `local` alias both being in an image we pin to `latest`, and MinIO has
-    # shipped images without `mc` before. `/minio/health/live` depends on the
-    # server answering, which is the thing being checked.
+    # MinIO's own HTTP liveness endpoint rather than `mc ready local`:
+    # `mc ready local` depends on the client binary and its bundled `local`
+    # alias both being in the image, and MinIO images have shipped without
+    # `mc` before. `/minio/health/live` depends on the server answering, which
+    # is the thing being checked.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -76,7 +100,7 @@ services:
   # the browser actually has to use in production. The API hands out presigned
   # GETs (app/services/storage.py), so nothing needs anonymous access.
   minio-init:
-    image: minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
     depends_on:
       minio:
         condition: service_healthy
@@ -108,7 +132,8 @@ services:
       # Inside the container 8000 is uncontested — it has the network namespace
       # to itself. Only the host side can collide, so only the host side moves,
       # and it reads the same API_PORT as every other entry point.
-      - "${API_PORT:-8123}:8000"
+      - "127.0.0.1:${API_PORT:-8123}:8000"
+      - "[::1]:${API_PORT:-8123}:8000"
     volumes:
       - ./backend:/app
     depends_on:

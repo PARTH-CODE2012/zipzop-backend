@@ -18,8 +18,6 @@ import pytest
 from app.services import transcription
 from app.services.transcription import Transcript, Word, _window_mean, _with_emphasis
 
-pytestmark = pytest.mark.anyio
-
 
 def _word(text: str, start: int, end: int, confidence: float = 0.9) -> Word:
     return Word(text=text, start_ms=start, end_ms=end, confidence=confidence)

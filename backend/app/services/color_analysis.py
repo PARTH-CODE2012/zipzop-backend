@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from app.logging import get_logger
-from app.services.ffmpeg_filters import escape_path
+from app.services.ffmpeg_filters import (
+    USER_MEDIA_PROTOCOLS,
+    escape_path,
+    movie_source_options,
+)
 
 log = get_logger(__name__)
 
@@ -95,15 +99,31 @@ def sample_frames(source: Path, duration_ms: int) -> FrameStats:
     # One frame every N seconds, expressed as an fps filter rather than N seeks:
     # seeking is what makes this slow on a long file.
     every_seconds = max(1.0, (duration_ms / 1000) / SAMPLE_FRAMES)
+    # The lavfi `movie=` source opens the file through its *own* demuxer, which
+    # top-level flags do not reach — so both allowlists are pinned on the filter
+    # itself, as its `format_opts`. `source` is the user's upload, and without
+    # this the movie source falls back to FFmpeg's build defaults and to any
+    # demuxer the bytes look like; with it, a container that references a URL
+    # or another file is refused exactly as `probe()` refuses it upstream
+    # (§6.4, M7-22). `movie_source_options` carries the escaping for the three
+    # parsers that string goes through; `escape_path` handles the path.
+    movie = f"movie={_escape(source)}:{movie_source_options()}"
     result = _run(
         [
             "ffprobe",
             "-v",
             "quiet",
+            # Belt and braces: constrains the lavfi input device itself — its
+            # protocols, and the one demuxer it is (`lavfi`). The `format_opts`
+            # above is what actually binds the `movie=` demuxer.
+            "-protocol_whitelist",
+            USER_MEDIA_PROTOCOLS,
+            "-format_whitelist",
+            "lavfi",
             "-f",
             "lavfi",
             "-i",
-            f"movie={_escape(source)},fps=1/{every_seconds:.3f},signalstats",
+            f"{movie},fps=1/{every_seconds:.3f},signalstats",
             "-show_entries",
             "frame_tags=lavfi.signalstats.YAVG,lavfi.signalstats.UAVG,"
             "lavfi.signalstats.VAVG,lavfi.signalstats.YDIF",

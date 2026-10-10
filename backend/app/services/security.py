@@ -117,8 +117,27 @@ def issue_access_token(user_id: uuid.UUID) -> tuple[str, int]:
 
 def read_access_token(token: str) -> uuid.UUID:
     """Verify and return the subject, or raise the contract's 401."""
+    payload = _access_claims(token)
     try:
-        payload = jwt.decode(token, _verifying_key(), algorithms=[settings.jwt_algorithm])
+        return uuid.UUID(str(payload["sub"]))
+    except (KeyError, ValueError):
+        raise TokenRevokedError() from None
+
+
+def access_token_expiry(token: str) -> int:
+    """The `exp` of a valid access token, or the same 401 as `read_access_token`.
+
+    For the WebSocket ticket, which closes the socket at this instant — read
+    from the verified claims, so the deadline is one the signature covers.
+    """
+    return int(_access_claims(token)["exp"])
+
+
+def _access_claims(token: str) -> dict[str, Any]:
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token, _verifying_key(), algorithms=[settings.jwt_algorithm]
+        )
     except jwt.ExpiredSignatureError:
         # A distinct code, because it is the only 401 the client should respond
         # to by refreshing rather than by signing the user out (contract §1).
@@ -130,10 +149,7 @@ def read_access_token(token: str) -> uuid.UUID:
         # A refresh token presented as a Bearer credential. Never valid: it is
         # opaque and unsigned, so this only fires on something forged.
         raise TokenRevokedError()
-    try:
-        return uuid.UUID(str(payload["sub"]))
-    except (KeyError, ValueError):
-        raise TokenRevokedError() from None
+    return payload
 
 
 # --------------------------------------------------------------------------

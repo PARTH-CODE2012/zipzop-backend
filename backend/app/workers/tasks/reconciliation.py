@@ -10,6 +10,7 @@ import asyncio
 from typing import Any
 
 from app.logging import get_logger
+from app.services import scratch
 from app.workers.celery_app import celery_app
 
 log = get_logger(__name__)
@@ -18,6 +19,8 @@ log = get_logger(__name__)
 @celery_app.task(name="app.workers.tasks.reconciliation.sweep_pipeline")
 def sweep_pipeline() -> dict[str, Any]:
     result = asyncio.run(_run())
+    # The filesystem half: scratch a killed worker left on this machine's disk.
+    purged = scratch.purge_orphaned()
     if result.touched:
         log.warning(
             "pipeline_sweep_ran",
@@ -31,6 +34,7 @@ def sweep_pipeline() -> dict[str, Any]:
         "failedUploads": [str(i) for i in result.failed_uploads],
         "requeuedAssets": [str(i) for i in result.requeued_assets],
         "failedAssets": [str(i) for i in result.failed_assets],
+        "purgedScratch": purged,
     }
 
 

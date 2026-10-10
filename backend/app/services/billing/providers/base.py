@@ -53,6 +53,9 @@ class BillingEventKind(enum.StrEnum):
     SUBSCRIPTION_PAYMENT_FAILED = "subscription_payment_failed"
     #: A one-off payment for credits that never expire.
     TOPUP_PAID = "topup_paid"
+    #: Money we had taken went back — a refund processed, or a chargeback lost.
+    #: Reverses the referral commission on that payment (M7-23).
+    PAYMENT_REVERSED = "payment_reversed"
     #: Understood well enough to store, not well enough to act on.
     IGNORED = "ignored"
 

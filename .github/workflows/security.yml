@@ -1,0 +1,173 @@
+name: Security
+
+# docs/07-security.md §7 — the gates that stay after M7.
+#
+# On every push and pull request, and every night: an advisory published
+# tonight against a dependency that has not changed is a finding tomorrow, and
+# only a schedule sees it — nothing in the code moved to trigger a run.
+#
+# `make security` runs the same scanners, from the same pinned images, with the
+# same arguments (SEMGREP_ARGS / TRIVY_FS_ARGS in the Makefile), so a result
+# here can be reproduced on a laptop before pushing.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. Every scanner here reads; none of them needs to write anything to
+# the repository, so none of them is given a token that could.
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+  SEMGREP_IMAGE: semgrep/semgrep:1.178.0
+  TRIVY_IMAGE: aquasec/trivy:0.74.0
+
+jobs:
+  # ------------------------------------------------------------------ python
+  python:
+    name: bandit + pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.lock
+
+      # The tools come from the lockfile like everything else, so the version
+      # that judges the code is itself a reviewed one.
+      - name: Install the pinned tools
+        working-directory: backend
+        run: pip install --require-hashes -r requirements-dev.lock
+
+      # Configured in pyproject.toml [tool.bandit]: four check ids skipped for
+      # a stated reason each, two handled inline with `# nosec`. Anything else
+      # fails the job.
+      - name: bandit
+        working-directory: backend
+        run: bandit -c pyproject.toml -r app
+
+      # Both lockfiles, because the image ships one and CI tests the other.
+      # `--disable-pip`: every requirement is pinned with a hash, so there is
+      # nothing to resolve — the audit reads exactly what would be installed.
+      - name: pip-audit
+        working-directory: backend
+        run: |
+          pip-audit -r requirements.lock --require-hashes --disable-pip
+          pip-audit -r requirements-dev.lock --require-hashes --disable-pip
+
+  # -------------------------------------------------------------------- node
+  node:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      # Reads pnpm-lock.yaml; nothing needs installing. Every level fails the
+      # job: M7 left this at zero, and the overrides in package.json say why
+      # each transitive pin is there.
+      #
+      # **One advisory is ignored, and only one:** GHSA-vfj7-8cjw-p6xm, a
+      # stack-exhaustion DoS in `braces` <= 3.0.3 — the latest version; no fix
+      # exists. It reaches us only through @next/eslint-plugin-next ->
+      # fast-glob 3.3.1 -> micromatch, which expands glob patterns *we* write
+      # in the lint config, never input from a user, and none of it ships.
+      # Recorded 5 October 2026 (docs/24-m7-closure.md §6) for the project
+      # lead to sign; revisit when `braces` publishes a fix, or by 5 November
+      # 2026 at the latest — the `auditConfig.ignoreGhsas` entry in
+      # package.json is the line to delete. The brace-expansion advisories
+      # that landed the same fortnight are fixed by overrides, not ignored.
+      - name: pnpm audit
+        working-directory: frontend
+        run: pnpm audit
+
+  # ----------------------------------------------------------------- secrets
+  secrets:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history, not the tip: a secret committed and then deleted is
+      # still in the repository for anyone who clones it (§5.1).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        run: >
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE"
+          git /repo --redact --no-banner --log-opts=--all
+
+  # ----------------------------------------------------------------- semgrep
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Python, OWASP Top 10, React and TypeScript rulesets. `--error` fails on
+      # any finding; M7 left this at zero once the action tags were pinned.
+      - name: semgrep
+        run: >
+          docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE"
+          semgrep scan
+          --config p/python --config p/owasp-top-ten --config p/react --config p/typescript
+          --error --metrics=off --quiet
+          --exclude frontend/node_modules --exclude backend/.venv --exclude backend/tests
+          --exclude "*.test.ts"
+
+  # ------------------------------------------------------------------- trivy
+  trivy-fs:
+    name: trivy (lockfiles + configuration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Vulnerabilities in both lockfiles, misconfiguration in the Dockerfile
+      # and compose file, and a second opinion on committed secrets. High and
+      # critical only, and only where a fix exists — an unfixable advisory in a
+      # base-image package is tracked in the register, not failed on nightly.
+      - name: trivy fs
+        run: >
+          docker run --rm -v "$PWD:/repo" "$TRIVY_IMAGE"
+          fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL
+          --ignore-unfixed --exit-code 1
+          --skip-dirs frontend/node_modules --skip-dirs backend/.venv
+          /repo
+
+  trivy-image:
+    name: trivy (production image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # §7: "trivy — on image build". Nothing deploys an image yet, so this
+      # builds the production stage itself: the thing that would ship is the
+      # thing scanned, FFmpeg included — the component that parses hostile
+      # input for us, whose CVE feed is therefore ours (§5.4).
+      - name: Build the production image
+        run: docker build --target prod -t zipzop-backend:scan backend
+
+      - name: trivy image
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE"
+          image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          zipzop-backend:scan

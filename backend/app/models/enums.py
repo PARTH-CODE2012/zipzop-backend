@@ -108,6 +108,11 @@ class LedgerReason(enum.StrEnum):
     REFUND = "refund"
     ADMIN_GRANT = "admin_grant"
     ADMIN_ADJUST = "admin_adjust"
+    #: Credits a refunded or charged-back payment had granted, taken back as far
+    #: as they are still unused. The project lead's rule of 8 October 2026: a
+    #: refund revokes the credits, and what was already spent stays spent.
+    #: Its own reason so the ledger can answer "why did my balance drop".
+    PAYMENT_REVERSAL = "payment_reversal"
 
 
 class PlanCode(enum.StrEnum):
@@ -170,6 +175,23 @@ class CommissionReason(enum.StrEnum):
     ACCRUAL = "accrual"  # a subscription was paid for; commission is owed
     PAYOUT = "payout"  # we paid it — negative
     REVERSAL = "reversal"  # chargeback or refund took the payment back — negative
+
+
+class PromoViolationKind(enum.StrEnum):
+    """What a code's owner did wrong — the project lead's two cases (6 October
+    2026). Stored as text with a check constraint, not as a native enum, so it
+    is deliberately absent from `ENUM_TYPES`."""
+
+    SELF_USE = "self_use"
+    SHARED_OUTSIDE_SERVER = "shared_outside_server"
+
+
+class PromoViolationAction(enum.StrEnum):
+    """What was done about it: a first violation is a warning, a second removes
+    the code."""
+
+    WARNING = "warning"
+    CODE_REMOVED = "code_removed"
 
 
 #: Every enum type, in the order a migration must create them, paired with the

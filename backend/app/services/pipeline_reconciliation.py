@@ -60,6 +60,7 @@ from app.logging import get_logger
 from app.models import AssetStatus, Job, JobStatus, MediaAsset
 from app.repositories.job import requeue
 from app.repositories.media import release_ingest_claim
+from app.services import storage
 
 log = get_logger(__name__)
 
@@ -197,12 +198,48 @@ async def sweep_abandoned_uploads(session: AsyncSession, *, now: datetime) -> li
     Nothing watches a `pending_upload` row — no worker owns it, no task is
     dispatched for it until `POST /media/{id}/complete` is called. One that
     outlives its presigned URL by this much is never coming back.
+
+    **And what it left in the bucket goes with it (M7-21).** Failing the row
+    used to be all this did, so two things stayed in storage for good, billed
+    and counted against no one: the parts of a multipart upload nobody
+    completed, and the object of a single PUT that arrived but was never
+    confirmed with `/complete` — under `originals/`, which no retention rule
+    touches. A bucket lifecycle rule (`AbortIncompleteMultipartUpload`) is still
+    worth having in production; this does not depend on one existing.
+
+    Storage first, row second: a cleanup that fails — storage unreachable —
+    leaves the row `pending_upload`, so the next sweep tries again instead of
+    forgetting the bytes behind a `failed` row.
     """
+    candidates = await session.execute(
+        sa.select(MediaAsset.id, MediaAsset.storage_key, MediaAsset.multipart_upload_id).where(
+            MediaAsset.status == AssetStatus.PENDING_UPLOAD,
+            MediaAsset.created_at < now - ABANDONED_UPLOAD_AFTER,
+        )
+    )
+    cleaned: list[uuid.UUID] = []
+    for asset_id, key, upload_id in candidates.all():
+        try:
+            if upload_id:
+                storage.abort_multipart(key, upload_id)
+            storage.delete(key)
+        except Exception as exc:
+            log.warning(
+                "pipeline_sweep_upload_cleanup_failed",
+                asset_id=str(asset_id),
+                error=type(exc).__name__,
+            )
+            continue
+        cleaned.append(asset_id)
+    if not cleaned:
+        return []
+
     result = await session.execute(
         sa.update(MediaAsset)
         .where(
+            MediaAsset.id.in_(cleaned),
+            # Re-checked: the row is only failed if it is still what we saw.
             MediaAsset.status == AssetStatus.PENDING_UPLOAD,
-            MediaAsset.created_at < now - ABANDONED_UPLOAD_AFTER,
         )
         .values(
             status=AssetStatus.FAILED,

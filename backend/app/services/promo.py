@@ -14,11 +14,12 @@ a published price.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.logging import get_logger
 from app.models import (
     CommissionLedgerEntry,
@@ -36,6 +37,44 @@ log = get_logger(__name__)
 #: Longest code we will look up. Not a validation rule so much as a refusal to
 #: run a database query for a megabyte of text somebody pasted into the field.
 MAX_CODE_LENGTH = 64
+
+#: Providers where dots in the local part are ignored — `a.b@gmail.com` and
+#: `ab@gmail.com` are one inbox.
+_DOTLESS_DOMAINS = {"gmail.com": "gmail.com", "googlemail.com": "gmail.com"}
+
+
+def mailbox(email: str) -> str:
+    """The inbox an address delivers to, as near as can be told from the text.
+
+    `+tags` dropped everywhere, dots dropped where the provider ignores them.
+    Used for one thing: telling that a code's owner and the account using it
+    are the same person (M7-23) — an owner signing up `me+alt@gmail.com` with
+    their own code to collect the bonus, or to earn commission on themselves.
+    """
+    local, _, domain = email.strip().lower().rpartition("@")
+    local = local.split("+", 1)[0]
+    if domain in _DOTLESS_DOMAINS:
+        local = local.replace(".", "")
+        domain = _DOTLESS_DOMAINS[domain]
+    return f"{local}@{domain}"
+
+
+async def is_self_referral(session: AsyncSession, *, code: PromoCode, user: User) -> bool:
+    """Is `user` the owner of `code`, by account or by inbox?
+
+    The evident cases only, on purpose (M7-23's default policy): the owner's own
+    account, or an address that delivers to the owner's inbox. A second inbox
+    the owner controls is indistinguishable from a friend, and refusing on a
+    weaker signal — the same IP, a shared household — would refuse genuine
+    referrals the commission exists to reward. The hold and the reversal on
+    refund (`billing.service`) are what limit the rest.
+    """
+    if code.owner_user_id is None:
+        return False
+    if code.owner_user_id == user.id:
+        return True
+    owner = await session.get(User, code.owner_user_id)
+    return owner is not None and mailbox(owner.email) == mailbox(user.email)
 
 
 async def find(session: AsyncSession, code: str | None) -> PromoCode | None:
@@ -74,6 +113,13 @@ async def attach_at_signup(session: AsyncSession, *, user: User, code: str | Non
             log.info("promo_code_not_applied", code=code[:MAX_CODE_LENGTH], reason="unknown")
         return 0
 
+    if await is_self_referral(session, code=promo, user=user):
+        # The owner's own inbox. No bonus, and no attribution — which is also
+        # what stops every later payment on this account earning commission.
+        # Not an error either: registration goes ahead, as for a mistyped code.
+        log.info("promo_code_not_applied", code=promo.code, reason="self_referral")
+        return 0
+
     user.promo_code = promo.code
     user.promo_code_applied_at = datetime.now(UTC)
 
@@ -101,9 +147,16 @@ class OwnerStats:
     accrued_minor: dict[str, int] = field(default_factory=dict)
     paid_minor: dict[str, int] = field(default_factory=dict)
     owed_minor: dict[str, int] = field(default_factory=dict)
+    #: Owed, but earned on payments younger than the hold — still exposed to a
+    #: refund or a chargeback (M7-23).
+    pending_minor: dict[str, int] = field(default_factory=dict)
+    #: What may be paid out today: owed, less what is pending, never below zero.
+    payable_minor: dict[str, int] = field(default_factory=dict)
 
 
-async def owner_stats(session: AsyncSession, *, code: str) -> OwnerStats | None:
+async def owner_stats(
+    session: AsyncSession, *, code: str, now: datetime | None = None
+) -> OwnerStats | None:
     promo = await session.get(PromoCode, code)
     if promo is None:
         return None
@@ -149,6 +202,35 @@ async def owner_stats(session: AsyncSession, *, code: str) -> OwnerStats | None:
         elif reason is CommissionReason.PAYOUT:
             paid[currency] = paid.get(currency, 0) - amount
 
+    # The hold (M7-23): commission on a payment younger than
+    # `commission_hold_days` is owed but not yet payable, net of any reversal
+    # that has already landed on that payment. Computed per payment rather than
+    # per row so a refund inside the window cancels its own accrual, and does
+    # not also come off what was already payable.
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=settings.commission_hold_days)
+    recent_payments = (
+        sa.select(CommissionLedgerEntry.payment_id)
+        .where(
+            CommissionLedgerEntry.code == promo.code,
+            CommissionLedgerEntry.reason == CommissionReason.ACCRUAL,
+            CommissionLedgerEntry.created_at > cutoff,
+        )
+        .scalar_subquery()
+    )
+    held_rows = await session.execute(
+        sa.select(CommissionLedgerEntry.currency, sa.func.sum(CommissionLedgerEntry.amount_minor))
+        .where(
+            CommissionLedgerEntry.code == promo.code,
+            CommissionLedgerEntry.reason.in_([CommissionReason.ACCRUAL, CommissionReason.REVERSAL]),
+            CommissionLedgerEntry.payment_id.in_(recent_payments),
+        )
+        .group_by(CommissionLedgerEntry.currency)
+    )
+    pending = {currency: int(total or 0) for currency, total in held_rows.all()}
+    payable = {
+        currency: max(0, total - pending.get(currency, 0)) for currency, total in owed.items()
+    }
+
     return OwnerStats(
         code=promo.code,
         is_active=promo.is_active,
@@ -157,4 +239,6 @@ async def owner_stats(session: AsyncSession, *, code: str) -> OwnerStats | None:
         accrued_minor=accrued,
         paid_minor=paid,
         owed_minor=owed,
+        pending_minor=pending,
+        payable_minor=payable,
     )

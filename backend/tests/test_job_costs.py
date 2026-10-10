@@ -22,8 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Job, JobFamily, JobStatus, JobTool, User
 from app.services.job_costs import MIN_SAMPLES, measure, worst_case_seconds
 
-pytestmark = pytest.mark.anyio
-
 
 async def _user(db: AsyncSession) -> User:
     user = User(email=f"{uuid.uuid4().hex[:12]}@example.com", hashed_password="x")

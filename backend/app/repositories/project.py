@@ -44,7 +44,8 @@ class ProjectRepository(ScopedRepository[Project]):
 
     async def get_visible(self, project_id: uuid.UUID) -> Project | None:
         result = await self._session.execute(self._visible().where(Project.id == project_id))
-        return result.scalar_one_or_none()
+        found: Project | None = result.scalar_one_or_none()
+        return found
 
     async def create(
         self,

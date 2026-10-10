@@ -4,6 +4,11 @@ import type { ReactNode } from 'react'
 import { Providers } from '@/app/providers'
 import '@/styles/globals.css'
 
+// Every page renders per request. The CSP nonce (`src/middleware.ts`) is drawn
+// per response, and a page prerendered at build time would carry scripts with
+// no nonce on them — which the policy then refuses to run (M7-20).
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'ZipZop — AI Video Editor',
   description: 'A video editor where the AI tools sit in the toolbar next to the ordinary ones.',

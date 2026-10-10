@@ -76,7 +76,10 @@ def upgrade() -> None:
         sa.Column("currency", sa.CHAR(length=3), nullable=False),
         sa.Column("provider_plan_id", sa.Text(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["plan_code"], ["plans.code"], name="fk_provider_plans_plan_code_plans"
@@ -100,14 +103,19 @@ def upgrade() -> None:
         sa.Column("commission_bps", sa.Integer(), nullable=False, server_default="1500"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.CheckConstraint("bonus_credits >= 0", name="ck_promo_codes_bonus_credits_non_negative"),
         sa.CheckConstraint(
             "commission_bps BETWEEN 0 AND 10000", name="ck_promo_codes_commission_bps_is_a_rate"
         ),
         sa.ForeignKeyConstraint(
-            ["owner_user_id"], ["users.id"], name="fk_promo_codes_owner_user_id_users",
+            ["owner_user_id"],
+            ["users.id"],
+            name="fk_promo_codes_owner_user_id_users",
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("code", name="pk_promo_codes"),
@@ -159,18 +167,25 @@ def upgrade() -> None:
         sa.Column("rate_bps", sa.Integer(), nullable=True),
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.CheckConstraint("amount_minor <> 0", name="ck_commission_ledger_amount_is_never_zero"),
         sa.ForeignKeyConstraint(
             ["code"], ["promo_codes.code"], name="fk_commission_ledger_code_promo_codes"
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name="fk_commission_ledger_user_id_users",
+            ["user_id"],
+            ["users.id"],
+            name="fk_commission_ledger_user_id_users",
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["payment_id"], ["payments.id"], name="fk_commission_ledger_payment_id_payments",
+            ["payment_id"],
+            ["payments.id"],
+            name="fk_commission_ledger_payment_id_payments",
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_commission_ledger"),

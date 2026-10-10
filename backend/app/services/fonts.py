@@ -30,10 +30,18 @@ from pathlib import Path
 BUNDLED_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 
 #: Where the platforms keep something plain and always present. Ordered by
-#: preference: DejaVu is what Debian-based images have — including the backend
-#: image, which installs `ffmpeg` and gets it as a dependency — and the rest
-#: are development machines.
+#: preference.
+#:
+#: **Noto first, because it is the only one the backend image and CI have.**
+#: This list used to assume DejaVu came with `ffmpeg`, through fontconfig's
+#: font dependency. It does, until `fonts-noto-core` is installed beside it:
+#: Noto also satisfies that dependency, so apt skips DejaVu. The image (since
+#: Hindi captions needed Noto) and the CI job (since 5 October) then had no font
+#: this list named, and every watermarked render raised `NoFontError`. That is
+#: every Free-plan export in production, and the six render tests CI failed on.
+#: Found 6 October 2026, when the CI job could finally reach its tests.
 _FALLBACKS = (
+    Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
     Path("/usr/share/fonts/dejavu/DejaVuSans.ttf"),
     Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),

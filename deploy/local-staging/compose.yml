@@ -1,0 +1,246 @@
+# Local staging — the production topology on one machine (docs/24-m7-closure.md §3).
+#
+# Not development: the API and the workers run the **production image**, with
+# `ENVIRONMENT=production`, RS256 tokens, generated secrets and no development
+# default anywhere. What it models and what it cannot:
+#
+#   * an edge proxy terminating TLS, sending HSTS and one X-Forwarded-For hop
+#     (the ALB and the CDN);
+#   * two networks. `public` is the internet: the proxy, the frontend, and
+#     whoever is testing. `data` is `internal` — no route out — and holds the
+#     API, the workers, Postgres, Redis and storage. The only thing on both is
+#     the proxy, so the workers' egress is the storage hostname and nothing
+#     else (docs/07-security.md §6.4);
+#   * Redis with a password, Postgres with a generated one, storage reached by
+#     an identity that can touch one bucket's objects and nothing more.
+#
+# It cannot model the cloud itself: the instance metadata endpoint, IAM roles,
+# a real ALB and S3, a delivery from Razorpay. Those stay on the list for the
+# first real deployment (docs/24-m7-closure.md §5).
+#
+#     make staging-up       # secrets, build, start
+#     make staging-check    # every check in checks.py and check.sh
+#     make staging-down
+
+name: zipzop-staging
+
+x-backend: &backend
+  build:
+    context: ../../backend
+    dockerfile: Dockerfile
+    target: prod
+  image: zipzop-backend:staging
+  environment: &backend-env
+    ENVIRONMENT: production
+    LOG_LEVEL: INFO
+    DATABASE_URL: postgresql+asyncpg://zipzop:${POSTGRES_PASSWORD}@postgres:5432/zipzop
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+    CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+    JWT_ALGORITHM: RS256
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+    JWT_PRIVATE_KEY_PATH: /keys/jwt_private.pem
+    JWT_PUBLIC_KEY_PATH: /keys/jwt_public.pem
+    S3_ENDPOINT_URL: https://media.zipzop.test
+    S3_BUCKET: zipzop-media
+    S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+    S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+    S3_FORCE_PATH_STYLE: "true"
+    CDN_BASE_URL: https://media.zipzop.test/zipzop-media
+    CORS_ORIGINS: https://app.zipzop.test
+    TRUSTED_PROXY_HOPS: "1"
+    # boto3 reaches storage through the proxy, over TLS, so it has to trust
+    # the proxy's local root — the one thing a public CA would do for free.
+    AWS_CA_BUNDLE: /ca/root.crt
+  volumes:
+    - ./keys:/keys:ro
+    - ca:/ca:ro
+  networks: [data]
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    ca-export: { condition: service_completed_successfully }
+    migrate: { condition: service_completed_successfully }
+    minio-init: { condition: service_completed_successfully }
+
+services:
+  caddy:
+    image: caddy:2.11.6-alpine@sha256:d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      public:
+        aliases: [app.zipzop.test, api.zipzop.test, media.zipzop.test]
+      data:
+        # From inside `data`, storage is the one name that resolves to the
+        # edge — the workers' only way out.
+        aliases: [media.zipzop.test]
+
+  # The proxy's root certificate, copied out readable. Caddy writes it 0600 as
+  # root, and the API and the workers run as uid 1000 — the first upload to be
+  # *completed* through this stack failed on exactly that, with a 500.
+  ca-export:
+    image: caddy:2.11.6-alpine@sha256:d44355d3c2149dc580ce2cac735955d1c08d3d00882c30489c241aa51a5c10d9
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        until [ -f /data/caddy/pki/authorities/local/root.crt ]; do sleep 1; done;
+        cp /data/caddy/pki/authorities/local/root.crt /ca/root.crt &&
+        chmod 0644 /ca/root.crt && echo exported
+    volumes:
+      - caddy-data:/data:ro
+      - ca:/ca
+    network_mode: none
+    depends_on:
+      caddy: { condition: service_started }
+
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: zipzop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: zipzop
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zipzop -d zipzop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    # Authenticated, unlike development: it is the Celery queue, and a queue
+    # anyone on the network can write to is a way to run a task as the worker.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # The bucket's CORS: the app's origin, nothing else. MinIO exposes
+      # `ETag`, which the multipart upload has to read.
+      MINIO_API_CORS_ALLOW_ORIGIN: https://app.zipzop.test
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
+    entrypoint: ["/bin/sh", "/init/minio-init.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - ./minio-init.sh:/init/minio-init.sh:ro
+      - ./app-policy.json:/init/app-policy.json:ro
+    networks: [data]
+    depends_on:
+      minio: { condition: service_healthy }
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *backend
+
+  worker:
+    <<: *backend
+    # The image's HEALTHCHECK is the API's (`/health/live` on :8000). A worker
+    # serves no HTTP, so it would report unhealthy forever — and an
+    # orchestrator acting on that would restart a healthy worker mid-job.
+    healthcheck:
+      disable: true
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - --loglevel=INFO
+      - -Q
+      - ingest,analysis,render,billing,reconciliation
+      - --concurrency=2
+
+  beat:
+    <<: *backend
+    healthcheck:
+      disable: true
+    # Writes its schedule file; /tmp because the image's /app belongs to the
+    # code, not to runtime state.
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - beat
+      - --loglevel=INFO
+      - --schedule=/tmp/celerybeat-schedule
+
+  # Built and served inside the container, from a copy of the source, so the
+  # Windows `node_modules` on the host never meets a Linux one. The public URLs
+  # are baked in at build time, as in any Next.js deployment.
+  frontend:
+    image: node:24.21.0-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
+    command: ["/bin/sh", "/src/deploy/local-staging/frontend-start.sh"]
+    # No NODE_ENV here: it would skip the devDependencies the build needs.
+    # `next build` and `next start` are production by themselves.
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_BASE_URL: https://api.zipzop.test/v1
+      NEXT_PUBLIC_WS_URL: wss://api.zipzop.test/v1/ws
+      NEXT_PUBLIC_MEDIA_ORIGIN: https://media.zipzop.test
+    volumes:
+      - ../..:/src:ro
+      - frontend-build:/app
+    networks: [public]
+
+  # Not started by `up`: `make staging-check` runs it. The development image,
+  # because it has pytest's dependencies and pip; on `public` only, where an
+  # outsider would be.
+  checks:
+    profiles: [check]
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      target: dev
+    image: zipzop-backend:staging-checks
+    command: ["python", "/checks/checks.py"]
+    # The storage identity's keys and nothing else from .env: the checks about
+    # that identity need them; nothing else here should.
+    environment:
+      CA_BUNDLE: /ca/root.crt
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - ./checks.py:/checks/checks.py:ro
+      - ./sqlmap_targets.py:/checks/sqlmap_targets.py:ro
+      - ca:/ca:ro
+    networks: [public]
+
+networks:
+  public: {}
+  data:
+    internal: true
+
+volumes:
+  caddy-data:
+  ca:
+  frontend-build:

@@ -4,6 +4,7 @@ Small, but they pin two things every later feature relies on: the app boots,
 and every error comes back in the same shape.
 """
 
+import pytest
 from httpx import AsyncClient
 
 
@@ -61,3 +62,28 @@ async def test_openapi_schema_is_generated(client: AsyncClient) -> None:
     schema = response.json()
     assert schema["info"]["title"] == "ZipZop API"
     assert "/health" in schema["paths"]
+
+
+def test_production_serves_no_docs_and_no_live_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M7: `/docs` is a client for every route and `/openapi.json` a map of
+    them, and neither is anything production needs to hand a stranger. The
+    schema is still generated — `app.openapi()` does not need the route, and
+    it is what `make openapi` writes to disk."""
+    from app.config import settings
+    from app.main import create_app
+
+    monkeypatch.setattr(settings, "environment", "production")
+    app = create_app()
+
+    assert app.docs_url is None
+    assert app.openapi_url is None
+    assert app.openapi()["info"]["title"] == "ZipZop API"
+
+
+@pytest.mark.parametrize("path", ["/health/live", "/v1/catalog/luts", "/v1/no-such-route"])
+async def test_every_response_is_nosniff_and_not_stored(client: AsyncClient, path: str) -> None:
+    """Found by the ZAP baseline on staging (docs/24-m7-closure.md §3.1): API
+    responses carried neither header. An error is a response too."""
+    response = await client.get(path)
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"

@@ -243,3 +243,7 @@ class PromoStatsResponse(ApiModel):
     owed_minor: dict[str, int]
     accrued_minor: dict[str, int]
     paid_minor: dict[str, int]
+    #: Owed on payments still inside the refund hold (M7-23) — not yet payable.
+    pending_minor: dict[str, int]
+    #: Owed and past the hold: what a payout may cover today.
+    payable_minor: dict[str, int]

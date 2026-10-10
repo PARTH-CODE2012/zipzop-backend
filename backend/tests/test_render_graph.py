@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from app.api.schemas.project import MediaClip, MediaTrack, TimelineDocument
-from app.services import luts
+from app.services import fonts, luts
 from app.services.render_graph import RenderSettings, build_command, source_window
 
 pytestmark = pytest.mark.ffmpeg
@@ -177,6 +177,24 @@ def test_the_watermark_is_drawn_when_the_plan_says_so() -> None:
 
     clean = _graph(_document(_clip()), {"ast_1": Path("a.mp4")})
     assert "drawtext" not in clean.filtergraph
+
+
+def test_the_watermark_has_a_font_on_an_image_with_only_noto(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """🔴 The backend image's fonts, exactly: `fonts-noto-core` and nothing else.
+
+    Installing Noto satisfies fontconfig's font dependency, so apt never pulls
+    DejaVu. The fallback list named only DejaVu, Liberation, Arial and Segoe, so
+    on the real image every watermarked render (every Free-plan export) raised
+    `NoFontError`. Found 6 October 2026 by CI, the first time it reached these
+    tests on a runner without DejaVu.
+    """
+    noto = Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf")
+    monkeypatch.setattr(fonts, "BUNDLED_DIR", tmp_path)  # nothing bundled
+    monkeypatch.setattr(Path, "is_file", lambda self: self == noto)
+
+    assert fonts.default_font() == noto
 
 
 def test_music_is_delayed_to_where_the_user_put_it() -> None:

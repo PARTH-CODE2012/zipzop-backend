@@ -9,13 +9,10 @@ losing or inventing credits.
 
 import uuid
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CreditBucket, CreditLedgerEntry, LedgerReason, User
 from app.services.reconciliation import reconcile
-
-pytestmark = pytest.mark.anyio
 
 
 async def _user(db: AsyncSession, *, plan: int = 0, topup: int = 0, facemap: int = 0) -> User:

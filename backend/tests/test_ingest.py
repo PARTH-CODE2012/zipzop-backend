@@ -505,6 +505,54 @@ async def test_a_file_over_the_duration_limit_is_refused(
     assert "longer than" in (asset.failure_reason or "")
 
 
+async def test_a_picture_larger_than_4k_is_refused_before_anything_decodes_it(
+    db: AsyncSession, s3: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M7-24, the decode bomb. Twelve megabytes of black 8192x8192 frames took
+    every core of the staging worker and 4 GB of memory: cost is pixels times
+    frames, and size on disk says nothing about either. Refused at the probe,
+    before the proxy decodes anything — so no proxy is ever started."""
+    bomb = tmp_path / "bomb.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:s=4160x4160:r=1:d=1",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            str(bomb),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    started: list[Path] = []
+    monkeypatch.setattr(ingest, "make_proxy", lambda source, destination: started.append(source))
+
+    asset = await _staged(db, s3, bomb, AssetKind.VIDEO)
+    assert await run_ingest(db, asset.id, worker_id="test") == "failed"
+    await db.refresh(asset)
+
+    assert asset.status is AssetStatus.FAILED
+    assert "larger than 4K" in (asset.failure_reason or "")
+    assert started == []
+
+
+async def test_a_4k_picture_in_either_orientation_is_still_accepted(tmp_path: Path) -> None:
+    """The ceiling refuses 8K and nothing the product exports: vertical 4K,
+    landscape DCI 4K and square 4K all fit under it."""
+    for width, height in ((2160, 3840), (4096, 2160), (4096, 4096)):
+        assert width * height <= settings.max_video_pixels
+
+
 async def test_an_audio_upload_needs_no_thumbnail(
     db: AsyncSession, s3: Any, tmp_path: Path
 ) -> None:

@@ -17,6 +17,7 @@ code that will one day forget.
 """
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
@@ -119,9 +120,24 @@ class CreditLedger:
         The row lock is what serialises them; without it the check and the
         deduction are two statements with a gap in between, and the gap is
         where a user spends credits they do not have.
+
+        🔴 **`populate_existing`, or the lock protects nothing.** Found in M7 by
+        firing twenty `POST /jobs` at once against a balance of one job: all
+        twenty were created. The row lock *was* taken — but the request had
+        already loaded this `User` through `current_user`, and SQLAlchemy hands
+        back the object already in the session's identity map **without
+        re-reading its columns**. Every request then priced itself against the
+        balance it saw *before* waiting for the lock, and each wrote
+        `stale - cost` back: a lost update, twenty jobs for the price of one,
+        and a cached balance of 0 over a ledger of -38. The same trap
+        `repositories/media.claim_for_ingest` documents and avoids; this is
+        where it mattered most. `tests/test_credits_race.py` holds it.
         """
         result = await self._session.execute(
-            sa.select(User).where(User.id == user_id).with_for_update()
+            sa.select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -218,6 +234,11 @@ class CreditLedger:
         )
         found: dict[uuid.UUID, dict[CreditBucket, int]] = {}
         for job_id, bucket, delta in rows.all():
+            # `job_id` is nullable on the ledger (grants have none), and
+            # SQLAlchemy 2.1 types the column that way. The `IN` above already
+            # excludes NULL; this says so to the type checker.
+            if job_id is None:
+                continue
             found.setdefault(job_id, {})[bucket] = -delta
         return found
 
@@ -300,8 +321,13 @@ class CreditLedger:
         plan_credits: int,
         facemap_seconds: int,
         note: str | None = None,
+        payment_id: uuid.UUID | None = None,
     ) -> dict[str, int]:
         """Sweep what expired, grant the new allowance. One transaction.
+
+        `payment_id` names the payment that bought this period, on the grant
+        rows. A refund then knows exactly which credits it takes back
+        (`revoke_payment`).
 
         docs/03-backend-architecture.md §8.4, and the ordering matters: the
         sweep is written before the grant so the ledger reads as a period
@@ -345,6 +371,7 @@ class CreditLedger:
                     delta=amount,
                     reason=LedgerReason.PLAN_GRANT,
                     job_id=None,
+                    payment_id=payment_id,
                     note=note,
                 )
                 moved[f"{bucket.value}_granted"] = amount
@@ -409,6 +436,66 @@ class CreditLedger:
             note=note,
         )
         await self._session.flush()
+
+    async def revoke_payment(
+        self,
+        *,
+        user: User,
+        payment_id: uuid.UUID,
+        buckets: Iterable[CreditBucket],
+        note: str | None = None,
+    ) -> dict[str, int]:
+        """Take back what a refunded payment granted, as far as it is unused.
+
+        The project lead's rule, 8 October 2026: a refund fully revokes the
+        credits, and a customer who already used some keeps what they used.
+        The rest is clawed back. Per bucket, that is the smaller of:
+
+        * what this payment granted, less anything already revoked for it.
+          The second refund event for one payment (a redelivery, or a refund
+          and then a lost dispute) therefore revokes nothing;
+        * the balance now. Never below zero: spent credits are not a debt.
+
+        The caller chooses the buckets, because only it knows whether the
+        period this payment bought is still running (`_apply_reversal`). The
+        caller also holds the user's row lock. Returns what was revoked, per
+        bucket.
+        """
+        revoked: dict[str, int] = {}
+        for bucket in buckets:
+            granted = await self._session.scalar(
+                sa.select(sa.func.coalesce(sa.func.sum(CreditLedgerEntry.delta), 0)).where(
+                    CreditLedgerEntry.user_id == user.id,
+                    CreditLedgerEntry.payment_id == payment_id,
+                    CreditLedgerEntry.bucket == bucket,
+                    CreditLedgerEntry.reason.in_(
+                        [LedgerReason.PLAN_GRANT, LedgerReason.TOPUP_PURCHASE]
+                    ),
+                )
+            )
+            already = await self._session.scalar(
+                sa.select(sa.func.coalesce(sa.func.sum(CreditLedgerEntry.delta), 0)).where(
+                    CreditLedgerEntry.user_id == user.id,
+                    CreditLedgerEntry.payment_id == payment_id,
+                    CreditLedgerEntry.bucket == bucket,
+                    CreditLedgerEntry.reason == LedgerReason.PAYMENT_REVERSAL,
+                )
+            )
+            outstanding = int(granted or 0) + int(already or 0)  # `already` is negative
+            take = min(outstanding, int(getattr(user, _BALANCE_COLUMN[bucket])))
+            if take > 0:
+                await self._write(
+                    user=user,
+                    bucket=bucket,
+                    delta=-take,
+                    reason=LedgerReason.PAYMENT_REVERSAL,
+                    job_id=None,
+                    payment_id=payment_id,
+                    note=note,
+                )
+                revoked[bucket.value] = take
+        await self._session.flush()
+        return revoked
 
     async def grant_promo_bonus(self, *, user: User, credits: int, code: str) -> None:
         """The one-off bonus a promo code carries.

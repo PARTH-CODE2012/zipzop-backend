@@ -174,21 +174,25 @@ async def create_upload(
 async def _upload_response(
     session: AsyncSession, asset: MediaAsset, body: UploadRequest, *, replay: bool
 ) -> UploadResponse:
-    presigned = storage.presign_put(asset.storage_key, body.content_type)
+    # The size signed into the URLs is the one on the **row** — what the quota
+    # was checked against — never the one on this request. On a replay the two
+    # can differ, and signing the request's would let a second call under the
+    # same idempotency key widen a reservation it did not pay quota for.
+    size = asset.size_bytes if asset.size_bytes is not None else body.size_bytes
+    content_type = asset.mime_type or body.content_type
+    presigned = storage.presign_put(asset.storage_key, content_type, size)
 
     multipart: MultipartPlan | None = None
-    if body.size_bytes > settings.multipart_threshold_bytes:
+    if size > settings.multipart_threshold_bytes:
         if asset.multipart_upload_id:
             # A replay. The upload id outlives the fifteen-minute part URLs, so
             # the client gets fresh URLs for the upload it already started —
             # not a second upload. Starting one here, which this did until
             # 28 August, orphans every part already uploaded against the first:
             # they stay in the bucket, billed, with nothing pointing at them.
-            plan = storage.presign_parts(
-                asset.storage_key, asset.multipart_upload_id, body.size_bytes
-            )
+            plan = storage.presign_parts(asset.storage_key, asset.multipart_upload_id, size)
         else:
-            plan = storage.start_multipart(asset.storage_key, body.content_type, body.size_bytes)
+            plan = storage.start_multipart(asset.storage_key, content_type, size)
             # Written before the client is told the upload exists. An id we
             # handed out and did not store is an upload that can never be
             # completed and never be aborted.
@@ -262,6 +266,15 @@ async def complete_upload(
         # The reservation said one size and the object is another. Trusting the
         # client here would let someone reserve a byte against their quota and
         # upload a gigabyte.
+        #
+        # **The object goes too, not just the row.** Until M7 only the row was
+        # removed, and the bytes stayed under `originals/` — the one prefix
+        # nothing ever deletes automatically — outside every quota, since the
+        # row that would have counted them was gone. Repeat, and a free account
+        # stored without limit at our expense (docs/07-security.md §6.3). The
+        # signed `Content-Length` now stops this at the upload; this is the
+        # second line, for any object that arrives some other way.
+        storage.delete(asset.storage_key)
         await assets.soft_delete(asset)
         # Committed before raising, for the same reason as the token revocation
         # in `auth.refresh`: `get_session` rolls back on exception, and the

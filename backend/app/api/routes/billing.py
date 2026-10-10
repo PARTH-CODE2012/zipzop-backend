@@ -461,4 +461,6 @@ async def promo_stats(code: str, user: CurrentUser, session: Session) -> PromoSt
         owed_minor=stats.owed_minor,
         accrued_minor=stats.accrued_minor,
         paid_minor=stats.paid_minor,
+        pending_minor=stats.pending_minor,
+        payable_minor=stats.payable_minor,
     )

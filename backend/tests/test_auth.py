@@ -461,20 +461,140 @@ async def test_a_token_signed_with_another_key_is_refused(client: AsyncClient) -
     assert response.status_code == 401
 
 
+async def test_an_unsigned_alg_none_token_is_refused(client: AsyncClient) -> None:
+    """The oldest JWT attack — docs/07-security.md §6.1.
+
+    A token with `{"alg":"none"}` and no signature is accepted by any verifier
+    that trusts the header's choice of algorithm. `read_access_token` pins the
+    algorithm to the one we sign with (`algorithms=[settings.jwt_algorithm]`),
+    so `none` is never in the allowed set and the forgery is refused. This is
+    the test that fails the day someone widens that list.
+    """
+    import jwt
+
+    forged = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "typ": "access",
+            "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
+        },
+        key="",
+        algorithm="none",
+    )
+    response = await client.get(f"{V1}/me", headers={"Authorization": f"Bearer {forged}"})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] in {"TOKEN_REVOKED", "TOKEN_EXPIRED"}
+
+
 # --------------------------------------------------------------------------
 # Rate limiting
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["/auth/login", "/auth/register"])
-async def test_auth_endpoints_are_limited_to_twenty_a_minute(
-    client: AsyncClient, path: str
-) -> None:
+async def test_sign_in_is_limited_to_twenty_a_minute(client: AsyncClient) -> None:
     """docs/03-backend-architecture.md §10. The 429 carries Retry-After."""
     last = None
     for _ in range(21):
-        last = await client.post(f"{V1}{path}", json={"email": _email(), "password": "x" * 12})
+        last = await client.post(f"{V1}/auth/login", json={"email": _email(), "password": "x" * 12})
     assert last is not None
     assert last.status_code == 429
     assert last.json()["error"]["code"] == "RATE_LIMITED"
     assert int(last.headers["retry-after"]) > 0
+
+
+async def test_one_address_opens_ten_accounts_an_hour_and_no_more(client: AsyncClient) -> None:
+    """docs/07-security.md §6.10, measured in M7: with only the 20-a-minute
+    auth limit, one address opened 1,200 free accounts an hour on the staging
+    stack. The eleventh account in the hour is refused, for the rest of the
+    hour — and signing in, a separate bucket, is not spent by signing up."""
+    from app.config import settings
+
+    statuses = []
+    for _ in range(settings.register_limit_per_hour + 1):
+        response = await client.post(
+            f"{V1}/auth/register", json={"email": _email(), "password": "x" * 12}
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[:-1] == [201] * settings.register_limit_per_hour
+    assert statuses[-1] == 429
+    assert int(response.headers["retry-after"]) > 60, "the window is an hour, not a minute"
+    login = await client.post(f"{V1}/auth/login", json={"email": _email(), "password": "x" * 12})
+    assert login.status_code == 401
+
+
+async def test_a_forged_forwarded_for_does_not_buy_a_fresh_allowance(
+    client: AsyncClient,
+) -> None:
+    """docs/07-security.md §6.10 — found in M7.
+
+    The limiter used to count against the *first* `X-Forwarded-For` entry. That
+    entry is whatever the client wrote: a load balancer **appends** the address
+    it saw to the right of the chain, it does not replace what is already there.
+    So one caller rotating a made-up address per request got twenty fresh login
+    attempts every time — the brute-force ceiling on `/auth/login` was a
+    suggestion.
+
+    With no trusted proxy configured (the default), the header is ignored
+    entirely and the limit is counted against the socket's peer.
+    """
+    last = None
+    for n in range(21):
+        last = await client.post(
+            f"{V1}/auth/login",
+            json={"email": _email(), "password": "x" * 12},
+            headers={"X-Forwarded-For": f"203.0.113.{n}"},
+        )
+    assert last is not None
+    assert last.status_code == 429
+
+
+async def test_behind_one_proxy_the_address_it_appended_is_the_one_counted(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `TRUSTED_PROXY_HOPS=1` — one ALB — the rightmost entry is the one
+    the ALB wrote, so it is the one that counts. Anything the client put to its
+    left is ignored, which is what makes rotating it useless."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    last = None
+    for n in range(21):
+        last = await client.post(
+            f"{V1}/auth/login",
+            json={"email": _email(), "password": "x" * 12},
+            # The forged part rotates; the address the proxy saw does not.
+            headers={"X-Forwarded-For": f"203.0.113.{n}, 198.51.100.7"},
+        )
+    assert last is not None
+    assert last.status_code == 429
+
+
+def test_the_counted_address_is_taken_from_the_right_of_the_chain() -> None:
+    """The arithmetic, without a request: N trusted hops means the Nth entry
+    from the right. A chain shorter than that was not built by our proxies, so
+    the peer address is used instead of trusting any of it."""
+    from starlette.requests import Request
+
+    from app.api.deps import client_ip
+    from app.config import settings
+
+    def request(xff: str | None) -> Request:
+        headers = [(b"x-forwarded-for", xff.encode())] if xff is not None else []
+        return Request({"type": "http", "headers": headers, "client": ("10.0.0.9", 1)})
+
+    original = settings.trusted_proxy_hops
+    try:
+        settings.trusted_proxy_hops = 0
+        assert client_ip(request("1.1.1.1, 2.2.2.2")) == "10.0.0.9"
+
+        settings.trusted_proxy_hops = 1
+        assert client_ip(request("1.1.1.1, 2.2.2.2")) == "2.2.2.2"
+        assert client_ip(request("2.2.2.2")) == "2.2.2.2"
+        assert client_ip(request(None)) == "10.0.0.9"
+
+        settings.trusted_proxy_hops = 2
+        assert client_ip(request("1.1.1.1, 2.2.2.2, 3.3.3.3")) == "2.2.2.2"
+        assert client_ip(request("3.3.3.3")) == "10.0.0.9"
+    finally:
+        settings.trusted_proxy_hops = original

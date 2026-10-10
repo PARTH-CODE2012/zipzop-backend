@@ -14,13 +14,19 @@ nothing about an account, and putting it behind auth would mean the pricing page
 cannot show what the product does without signing up.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.deps import general_rate_limit
 from app.api.schemas.common import ApiModel
 from app.services import luts
 from app.services.color_analysis import LOOKS
 
-router = APIRouter(prefix="/catalog", tags=["catalog"])
+# Public, but rate-limited like every other public route. It was the one route
+# that carried no limiter (docs/22-m7-readiness.md §2.3), and it hits the
+# filesystem on each call — `luts.available()` globs a directory, deliberately
+# uncached — so an unauthenticated caller could spin it without a ceiling. The
+# limit is by IP, the same `general_rate_limit` the other public routes use.
+router = APIRouter(prefix="/catalog", tags=["catalog"], dependencies=[Depends(general_rate_limit)])
 
 
 class LutEntry(ApiModel):

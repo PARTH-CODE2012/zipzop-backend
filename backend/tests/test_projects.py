@@ -601,6 +601,44 @@ async def test_a_malformed_asset_id_is_an_invalid_timeline_not_a_404(
     assert response.json()["error"]["code"] == "INVALID_TIMELINE"
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+async def test_a_non_finite_number_in_the_timeline_is_refused(
+    client: AsyncClient, db: AsyncSession, literal: str
+) -> None:
+    """The timeline is attacker-controlled JSON that M5 turns into a filter
+    graph — docs/07-security.md §5.1, docs/22-m7-readiness.md §3.
+
+    Python's `json` accepts the `NaN`/`Infinity` literals that JSON itself does
+    not, so the parser lets them through; the defence is that every numeric
+    field carries a bound (`speed` is 0.25-4.0), and a non-finite value fails
+    the `ge`/`le` comparison rather than sailing into `setpts=PTS/{speed}` as
+    the string `nan`. This sends the raw body so the assertion is about the
+    server's parsing, not the test client's encoder.
+    """
+    headers, user_id = await _account(client)
+    asset_id = await _ready_asset(db, user_id)
+    project = await _project(client, headers)
+
+    # A document whose only sin is a non-finite `speed`. Sent as raw content
+    # with the literal in place, because a JSON encoder set to reject non-finite
+    # values would never let the test reach the server.
+    clip = _clip(asset_id)
+    body = (
+        '{"timeline":{"schemaVersion":1,"tracks":[{"id":"trk_video","kind":"video",'
+        '"index":0,"clips":[{"id":"' + clip["id"] + '","assetId":"' + asset_id + '",'
+        '"startMs":0,"durationMs":4000,"sourceInMs":0,"speed":' + literal + ',"volume":1.0}]}]},'
+        '"version":0}'
+    )
+    response = await client.patch(
+        f"{V1}/projects/{project['id']}",
+        headers={**headers, "Content-Type": "application/json"},
+        content=body,
+    )
+    assert response.status_code == 422
+    # A bounds rejection at the schema layer, never a 200 that stored `nan`.
+    assert response.json()["error"]["code"] in {"VALIDATION_ERROR", "INVALID_TIMELINE"}
+
+
 # --------------------------------------------------------------------------
 # Text track
 # --------------------------------------------------------------------------

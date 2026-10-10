@@ -18,8 +18,9 @@ import os
 import pathlib
 import subprocess
 import sys
+import traceback
 import uuid
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Generator, Iterator
 from typing import Any
 
 # --------------------------------------------------------------------------
@@ -364,3 +365,59 @@ def not_a_video(media_dir: pathlib.Path) -> pathlib.Path:
     if not path.exists():
         path.write_bytes(b"this is not an mp4, it is a sentence" * 64)
     return path
+
+
+# --------------------------------------------------------------------------
+# Failures as GitHub annotations
+# --------------------------------------------------------------------------
+
+
+def _escape_annotation(text: str) -> str:
+    """The workflow-command encoding: `%`, CR and LF are the only specials."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+#: The last few tests to finish, named in each annotation. A failure in one
+#: test's *setup* is often caused by the teardown of the one before it.
+_recent: list[str] = []
+
+
+def pytest_runtest_logfinish(nodeid: str) -> None:
+    _recent.append(nodeid)
+    del _recent[:-3]
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """On GitHub Actions, each failure also becomes an `::error` annotation.
+
+    A job's log can only be read by someone signed in to GitHub, but a check
+    run's annotations are public, and they show on the commit and the pull
+    request. CI failed for five weeks without anyone looking (docs/24 §5.3).
+    On 6 October a failure on the runner could not be read at all. Both are
+    cheaper to fix when the failing test is on the page.
+
+    The traceback is Python's own, not pytest's: pytest hides its internal
+    frames, and the 6 October setup errors were raised from inside them.
+    """
+    report = yield
+    if os.environ.get("GITHUB_ACTIONS") != "true" or not report.failed:
+        return report
+    if call.excinfo is not None:
+        trace = "".join(traceback.format_exception(call.excinfo.value))
+    else:
+        trace = report.longreprtext
+    tail = "\n".join(trace.splitlines()[-40:])[-3500:]
+    before = " <- ".join(reversed(_recent)) or "(first test)"
+    path, lineno, _ = report.location
+    title = _escape_annotation(f"{report.nodeid} ({report.when})").replace(",", "%2C")
+    out = sys.__stdout__  # past pytest's capture, where the runner reads commands
+    if out is not None:
+        out.write(
+            f"::error file=backend/{path},line={(lineno or 0) + 1},title={title}"
+            f"::{_escape_annotation(f'after: {before}' + chr(10) + tail)}\n"
+        )
+        out.flush()
+    return report

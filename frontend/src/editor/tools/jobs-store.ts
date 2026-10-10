@@ -22,7 +22,13 @@ import { isFinished, watchJobs } from '@/editor/tools/job-watch'
 import { placeRemovals, placeWords } from '@/editor/tools/results'
 import type { CaptionsResult, SmartTrimResult } from '@/editor/tools/results'
 import { ApiError, getAccessToken } from '@/lib/api/client'
-import { cancelJob, createJob, estimateJob, readJobResult } from '@/lib/api/endpoints'
+import {
+  cancelJob,
+  createJob,
+  createWsTicket,
+  estimateJob,
+  readJobResult,
+} from '@/lib/api/endpoints'
 import type { CreateJobRequest, EstimateResponse, JobResponse } from '@/lib/api/endpoints'
 
 export type ToolName = 'captions' | 'smart_trim' | 'color_analysis'
@@ -171,9 +177,14 @@ export const useTools = create<ToolsState>((set, get) => ({
   },
 
   connect: (projectId) => {
-    const token = getAccessToken()
-    if (!token || stream) return
-    stream = watchJobs({ token, projectId, onUpdate: (job) => get().ingest(job) })
+    // Signed in is the precondition; the token itself no longer travels — the
+    // socket asks for a one-time ticket per connection (contract §8, M7-19).
+    if (!getAccessToken() || stream) return
+    stream = watchJobs({
+      getTicket: async () => (await createWsTicket()).ticket,
+      projectId,
+      onUpdate: (job) => get().ingest(job),
+    })
   },
 
   disconnect: () => {

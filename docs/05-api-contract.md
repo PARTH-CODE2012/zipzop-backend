@@ -4,11 +4,13 @@
 
 | | |
 |---|---|
-| **Version** | 1.2 — refresh token moved to an httpOnly cookie |
+| **Version** | 1.3 — the WebSocket opens with a one-time ticket |
 | **Date** | 17 August 2026 |
 | **Audience** | Backend and frontend engineers |
 | **Depends on** | [`03-backend-architecture.md`](03-backend-architecture.md) |
 | **Base URL** | `https://api.zipzop.app/v1` |
+
+> **What changed in 1.3** (5 October 2026, M7). The WebSocket no longer takes the access token in its URL: the client asks `POST /ws/ticket` for a one-time ticket and opens `/ws?ticket=…` with it, and the server closes the socket with `4001` when the token that asked for it expires (§8). Breaking for the socket only, and both sides ship together. Additive elsewhere: `GET /promo/{code}/stats` gains `pendingMinor` and `payableMinor`, and `POST /auth/register` has an hourly per-address limit of its own.
 
 > **What changed in 1.2.** The refresh token is delivered as an httpOnly cookie instead of a `refreshToken` field in the body — §2. That is the only breaking change; it was made during M2, when the endpoints were first implemented, because the frontend client written against 1.1 already assumed a cookie and the two could not both be right. §3's peaks payload also gains `durationMs`, which is additive.
 
@@ -80,7 +82,7 @@ GET /v1/projects?limit=20&cursor=eyJpZCI6...
 
 ### Rate limits
 
-`429` with `Retry-After` in seconds. Limits in [`03-backend-architecture.md`](03-backend-architecture.md) §10.
+`429` with `Retry-After` in seconds. Limits in [`03-backend-architecture.md`](03-backend-architecture.md) §10. **`POST /auth/register` also has an hourly one** — ten accounts per address per hour (`REGISTER_LIMIT_PER_HOUR`), so its `Retry-After` can be close to an hour (M7, docs/24-m7-closure.md §5.2).
 
 ---
 
@@ -897,6 +899,8 @@ Checked at the **sign-up form**, not after registering: the attribution is writt
 
 What a code has brought in, for whoever owns it. `404` for a code somebody else owns, so the response cannot be used to discover that a code exists. Amounts are minor units **per currency** and never summed across them — a code can bring in rupee and dollar subscribers, and one number covering both would be invented.
 
+Since 1.3, `owedMinor` is split in two: `pendingMinor`, earned on payments still inside the refund hold (30 days by default), and `payableMinor`, what a payout may cover today — owed less pending, never below zero. A refunded or charged-back payment reverses its commission; if that commission was already paid out, `owedMinor` goes negative and later commission nets it off (docs/24-m7-closure.md §2.6).
+
 ### `GET /templates` · `PUT /templates` · `DELETE /templates/{id}`
 
 Saved editing settings — caption style, colour grade, transition defaults, title styling. `PUT` rather than `POST`: saving under a name that already exists **replaces** it, which is what "save my settings as Podcast" means the second time. `settings` is opaque JSON the server stores and returns without interpreting; its shape belongs to the editor.
@@ -914,11 +918,16 @@ Not called by the client and listed here only so nobody is surprised by two unau
 
 ## 8. WebSocket
 
-```
-wss://api.zipzop.app/v1/ws?token=<access_token>
+```http
+POST /ws/ticket            Authorization: Bearer <access_token>
+→ 200 { "ticket": "Zk3…", "expiresIn": 30 }
+
+wss://api.zipzop.app/v1/ws?ticket=<ticket>
 ```
 
-The token goes in the query string because browsers cannot set headers on a WebSocket handshake. It is short-lived and the connection is upgraded immediately.
+**A ticket, not the access token.** Browsers cannot set headers on a WebSocket handshake, so whatever authenticates the socket rides in the URL — and URLs are what access logs, proxies and error trackers keep. Until 1.3 that was the access token itself, a live bearer credential for every route. A ticket is worth nothing once read: it lives 30 seconds, the handshake spends it (a second use is refused), and it opens this socket and nothing else. Ask for a new one for every connection.
+
+**The socket lives as long as the token that asked for it.** The server closes it with code `4001` at that token's expiry; the client answers by asking for a new ticket — through the ordinary refresh, which an account that has been signed out or suspended cannot pass — and reconnecting at once. Any other close is reconnected with backoff (1, 2, 5, 10, 30 s). `1008` means the ticket was missing, unknown, spent or expired.
 
 Server → client, one JSON object per message:
 

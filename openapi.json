@@ -1985,6 +1985,20 @@
             "title": "Paidminor",
             "type": "object"
           },
+          "payableMinor": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Payableminor",
+            "type": "object"
+          },
+          "pendingMinor": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pendingminor",
+            "type": "object"
+          },
           "signups": {
             "title": "Signups",
             "type": "integer"
@@ -2001,7 +2015,9 @@
           "subscribers",
           "owedMinor",
           "accruedMinor",
-          "paidMinor"
+          "paidMinor",
+          "pendingMinor",
+          "payableMinor"
         ],
         "title": "PromoStatsResponse",
         "type": "object"
@@ -2939,6 +2955,24 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WsTicketResponse": {
+        "properties": {
+          "expiresIn": {
+            "title": "Expiresin",
+            "type": "integer"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expiresIn"
+        ],
+        "title": "WsTicketResponse",
         "type": "object"
       }
     }
@@ -4640,6 +4674,28 @@
         "summary": "Stripe server-to-server callback",
         "tags": [
           "webhooks"
+        ]
+      }
+    },
+    "/v1/ws/ticket": {
+      "post": {
+        "description": "Spent by the handshake within 30 seconds, and only once.\n\n`CurrentUser` has already verified the bearer token and refused an account\nthat is not active, so a ticket is only ever minted for a live session. The\nsocket it opens closes when that token expires (M7-18).",
+        "operationId": "ws_ticket_v1_ws_ticket_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WsTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "A one-time ticket to open the event socket",
+        "tags": [
+          "ws"
         ]
       }
     }

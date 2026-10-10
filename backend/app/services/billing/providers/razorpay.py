@@ -85,6 +85,11 @@ _EVENT_KINDS: Final[dict[str, BillingEventKind]] = {
     # One-off credit purchases go out as payment links.
     "payment_link.paid": BillingEventKind.TOPUP_PAID,
     "order.paid": BillingEventKind.TOPUP_PAID,
+    # The money went back (M7-23). `processed`, not `created`: a refund can
+    # still fail after it is created. `lost`, not `created`, for a dispute: one
+    # that is won leaves the payment — and the commission — where it was.
+    "refund.processed": BillingEventKind.PAYMENT_REVERSED,
+    "payment.dispute.lost": BillingEventKind.PAYMENT_REVERSED,
 }
 
 
@@ -376,6 +381,11 @@ class RazorpayProvider(BillingProvider):
         payment = _entity(entities, "payment")
         link = _entity(entities, "payment_link")
         order = _entity(entities, "order")
+        # A refund or a dispute names the payment it takes back. Razorpay sends
+        # the payment entity alongside as well; this is for when it does not.
+        reversed_payment = _text(_entity(entities, "refund").get("payment_id")) or _text(
+            _entity(entities, "dispute").get("payment_id")
+        )
 
         # Notes can ride on any of the four, and which one carries them depends
         # on the event. First match wins, most specific first.
@@ -394,7 +404,7 @@ class RazorpayProvider(BillingProvider):
             payload=payload,
             user_id=notes.get("user_id"),
             subscription_reference=_text(subscription.get("id")),
-            payment_reference=_text(payment.get("id")) or _text(link.get("id")),
+            payment_reference=_text(payment.get("id")) or _text(link.get("id")) or reversed_payment,
             plan=_plan_from_notes(notes),
             amount_minor=_int(payment.get("amount")) or _int(link.get("amount")),
             currency=_text(payment.get("currency")) or _text(link.get("currency")),

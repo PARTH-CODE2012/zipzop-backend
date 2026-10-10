@@ -12,10 +12,7 @@ interpret.
 import uuid
 from typing import Any
 
-import pytest
 from httpx import AsyncClient
-
-pytestmark = pytest.mark.anyio
 
 V1 = "/v1"
 
